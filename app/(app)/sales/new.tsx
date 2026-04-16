@@ -236,27 +236,41 @@ export default function NewSaleScreen() {
     }
   }, [items.length, clearCart, router])
 
-  const handleProductTap = useCallback(
+  const handleAddProduct = useCallback(
     (product: Product) => {
       if (product.stockQty <= 0) return
+      addItem(
+        {
+          productId: product.id,
+          productName: product.name,
+          unitPriceCents: product.sellingPriceCents,
+          costPriceCents: product.costPriceCents,
+        },
+        1,
+      )
+    },
+    [addItem],
+  )
 
-      const inCart = cartItemMap.get(product.id)
-      if (inCart) {
-        setSelectedProduct(product)
-        setShowQtyModal(true)
+  const handleIncrease = useCallback(
+    (product: Product) => {
+      const currentQty = cartItemMap.get(product.id) ?? 0
+      if (currentQty >= product.stockQty) return
+      updateItemQty(product.id, currentQty + 1)
+    },
+    [cartItemMap, updateItemQty],
+  )
+
+  const handleDecrease = useCallback(
+    (productId: string) => {
+      const currentQty = cartItemMap.get(productId) ?? 0
+      if (currentQty <= 1) {
+        removeItem(productId)
       } else {
-        addItem(
-          {
-            productId: product.id,
-            productName: product.name,
-            unitPriceCents: product.sellingPriceCents,
-            costPriceCents: product.costPriceCents,
-          },
-          1,
-        )
+        updateItemQty(productId, currentQty - 1)
       }
     },
-    [cartItemMap, addItem],
+    [cartItemMap, removeItem, updateItemQty],
   )
 
   const handleProductLongPress = useCallback((product: Product) => {
@@ -308,6 +322,7 @@ export default function NewSaleScreen() {
           const productRecord = await database!.get<ProductModel>('products').find(item.productId)
           await productRecord.update((p) => {
             p.stockQty = p.stockQty - item.qty
+            p.updatedAt = new Date(Date.now())
           })
 
           await database!.get<StockMovementModel>('stock_movements').create((sm) => {
@@ -419,20 +434,22 @@ export default function NewSaleScreen() {
             />
           }
           renderItem={({ item: product }) => {
-            const qtyInCart = cartItemMap.get(product.id)
+            const qtyInCart = cartItemMap.get(product.id) ?? 0
             const outOfStock = product.stockQty <= 0
+            const atMax = qtyInCart >= product.stockQty
             const lowStock =
               product.stockQty > 0 && product.stockQty <= product.lowStockThreshold
 
             return (
-              <TouchableOpacity
-                style={[styles.productRow, outOfStock && styles.productRowDisabled]}
-                activeOpacity={0.7}
-                disabled={outOfStock}
-                onPress={() => handleProductTap(product)}
-                onLongPress={() => handleProductLongPress(product)}
-              >
-                <View style={styles.productLeft}>
+              <View style={[styles.productRow, outOfStock && styles.productRowDisabled]}>
+                {/* Left: product info — tap to add if not in cart yet */}
+                <TouchableOpacity
+                  style={styles.productLeft}
+                  activeOpacity={outOfStock || qtyInCart > 0 ? 1 : 0.6}
+                  disabled={outOfStock || qtyInCart > 0}
+                  onPress={() => handleAddProduct(product)}
+                  onLongPress={() => handleProductLongPress(product)}
+                >
                   <View style={styles.productNameRow}>
                     <Text style={styles.productName} numberOfLines={1}>
                       {product.name}
@@ -442,21 +459,48 @@ export default function NewSaleScreen() {
                   <Text style={styles.productMeta} numberOfLines={1}>
                     {product.category ? `${product.category} · ` : ''}
                     {product.unit}
+                    {' · '}{formatCurrency(product.sellingPriceCents)}
                   </Text>
-                </View>
+                </TouchableOpacity>
+
+                {/* Right: add button OR inline qty stepper */}
                 <View style={styles.productRight}>
-                  <Text style={styles.productPrice}>
-                    {formatCurrency(product.sellingPriceCents)}
-                  </Text>
                   {outOfStock ? (
                     <Badge label="Out of stock" variant="danger" size="sm" />
-                  ) : qtyInCart ? (
-                    <View style={styles.qtyBadge}>
-                      <Text style={styles.qtyBadgeText}>{qtyInCart}</Text>
+                  ) : qtyInCart > 0 ? (
+                    <View style={styles.stepperRow}>
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        onPress={() => handleDecrease(product.id)}
+                      >
+                        <Ionicons
+                          name={qtyInCart === 1 ? 'close' : 'remove'}
+                          size={16}
+                          color={qtyInCart === 1 ? COLORS.danger : COLORS.textPrimary}
+                        />
+                      </TouchableOpacity>
+                      <Text style={styles.stepperQty}>{qtyInCart}</Text>
+                      <TouchableOpacity
+                        style={[styles.stepperBtn, styles.stepperBtnAdd, atMax && styles.stepperBtnDisabled]}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        disabled={atMax}
+                        onPress={() => handleIncrease(product)}
+                      >
+                        <Ionicons name="add" size={16} color={atMax ? COLORS.textSecondary : '#FFFFFF'} />
+                      </TouchableOpacity>
                     </View>
-                  ) : null}
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.addBtn}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => handleAddProduct(product)}
+                    >
+                      <Ionicons name="add" size={20} color={COLORS.primary} />
+                    </TouchableOpacity>
+                  )}
                 </View>
-              </TouchableOpacity>
+              </View>
             )
           }}
         />
@@ -1122,25 +1166,48 @@ const styles = StyleSheet.create({
   },
   productRight: {
     alignItems: 'flex-end',
+    justifyContent: 'center',
+    minWidth: 80,
   },
-  productPrice: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  qtyBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: COLORS.primary,
+  addBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
   },
-  qtyBadgeText: {
-    fontSize: 12,
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stepperBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperBtnAdd: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  stepperBtnDisabled: {
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    opacity: 0.5,
+  },
+  stepperQty: {
+    fontSize: 15,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: COLORS.textPrimary,
+    minWidth: 20,
+    textAlign: 'center',
   },
   confirmButton: {
     backgroundColor: COLORS.primary,
