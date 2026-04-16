@@ -9,8 +9,9 @@ export default function SalesLayout() {
         headerShadowVisible: false,
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Sales' }} />
-      <Stack.Screen name="new" options={{ title: 'New Sale' }} />
+      <Stack.Screen name="index" options={{ title: 'Sales', headerShown: false }} />
+      <Stack.Screen name="new" options={{ title: 'New Sale', headerShown: false }} />
+      <Stack.Screen name="[id]" options={{ title: 'Sale Detail', headerShown: false }} />
     </Stack>
   )
 }
