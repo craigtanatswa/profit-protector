@@ -14,7 +14,7 @@ import { z } from 'zod'
 import { Ionicons } from '@expo/vector-icons'
 
 import { Button, Card, Divider, Input, LoadingScreen } from '../../src/components/ui'
-import { KeyboardAvoidingWrapper } from '../../src/components/layout'
+import { BrandLogo, KeyboardAvoidingWrapper } from '../../src/components/layout'
 import { resolveEmailForSignIn } from '../../src/lib/authLogin'
 import { supabase } from '../../src/lib/supabase'
 import { useAuthStore } from '../../src/stores/authStore'
@@ -183,6 +183,7 @@ export default function LoginScreen() {
         <View style={styles.content}>
           {/* Logo area */}
           <View style={styles.logoArea}>
+            <BrandLogo variant="full" width={120} height={120} />
             <Text style={styles.appName}>Profit Protector</Text>
             <Text style={styles.tagline}>Business in your pocket</Text>
           </View>
@@ -296,7 +297,8 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#1D9E75',
+    color: '#0047AB',
+    marginTop: 16,
   },
   tagline: {
     fontSize: 14,
@@ -323,7 +325,7 @@ const styles = StyleSheet.create({
   },
   forgotText: {
     fontSize: 13,
-    color: '#1D9E75',
+    color: '#0047AB',
     fontWeight: '500',
   },
   loginButtonWrapper: {
@@ -340,7 +342,7 @@ const styles = StyleSheet.create({
   },
   signUpLink: {
     fontSize: 14,
-    color: '#1D9E75',
+    color: '#0047AB',
     fontWeight: '600',
   },
 })

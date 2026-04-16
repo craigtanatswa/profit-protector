@@ -5,7 +5,7 @@ export default function SalesLayout() {
     <Stack
       screenOptions={{
         headerStyle: { backgroundColor: '#FFFFFF' },
-        headerTintColor: '#1A202C',
+        headerTintColor: '#0047AB',
         headerShadowVisible: false,
       }}
     >

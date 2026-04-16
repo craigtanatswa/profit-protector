@@ -22,7 +22,8 @@
         "backgroundColor": "#0047AB"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.craigtanatswa.profitprotector"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -32,7 +33,11 @@
       "expo-secure-store"
     ],
     "extra": {
-      "devClearAuthOnLaunch": true
+      "devClearAuthOnLaunch": true,
+      "router": {},
+      "eas": {
+        "projectId": "7d484eb1-5d23-40e3-ad04-681d1285b6c5"
+      }
     }
   }
 }

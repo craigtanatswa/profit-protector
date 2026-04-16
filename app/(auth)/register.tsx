@@ -59,7 +59,7 @@ import { Ionicons } from '@expo/vector-icons'
 import * as Crypto from 'expo-crypto'
 
 import { Button, Input } from '../../src/components/ui'
-import { KeyboardAvoidingWrapper, ScreenHeader } from '../../src/components/layout'
+import { BrandLogo, KeyboardAvoidingWrapper, ScreenHeader } from '../../src/components/layout'
 import { database } from '../../src/database'
 import Business from '../../src/database/models/Business'
 import { supabase } from '../../src/lib/supabase'
@@ -591,6 +591,9 @@ export default function RegisterScreen() {
 
       <KeyboardAvoidingWrapper>
         <View style={styles.content}>
+          <View style={styles.brandMark}>
+            <BrandLogo variant="full" width={72} height={72} />
+          </View>
           {/* Progress */}
           <View style={styles.progressWrapper}>
             <ProgressIndicator currentStep={currentStep} />
@@ -646,6 +649,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 24,
     paddingBottom: 32,
+  },
+  brandMark: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
 
   // Progress indicator

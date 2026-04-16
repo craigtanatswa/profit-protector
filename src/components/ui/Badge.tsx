@@ -11,10 +11,10 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<Variant, { background: string; textColor: string }> = {
-  success: { background: '#E1F5EE', textColor: '#0F6E56' },
+  success: { background: '#E6EEFF', textColor: '#003380' },
   warning: { background: '#FAEEDA', textColor: '#854F0B' },
   danger: { background: '#FCEBEB', textColor: '#A32D2D' },
-  info: { background: '#E6F1FB', textColor: '#185FA5' },
+  info: { background: '#E6EFFC', textColor: '#0047AB' },
   neutral: { background: '#F1EFE8', textColor: '#5F5E5A' },
 }
 

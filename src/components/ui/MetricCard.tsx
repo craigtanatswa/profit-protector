@@ -14,7 +14,7 @@ interface MetricCardProps {
 
 const valueColorByVariant: Record<Variant, string> = {
   default: '#1A202C',
-  success: '#0F6E56',
+  success: '#003380',
   warning: '#854F0B',
   danger: '#A32D2D',
 }

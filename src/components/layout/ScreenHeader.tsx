@@ -33,7 +33,7 @@ export function ScreenHeader({
             style={styles.actionTouch}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name={leftAction.icon} size={24} color="#1A202C" />
+            <Ionicons name={leftAction.icon} size={24} color="#0047AB" />
           </TouchableOpacity>
         )}
       </View>
@@ -65,7 +65,7 @@ export function ScreenHeader({
               style={styles.actionTouch}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons name={rightAction.icon} size={24} color="#1A202C" />
+              <Ionicons name={rightAction.icon} size={24} color="#0047AB" />
             </TouchableOpacity>
           )
         )}
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A202C',
+    color: '#0047AB',
   },
   subtitle: {
     fontSize: 13,

@@ -1,5 +1,8 @@
 import { Tabs } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import { Text, View } from 'react-native'
+
+import { BrandLogo } from '../../src/components/layout'
 
 const ACTIVE_COLOR = '#0047AB'
 const INACTIVE_COLOR = '#718096'
@@ -18,7 +21,7 @@ export default function AppLayout() {
         headerStyle: {
           backgroundColor: '#FFFFFF',
         },
-        headerTintColor: '#1A202C',
+        headerTintColor: '#0047AB',
         headerShadowVisible: false,
       }}
     >
@@ -26,6 +29,12 @@ export default function AppLayout() {
         name="index"
         options={{
           title: 'Dashboard',
+          headerTitle: () => (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <BrandLogo variant="full" width={32} height={32} />
+              <Text style={{ fontSize: 17, fontWeight: '600', color: '#1A202C' }}>Dashboard</Text>
+            </View>
+          ),
           tabBarIcon: ({ focused, color, size }) => (
             <Ionicons
               name={focused ? 'home' : 'home-outline'}
