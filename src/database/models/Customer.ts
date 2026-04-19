@@ -10,4 +10,5 @@ export default class Customer extends Model {
   @field('outstanding_balance_cents') outstandingBalanceCents!: number
   @field('supabase_id') supabaseId!: string | null
   @readonly @date('created_at') createdAt!: Date
+  @date('updated_at') updatedAt!: Date
 }

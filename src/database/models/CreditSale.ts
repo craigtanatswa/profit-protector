@@ -11,4 +11,5 @@ export default class CreditSale extends Model {
   @field('is_settled') isSettled!: boolean
   @field('supabase_id') supabaseId!: string | null
   @readonly @date('created_at') createdAt!: Date
+  @date('updated_at') updatedAt!: Date
 }

@@ -48,6 +48,7 @@ import { useAuthStore } from '../../../src/stores/authStore'
 import { database } from '../../../src/database'
 import { supabase } from '../../../src/lib/supabase'
 import type ProductModel from '../../../src/database/models/Product'
+import type StockMovementModel from '../../../src/database/models/StockMovement'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -96,6 +97,60 @@ const productSchema = z.object({
 })
 
 type ProductFormValues = z.infer<typeof productSchema>
+
+type Db = NonNullable<typeof database>
+
+/** Opening stock on add-product is logged as a purchase so history matches on-hand qty. */
+async function createOpeningBalancePurchase(
+  db: Db,
+  params: {
+    businessId: string
+    productId: string
+    productName: string
+    qty: number
+    createdAtMs: number
+  },
+): Promise<StockMovementModel> {
+  return db.get<StockMovementModel>('stock_movements').create((m) => {
+    m.businessId = params.businessId
+    m.productId = params.productId
+    m.productNameSnapshot = params.productName
+    m.action = 'purchase'
+    m.qtyChange = params.qty
+    m.reason = 'opening'
+    m.supplier = 'Opening balance'
+    m._raw.created_at = params.createdAtMs
+  })
+}
+
+function fireOpeningMovementSupabaseSync(
+  movement: StockMovementModel,
+  businessId: string,
+  productId: string,
+  productName: string,
+  qty: number,
+) {
+  const createdAt =
+    movement.createdAt instanceof Date
+      ? movement.createdAt.toISOString()
+      : new Date().toISOString()
+  supabase
+    .from('stock_movements')
+    .insert({
+      id: movement.id,
+      business_id: businessId,
+      product_id: productId,
+      product_name_snapshot: productName,
+      action: 'purchase',
+      qty_change: qty,
+      reason: 'opening',
+      supplier: 'Opening balance',
+      created_at: createdAt,
+    })
+    .then(({ error }) => {
+      if (error) console.warn('Stock movement sync failed:', error.message)
+    })
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -263,6 +318,7 @@ export default function AddProductScreen() {
 
       if (isEditMode && productId) {
         const record = await db.get<ProductModel>('products').find(productId)
+        let backfillOpening: StockMovementModel | null = null
         await db.write(async () => {
           await record.update((product) => {
             product.name = values.name.trim()
@@ -274,6 +330,24 @@ export default function AddProductScreen() {
             product.lowStockThreshold = lowStockThreshold
             product.updatedAt = new Date()
           })
+
+          const existingMovements = await db
+            .get<StockMovementModel>('stock_movements')
+            .query(Q.where('product_id', productId))
+            .fetch()
+          if (existingMovements.length === 0 && stockQty > 0) {
+            const createdAtMs =
+              record.createdAt instanceof Date
+                ? record.createdAt.getTime()
+                : Date.now()
+            backfillOpening = await createOpeningBalancePurchase(db, {
+              businessId: business.id,
+              productId: record.id,
+              productName: values.name.trim(),
+              qty: stockQty,
+              createdAtMs,
+            })
+          }
         })
         supabase
           .from('products')
@@ -291,25 +365,49 @@ export default function AddProductScreen() {
           .then(({ error }) => {
             if (error) console.warn('Supabase sync failed:', error.message)
           })
+        if (backfillOpening != null) {
+          fireOpeningMovementSupabaseSync(
+            backfillOpening,
+            business.id,
+            productId,
+            values.name.trim(),
+            stockQty,
+          )
+        }
         Alert.alert(
           'Changes Saved',
           `${values.name.trim()} has been updated.`,
           [{ text: 'OK', onPress: () => router.back() }],
         )
       } else {
+        let openingMovement: StockMovementModel | null = null
         const newRecord = await db.write(async () => {
-          return db.get<ProductModel>('products').create((product) => {
-            product.businessId = business.id
-            product.name = values.name.trim()
-            product.category = values.category?.trim() ?? ''
-            product.unit = finalUnit
-            product.costPriceCents = costPriceCents
-            product.sellingPriceCents = sellingPriceCents
-            product.stockQty = stockQty
-            product.lowStockThreshold = lowStockThreshold
-            product.isActive = true
-            product.updatedAt = new Date()
+          const product = await db.get<ProductModel>('products').create((p) => {
+            p.businessId = business.id
+            p.name = values.name.trim()
+            p.category = values.category?.trim() ?? ''
+            p.unit = finalUnit
+            p.costPriceCents = costPriceCents
+            p.sellingPriceCents = sellingPriceCents
+            p.stockQty = stockQty
+            p.lowStockThreshold = lowStockThreshold
+            p.isActive = true
+            p.updatedAt = new Date()
           })
+          if (stockQty > 0) {
+            const createdAtMs =
+              product.createdAt instanceof Date
+                ? product.createdAt.getTime()
+                : Date.now()
+            openingMovement = await createOpeningBalancePurchase(db, {
+              businessId: business.id,
+              productId: product.id,
+              productName: values.name.trim(),
+              qty: stockQty,
+              createdAtMs,
+            })
+          }
+          return product
         })
         supabase
           .from('products')
@@ -330,6 +428,15 @@ export default function AddProductScreen() {
           .then(({ error }) => {
             if (error) console.warn('Supabase sync failed:', error.message)
           })
+        if (openingMovement != null) {
+          fireOpeningMovementSupabaseSync(
+            openingMovement,
+            business.id,
+            newRecord.id,
+            values.name.trim(),
+            stockQty,
+          )
+        }
         Alert.alert(
           'Product Added',
           `${values.name.trim()} has been added to your inventory.`,

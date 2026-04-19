@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native'
 
 import { BrandLogo } from '../../src/components/layout'
+import { SyncIndicator } from '../../src/components/ui'
 
 export default function DashboardScreen() {
   // TODO: Replace with real content
@@ -9,6 +10,7 @@ export default function DashboardScreen() {
       <BrandLogo variant="full" width={88} height={88} style={styles.logo} />
       <Text style={styles.title}>Dashboard</Text>
       <Text style={styles.subtitle}>Coming soon</Text>
+      <SyncIndicator style={styles.syncIndicator} />
     </View>
   )
 }
@@ -32,5 +34,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#718096',
     marginTop: 8,
+  },
+  syncIndicator: {
+    marginTop: 20,
   },
 })

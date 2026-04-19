@@ -3,11 +3,14 @@ import { Ionicons } from '@expo/vector-icons'
 import { Text, View } from 'react-native'
 
 import { BrandLogo } from '../../src/components/layout'
+import { useAutoSync } from '../../src/hooks/useAutoSync'
 
 const ACTIVE_COLOR = '#0047AB'
 const INACTIVE_COLOR = '#718096'
 
 export default function AppLayout() {
+  useAutoSync()
+
   return (
     <Tabs
       screenOptions={{

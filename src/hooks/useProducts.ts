@@ -21,6 +21,12 @@ function mapProductRecord(record: ProductModel): Product {
   }
 }
 
+export async function getProductById(id: string): Promise<Product> {
+  if (!database) throw new Error('Database not available')
+  const record = await database.get<ProductModel>('products').find(id)
+  return mapProductRecord(record)
+}
+
 export function useProducts(businessId: string) {
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)

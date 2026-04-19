@@ -11,5 +11,18 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      toVersion: 3,
+      steps: [
+        addColumns({
+          table: 'customers',
+          columns: [{ name: 'updated_at', type: 'number' }],
+        }),
+        addColumns({
+          table: 'credit_sales',
+          columns: [{ name: 'updated_at', type: 'number' }],
+        }),
+      ],
+    },
   ],
 })

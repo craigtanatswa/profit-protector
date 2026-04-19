@@ -147,6 +147,14 @@ export default function InventoryScreen() {
     router.push('/inventory/add' as never)
   }, [])
 
+  const navigateToPurchase = useCallback(() => {
+    router.push('/inventory/purchase' as never)
+  }, [])
+
+  const navigateToAdjust = useCallback(() => {
+    router.push('/inventory/adjust' as never)
+  }, [])
+
   const navigateToDetail = useCallback((id: string) => {
     router.push(`/inventory/${id}` as never)
   }, [])
@@ -203,6 +211,38 @@ export default function InventoryScreen() {
           onPress: () => setShowSortModal(true),
         }}
       />
+
+      {/* Action row: sort + receive stock + adjust */}
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={styles.actionRowSort}
+          onPress={() => setShowSortModal(true)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="swap-vertical-outline" size={18} color="#5A6A8A" />
+          <Text style={styles.actionRowSortText}>Sort</Text>
+        </TouchableOpacity>
+
+        <View style={styles.actionRowButtons}>
+          <TouchableOpacity
+            style={styles.receiveStockBtn}
+            onPress={navigateToPurchase}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="arrow-down-circle-outline" size={16} color="#0047AB" style={{ marginRight: 6 }} />
+            <Text style={styles.receiveStockText}>Receive Stock</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.adjustBtn}
+            onPress={navigateToAdjust}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="swap-vertical-outline" size={16} color="#5A6A8A" style={{ marginRight: 6 }} />
+            <Text style={styles.adjustText}>Adjust</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Search bar */}
       <View style={styles.searchWrapper}>
@@ -329,6 +369,63 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F4F6FB',
+  },
+
+  // Action row
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#DDE3F0',
+    backgroundColor: '#FFFFFF',
+  },
+  actionRowSort: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  actionRowSortText: {
+    fontSize: 13,
+    color: '#5A6A8A',
+    fontWeight: '500',
+  },
+  actionRowButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  receiveStockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E6EEFF',
+    borderWidth: 1,
+    borderColor: '#0047AB',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  receiveStockText: {
+    fontSize: 13,
+    color: '#0047AB',
+    fontWeight: '600',
+  },
+  adjustBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DDE3F0',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  adjustText: {
+    fontSize: 13,
+    color: '#5A6A8A',
+    fontWeight: '600',
   },
 
   // Search

@@ -44,7 +44,7 @@ export default function LoginScreen() {
   const { setUser, setBusiness } = useAuthStore()
 
   const [showPassword, setShowPassword] = useState(false)
-  const [isRestoring, setIsRestoring] = useState(false)
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const {
@@ -146,7 +146,8 @@ export default function LoginScreen() {
 
           if (!alreadyLocal) {
             setLoading(false)
-            setIsRestoring(true)
+            setRestoreMessage('Restoring your data...')
+
             await database.write(async () => {
               await businessCollection.create((record) => {
                 record.name = biz.name
@@ -158,11 +159,110 @@ export default function LoginScreen() {
                 record.supabaseId = user.id
               })
             })
-            setIsRestoring(false)
+
+            // Step 1 — Restore products
+            setRestoreMessage('Restoring your products...')
+            try {
+              const { data: products } = await supabase
+                .from('products')
+                .select('*')
+                .eq('business_id', biz.id)
+              if (products?.length) {
+                await database.write(async () => {
+                  for (const p of products) {
+                    await database.get('products').create((record) => {
+                      record._raw.id = p.id
+                      record.businessId = p.business_id
+                      record.name = p.name
+                      record.category = p.category ?? ''
+                      record.unit = p.unit
+                      record.costPriceCents = p.cost_price_cents
+                      record.sellingPriceCents = p.selling_price_cents
+                      record.stockQty = p.stock_qty
+                      record.lowStockThreshold = p.low_stock_threshold
+                      record.isActive = p.is_active
+                      record.createdAt = new Date(p.created_at).getTime()
+                      record.updatedAt = new Date(p.updated_at).getTime()
+                    })
+                  }
+                })
+              }
+            } catch (err) {
+              console.warn('[login] product restore error:', err)
+            }
+
+            // Step 2 — Restore customers
+            setRestoreMessage('Restoring your customers...')
+            try {
+              const { data: customers } = await supabase
+                .from('customers')
+                .select('*')
+                .eq('business_id', biz.id)
+              if (customers?.length) {
+                await database.write(async () => {
+                  for (const c of customers) {
+                    await database.get('customers').create((record) => {
+                      record._raw.id = c.id
+                      record.businessId = c.business_id
+                      record.name = c.name
+                      record.phone = c.phone ?? ''
+                      record.outstandingBalanceCents = c.outstanding_balance_cents
+                      record.createdAt = new Date(c.created_at).getTime()
+                    })
+                  }
+                })
+              }
+            } catch (err) {
+              console.warn('[login] customer restore error:', err)
+            }
+
+            // Step 3 — Restore sales and sale_items
+            setRestoreMessage('Restoring your sales history...')
+            try {
+              const { data: sales } = await supabase
+                .from('sales')
+                .select('*, sale_items(*)')
+                .eq('business_id', biz.id)
+                .order('created_at', { ascending: true })
+              if (sales?.length) {
+                await database.write(async () => {
+                  for (const s of sales) {
+                    await database.get('sales').create((record) => {
+                      record._raw.id = s.id
+                      record.businessId = s.business_id
+                      record.totalCents = s.total_cents
+                      record.discountCents = s.discount_cents
+                      record.paymentMethod = s.payment_method
+                      record.receiptNumber = s.receipt_number
+                      record.note = s.note ?? ''
+                      record.createdAt = new Date(s.created_at).getTime()
+                    })
+                    for (const item of s.sale_items ?? []) {
+                      await database.get('sale_items').create((record) => {
+                        record._raw.id = item.id
+                        record.saleId = s.id
+                        record.productId = item.product_id
+                        record.productNameSnapshot = item.product_name_snapshot
+                        record.qty = item.qty
+                        record.unitPriceCents = item.unit_price_cents
+                        record.costPriceCents = item.cost_price_cents
+                      })
+                    }
+                  }
+                })
+              }
+            } catch (err) {
+              console.warn('[login] sales restore error:', err)
+            }
+
+            setRestoreMessage('Almost done...')
           }
         } catch (dbErr) {
           console.warn('[login] WatermelonDB restore error:', dbErr)
-          setIsRestoring(false)
+          setRestoreMessage(null)
+          Alert.alert('Restore Failed', 'Could not restore your data. Please try again.')
+          setLoading(false)
+          return
         }
       }
 
@@ -173,8 +273,8 @@ export default function LoginScreen() {
     }
   }
 
-  if (isRestoring) {
-    return <LoadingScreen message="Restoring your data..." />
+  if (restoreMessage) {
+    return <LoadingScreen message={restoreMessage} />
   }
 
   return (
