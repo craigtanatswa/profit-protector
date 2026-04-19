@@ -1,4 +1,4 @@
-import { addColumns, schemaMigrations } from '@nozbe/watermelondb/Schema/migrations'
+import { addColumns, createTable, schemaMigrations } from '@nozbe/watermelondb/Schema/migrations'
 
 export const migrations = schemaMigrations({
   migrations: [
@@ -21,6 +21,31 @@ export const migrations = schemaMigrations({
         addColumns({
           table: 'credit_sales',
           columns: [{ name: 'updated_at', type: 'number' }],
+        }),
+      ],
+    },
+    {
+      toVersion: 4,
+      steps: [
+        addColumns({
+          table: 'customers',
+          columns: [{ name: 'is_active', type: 'boolean', isOptional: true }],
+        }),
+      ],
+    },
+    {
+      toVersion: 5,
+      steps: [
+        createTable({
+          name: 'payment_records',
+          columns: [
+            { name: 'customer_id', type: 'string', isIndexed: true },
+            { name: 'amount_cents', type: 'number' },
+            { name: 'payment_method', type: 'string' },
+            { name: 'notes', type: 'string', isOptional: true },
+            { name: 'supabase_id', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+          ],
         }),
       ],
     },

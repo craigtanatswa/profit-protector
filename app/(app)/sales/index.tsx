@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import {
   Animated,
   RefreshControl,
@@ -21,6 +21,7 @@ import { FilterPanel } from '../../../src/components/sales/FilterPanel'
 import type { FilterState } from '../../../src/components/sales/FilterPanel'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { useSalesWithItems } from '../../../src/hooks/useSales'
+import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { formatCurrency } from '../../../src/lib/formatters'
 import type { SaleWithItems } from '../../../src/hooks/useSales'
 
@@ -101,6 +102,12 @@ export default function SalesHistoryScreen() {
   const router = useRouter()
   const business = useAuthStore((s) => s.business)
   const { salesWithItems, isLoading, refetch } = useSalesWithItems(business?.id ?? '')
+
+  useQuietOfflineRefreshOnFocus(
+    useCallback(() => {
+      refetch()
+    }, [refetch]),
+  )
 
   const [searchText, setSearchText] = useState('')
   const [showFilterPanel, setShowFilterPanel] = useState(false)

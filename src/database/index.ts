@@ -11,6 +11,7 @@ import SaleItem from './models/SaleItem'
 import StockMovement from './models/StockMovement'
 import Customer from './models/Customer'
 import CreditSale from './models/CreditSale'
+import PaymentRecord from './models/PaymentRecord'
 
 const modelClasses = [
   Business,
@@ -20,6 +21,7 @@ const modelClasses = [
   StockMovement,
   Customer,
   CreditSale,
+  PaymentRecord,
 ]
 
 /**

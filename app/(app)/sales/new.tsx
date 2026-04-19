@@ -110,8 +110,8 @@ import { useCartStore } from '../../../src/stores/cartStore'
 import { useProducts } from '../../../src/hooks/useProducts'
 import { useSales } from '../../../src/hooks/useSales'
 import { useCustomers } from '../../../src/hooks/useCustomers'
+import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { database } from '../../../src/database'
-import { supabase } from '../../../src/lib/supabase'
 import { formatCurrency, formatReceiptNumber } from '../../../src/lib/formatters'
 import type { Product, Customer } from '../../../src/types'
 import type ProductModel from '../../../src/database/models/Product'
@@ -173,9 +173,18 @@ export default function NewSaleScreen() {
   )
   const totalCents = subtotalCents - discountCents
 
-  const { products } = useProducts(businessId)
-  const { totalSalesCount } = useSales(businessId)
-  const { customers, createCustomer } = useCustomers(businessId)
+  const { products, refetch: refetchProducts } = useProducts(businessId)
+  const { totalSalesCount, refetch: refetchSales } = useSales(businessId)
+  const { customers, createCustomer, refreshLocal: refreshCustomersLocal } =
+    useCustomers(businessId)
+
+  useQuietOfflineRefreshOnFocus(
+    useCallback(() => {
+      refetchProducts()
+      refetchSales()
+      void refreshCustomersLocal()
+    }, [refetchProducts, refetchSales, refreshCustomersLocal]),
+  )
 
   const [searchText, setSearchText] = useState('')
   const [showQtyModal, setShowQtyModal] = useState(false)
@@ -348,23 +357,17 @@ export default function NewSaleScreen() {
             .find(customerId)
           await customerRecord.update((c) => {
             c.outstandingBalanceCents = c.outstandingBalanceCents + totalCents
+            c.updatedAt = new Date(Date.now())
           })
         }
 
         return newSale.id
       })
 
-      // Fire-and-forget Supabase sync
-      syncToSupabase(
-        newSaleId,
-        business.id,
-        totalCents,
-        discountCents,
-        paymentMethod,
-        formatReceiptNumber(totalSalesCount + 1),
-        items,
-        customerId,
-      ).catch((err) => console.warn('[sync] Sale sync failed:', err))
+      // Fire-and-forget background sync — uses WatermelonDB record IDs so
+      // there is no ID mismatch between local and remote records.
+      const { triggerSync } = useAuthStore.getState()
+      triggerSync(business.id).catch(() => {})
 
       clearCart()
       setDiscountInput('')
@@ -1018,72 +1021,6 @@ function CustomerPickerModal({ customers, onSelect, onCreate, onClose }: Custome
   )
 }
 
-// ---------------------------------------------------------------------------
-// Supabase sync (fire-and-forget)
-// ---------------------------------------------------------------------------
-
-async function syncToSupabase(
-  saleId: string,
-  businessId: string,
-  totalCents: number,
-  discountCents: number,
-  paymentMethod: string,
-  receiptNumber: string,
-  items: { productId: string; productName: string; qty: number; unitPriceCents: number; costPriceCents: number }[],
-  customerId: string | null,
-) {
-  try {
-    await supabase.from('sales').insert({
-      id: saleId,
-      business_id: businessId,
-      total_cents: totalCents,
-      discount_cents: discountCents,
-      payment_method: paymentMethod,
-      receipt_number: receiptNumber,
-      created_at: new Date().toISOString(),
-    })
-
-    const saleItemRows = items.map((item) => ({
-      id: `${saleId}_${item.productId}`,
-      sale_id: saleId,
-      product_id: item.productId,
-      product_name_snapshot: item.productName,
-      qty: item.qty,
-      unit_price_cents: item.unitPriceCents,
-      cost_price_cents: item.costPriceCents,
-    }))
-    if (saleItemRows.length > 0) {
-      await supabase.from('sale_items').insert(saleItemRows)
-    }
-
-    const movementRows = items.map((item) => ({
-      id: `${saleId}_mv_${item.productId}`,
-      business_id: businessId,
-      product_id: item.productId,
-      product_name_snapshot: item.productName,
-      action: 'sale',
-      qty_change: -item.qty,
-      created_at: new Date().toISOString(),
-    }))
-    if (movementRows.length > 0) {
-      await supabase.from('stock_movements').insert(movementRows)
-    }
-
-    if (paymentMethod === 'credit' && customerId) {
-      await supabase.from('credit_sales').insert({
-        id: `${saleId}_cs`,
-        sale_id: saleId,
-        customer_id: customerId,
-        amount_cents: totalCents,
-        amount_paid_cents: 0,
-        is_settled: false,
-        created_at: new Date().toISOString(),
-      })
-    }
-  } catch (err) {
-    console.warn('[sync] Supabase sale sync error:', err)
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Styles

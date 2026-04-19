@@ -46,7 +46,6 @@ import { Button, Card, Input, LoadingScreen } from '../../../src/components/ui'
 import { KeyboardAvoidingWrapper, ScreenHeader } from '../../../src/components/layout'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { database } from '../../../src/database'
-import { supabase } from '../../../src/lib/supabase'
 import type ProductModel from '../../../src/database/models/Product'
 import type StockMovementModel from '../../../src/database/models/StockMovement'
 

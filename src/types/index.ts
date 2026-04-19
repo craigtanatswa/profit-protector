@@ -63,6 +63,7 @@ export interface Customer {
   name: string
   phone?: string
   outstandingBalanceCents: number
+  isActive?: boolean
   createdAt: number
 }
 
@@ -73,6 +74,15 @@ export interface CreditSale {
   amountCents: number
   amountPaidCents: number
   isSettled: boolean
+  createdAt: number
+}
+
+export interface PaymentRecord {
+  id: string
+  customerId: string
+  amountCents: number
+  paymentMethod: string
+  notes?: string
   createdAt: number
 }
 

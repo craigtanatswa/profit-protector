@@ -24,6 +24,7 @@ import { ProductCard } from '../../../src/components/products/ProductCard'
 import { SortModal, type SortOption } from '../../../src/components/products/SortModal'
 import { EmptyState } from '../../../src/components/ui'
 import { useProducts } from '../../../src/hooks/useProducts'
+import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { formatCurrency } from '../../../src/lib/formatters'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
@@ -45,6 +46,12 @@ export default function InventoryScreen() {
   const businessId = business?.id ?? ''
 
   const { products, isLoading, refetch } = useProducts(businessId)
+
+  useQuietOfflineRefreshOnFocus(
+    useCallback(() => {
+      refetch()
+    }, [refetch]),
+  )
 
   const [searchText, setSearchText] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('All')

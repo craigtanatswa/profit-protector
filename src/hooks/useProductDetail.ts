@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Q } from '@nozbe/watermelondb'
 import { database } from '../database'
 import type { Product, StockMovement } from '../types'
@@ -42,11 +42,13 @@ export function useProductDetail(productId: string) {
   const [productLoaded, setProductLoaded] = useState(false)
   const [movementsLoaded, setMovementsLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const refreshFromLocalRef = useRef<() => Promise<void>>(async () => {})
 
   const isLoading = !productLoaded || !movementsLoaded
 
   useEffect(() => {
     if (!productId || !database) {
+      refreshFromLocalRef.current = async () => {}
       setProduct(null)
       setError('Product not found')
       setProductLoaded(true)
@@ -95,11 +97,35 @@ export function useProductDetail(productId: string) {
         },
       })
 
+    refreshFromLocalRef.current = async () => {
+      if (!database || !productId) return
+      try {
+        const p = await database.get<ProductModel>('products').find(productId)
+        setProduct(mapProductRecord(p))
+        setError(null)
+        setProductLoaded(true)
+        const m = await database
+          .get<StockMovementModel>('stock_movements')
+          .query(Q.where('product_id', productId), Q.sortBy('created_at', Q.desc))
+          .fetch()
+        setMovements(m.map(mapMovementRecord))
+        setMovementsLoaded(true)
+      } catch {
+        // keep last snapshot
+      }
+    }
+
     return () => {
       productSub.unsubscribe()
       movementsSub.unsubscribe()
     }
   }, [productId])
 
-  return { product, movements, isLoading, error }
+  return {
+    product,
+    movements,
+    isLoading,
+    error,
+    refreshFromLocal: () => refreshFromLocalRef.current(),
+  }
 }

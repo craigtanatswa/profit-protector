@@ -8,6 +8,7 @@ export default class Customer extends Model {
   @field('name') name!: string
   @field('phone') phone!: string | null
   @field('outstanding_balance_cents') outstandingBalanceCents!: number
+  @field('is_active') isActive!: boolean | null
   @field('supabase_id') supabaseId!: string | null
   @readonly @date('created_at') createdAt!: Date
   @date('updated_at') updatedAt!: Date

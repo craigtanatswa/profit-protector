@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Animated,
   ScrollView,
@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { ScreenHeader } from '../../../src/components/layout'
 import { Button, Card, EmptyState } from '../../../src/components/ui'
 import { useProductDetail } from '../../../src/hooks/useProductDetail'
+import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { formatCurrency } from '../../../src/lib/formatters'
 import type { StockMovement } from '../../../src/types'
 
@@ -140,7 +141,15 @@ export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const productId = Array.isArray(id) ? id[0] : (id ?? '')
 
-  const { product, movements, isLoading, error } = useProductDetail(productId)
+  const { product, movements, isLoading, error, refreshFromLocal } =
+    useProductDetail(productId)
+
+  useQuietOfflineRefreshOnFocus(
+    useCallback(() => {
+      void refreshFromLocal()
+    }, [refreshFromLocal]),
+  )
+
   const [movementFilter, setMovementFilter] = useState<MovementFilter>('All')
 
   // Pulse animation for skeleton

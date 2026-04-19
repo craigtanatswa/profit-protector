@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Q } from '@nozbe/watermelondb'
 import { database } from '../database'
 import type { Product } from '../types'
@@ -32,15 +32,19 @@ export function useProducts(businessId: string) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshTick, setRefreshTick] = useState(0)
+  const prevBusinessIdRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
     if (!businessId || !database) {
       setProducts([])
       setIsLoading(false)
+      prevBusinessIdRef.current = undefined
       return
     }
 
-    setIsLoading(true)
+    const businessChanged = prevBusinessIdRef.current !== businessId
+    prevBusinessIdRef.current = businessId
+    if (businessChanged) setIsLoading(true)
 
     const subscription = database
       .get<ProductModel>('products')

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Q } from '@nozbe/watermelondb'
 import { database } from '../database'
 import type { Sale, SaleItem } from '../types'
@@ -39,15 +39,20 @@ export function useSales(businessId: string) {
   const [sales, setSales] = useState<Sale[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [totalSalesCount, setTotalSalesCount] = useState(0)
+  const [refreshTick, setRefreshTick] = useState(0)
+  const prevBusinessIdRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
     if (!businessId || !database) {
       setSales([])
       setIsLoading(false)
+      prevBusinessIdRef.current = undefined
       return
     }
 
-    setIsLoading(true)
+    const businessChanged = prevBusinessIdRef.current !== businessId
+    prevBusinessIdRef.current = businessId
+    if (businessChanged) setIsLoading(true)
 
     const subscription = database
       .get<SaleModel>('sales')
@@ -68,9 +73,11 @@ export function useSales(businessId: string) {
       })
 
     return () => subscription.unsubscribe()
-  }, [businessId])
+  }, [businessId, refreshTick])
 
-  return { sales, isLoading, totalSalesCount }
+  const refetch = useCallback(() => setRefreshTick((t) => t + 1), [])
+
+  return { sales, isLoading, totalSalesCount, refetch }
 }
 
 export function useSalesWithItems(businessId: string) {
@@ -78,15 +85,19 @@ export function useSalesWithItems(businessId: string) {
   const [isLoading, setIsLoading] = useState(true)
   const [totalCount, setTotalCount] = useState(0)
   const [refreshToken, setRefreshToken] = useState(0)
+  const prevBusinessIdRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
     if (!businessId || !database) {
       setSalesWithItems([])
       setIsLoading(false)
+      prevBusinessIdRef.current = undefined
       return
     }
 
-    setIsLoading(true)
+    const businessChanged = prevBusinessIdRef.current !== businessId
+    prevBusinessIdRef.current = businessId
+    if (businessChanged) setIsLoading(true)
 
     const subscription = database
       .get<SaleModel>('sales')
@@ -98,6 +109,7 @@ export function useSalesWithItems(businessId: string) {
       .subscribe({
         next: async (salesData) => {
           try {
+            if (!database) return
             const mapped = salesData.map(mapSaleRecord)
 
             if (mapped.length === 0) {

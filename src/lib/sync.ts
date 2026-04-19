@@ -8,6 +8,7 @@ import type Sale from '../database/models/Sale'
 import type SaleItem from '../database/models/SaleItem'
 import type StockMovement from '../database/models/StockMovement'
 import type CreditSale from '../database/models/CreditSale'
+import type PaymentRecord from '../database/models/PaymentRecord'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -697,6 +698,123 @@ async function syncCreditSales(
 }
 
 // ---------------------------------------------------------------------------
+// Payment Records sync (immutable — created once, never mutated)
+// Scoped via customer_id → business_id, same join pattern as credit_sales.
+// ---------------------------------------------------------------------------
+
+async function syncPaymentRecords(
+  businessId: string,
+  lastSyncedAt: number,
+): Promise<TableResult> {
+  if (!database) return { pushed: 0, pulled: 0 }
+
+  let pushed = 0
+  let pulled = 0
+
+  try {
+    // Resolve which customer IDs belong to this business
+    const businessCustomers = await database
+      .get<import('../database/models/Customer').default>('customers')
+      .query(Q.where('business_id', businessId))
+      .fetch()
+
+    const customerIds = businessCustomers.map((c) => c.id)
+
+    if (customerIds.length === 0) {
+      return { pushed: 0, pulled: 0 }
+    }
+
+    // ---- PUSH ----
+    // Payment records are immutable so we only need to push records that
+    // haven't been synced yet (supabase_id is null).
+    const localRecords = await database
+      .get<PaymentRecord>('payment_records')
+      .query(
+        Q.where('customer_id', Q.oneOf(customerIds)),
+        Q.where('supabase_id', Q.eq(null)),
+      )
+      .fetch()
+
+    if (localRecords.length > 0) {
+      const payload = localRecords.map((r) => ({
+        id: r.id,
+        customer_id: r.customerId,
+        amount_cents: r.amountCents,
+        payment_method: r.paymentMethod,
+        notes: r.notes,
+        created_at: toISO(r._raw.created_at as number),
+      }))
+
+      const { error: pushError } = await supabase
+        .from('payment_records')
+        .upsert(payload, { onConflict: 'id' })
+
+      if (!pushError) {
+        pushed = localRecords.length
+        await database.write(async () => {
+          await database!.batch(
+            ...localRecords.map((r) =>
+              r.prepareUpdate((rec) => {
+                rec.supabaseId = r.id
+              }),
+            ),
+          )
+        })
+      }
+    }
+
+    // ---- PULL ----
+    // Pull any payment records created on another device since last sync.
+    const { data: remoteRecords, error: pullError } = await supabase
+      .from('payment_records')
+      .select('*')
+      .in('customer_id', customerIds)
+      .gt('created_at', pullThreshold(lastSyncedAt))
+      .order('created_at', { ascending: true })
+
+    if (!pullError && remoteRecords && remoteRecords.length > 0) {
+      const ops: ReturnType<PaymentRecord['prepareUpdate']>[] = []
+
+      for (const remote of remoteRecords) {
+        try {
+          await database.get<PaymentRecord>('payment_records').find(remote.id)
+          // Already exists locally — immutable, nothing to update
+        } catch {
+          ops.push(
+            database
+              .get<PaymentRecord>('payment_records')
+              .prepareCreate((r) => {
+                r._raw.id = remote.id
+                r.customerId = remote.customer_id
+                r.amountCents = remote.amount_cents
+                r.paymentMethod = remote.payment_method
+                r.notes = remote.notes ?? null
+                r.supabaseId = remote.id
+                r._raw.created_at = new Date(remote.created_at).getTime()
+              }) as ReturnType<PaymentRecord['prepareUpdate']>,
+          )
+        }
+      }
+
+      if (ops.length > 0) {
+        await database.write(async () => {
+          await database!.batch(...ops)
+        })
+        pulled = ops.length
+      }
+    }
+  } catch (e) {
+    return {
+      pushed,
+      pulled,
+      error: `payment_records: ${e instanceof Error ? e.message : String(e)}`,
+    }
+  }
+
+  return { pushed, pulled }
+}
+
+// ---------------------------------------------------------------------------
 // Main sync orchestrator
 // ---------------------------------------------------------------------------
 
@@ -722,6 +840,7 @@ export async function syncAll(businessId: string): Promise<SyncResult> {
     syncSales(businessId, lastSyncedAt),
     syncStockMovements(businessId, lastSyncedAt),
     syncCreditSales(businessId, lastSyncedAt),
+    syncPaymentRecords(businessId, lastSyncedAt),
   ])
 
   for (const result of results) {
@@ -739,8 +858,8 @@ export async function syncAll(businessId: string): Promise<SyncResult> {
   const now = Date.now()
   await setLastSyncedAt(businessId, now)
 
-  // Status is 'error' only if ALL tables failed (errors === 5 means all failed)
-  const allFailed = errors.length === 5
+  // Status is 'error' only if ALL tables failed (errors === 6 means all failed)
+  const allFailed = errors.length === 6
   const status: SyncStatus = allFailed ? 'error' : 'success'
 
   return {

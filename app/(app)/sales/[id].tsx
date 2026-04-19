@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { Q } from '@nozbe/watermelondb'
 import { Ionicons } from '@expo/vector-icons'
 
@@ -33,57 +34,64 @@ export default function SaleDetailScreen() {
   const [isSharing, setIsSharing] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!database || !id) {
       setNotFound(true)
       setIsLoading(false)
       return
     }
 
-    const load = async () => {
-      try {
-        const saleRecord = await database!.get<SaleModel>('sales').find(id)
-        setSale(mapSaleRecord(saleRecord))
+    try {
+      const saleRecord = await database!.get<SaleModel>('sales').find(id)
+      setSale(mapSaleRecord(saleRecord))
 
-        const itemRecords = await database!
-          .get<SaleItemModel>('sale_items')
+      const itemRecords = await database!
+        .get<SaleItemModel>('sale_items')
+        .query(Q.where('sale_id', id))
+        .fetch()
+      setSaleItems(itemRecords.map(mapSaleItemRecord))
+
+      if (saleRecord.paymentMethod === 'credit') {
+        const creditRecords = await database!
+          .get<CreditSaleModel>('credit_sales')
           .query(Q.where('sale_id', id))
           .fetch()
-        setSaleItems(itemRecords.map(mapSaleItemRecord))
 
-        if (saleRecord.paymentMethod === 'credit') {
-          const creditRecords = await database!
-            .get<CreditSaleModel>('credit_sales')
-            .query(Q.where('sale_id', id))
-            .fetch()
+        if (creditRecords.length > 0) {
+          const customerRecord = await database!
+            .get<CustomerModel>('customers')
+            .find(creditRecords[0].customerId)
 
-          if (creditRecords.length > 0) {
-            const customerRecord = await database!
-              .get<CustomerModel>('customers')
-              .find(creditRecords[0].customerId)
-
-            setCustomer({
-              id: customerRecord.id,
-              businessId: customerRecord.businessId,
-              name: customerRecord.name,
-              phone: customerRecord.phone ?? undefined,
-              outstandingBalanceCents: customerRecord.outstandingBalanceCents,
-              createdAt:
-                customerRecord.createdAt instanceof Date
-                  ? customerRecord.createdAt.getTime()
-                  : Date.now(),
-            })
-          }
+          setCustomer({
+            id: customerRecord.id,
+            businessId: customerRecord.businessId,
+            name: customerRecord.name,
+            phone: customerRecord.phone ?? undefined,
+            outstandingBalanceCents: customerRecord.outstandingBalanceCents,
+            createdAt:
+              customerRecord.createdAt instanceof Date
+                ? customerRecord.createdAt.getTime()
+                : Date.now(),
+          })
         }
-      } catch {
-        setNotFound(true)
-      } finally {
-        setIsLoading(false)
       }
+    } catch {
+      setNotFound(true)
+    } finally {
+      setIsLoading(false)
     }
-
-    load()
   }, [id])
+
+  useEffect(() => {
+    setIsLoading(true)
+    void load()
+  }, [load])
+
+  useQuietOfflineRefreshOnFocus(
+    useCallback(() => {
+      void load()
+    }, [load]),
+  )
 
   const businessForReceipt: Business = {
     id: authBusiness?.id ?? '',
