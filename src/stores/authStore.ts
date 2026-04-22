@@ -11,6 +11,8 @@ interface BusinessInfo {
   phone: string
   businessType: string
   currency: string
+  /** ZiG per 1 USD — used when currency is ZiG or Both (amounts in DB stay USD cents). */
+  zigRatePerUsd: number
   /** Normalized login username when set; otherwise sign-in uses phone. */
   loginUsername?: string | null
 }

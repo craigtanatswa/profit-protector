@@ -9,7 +9,7 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 
 import { Badge } from '../ui'
-import { formatCurrency } from '../../lib/formatters'
+import { useMoneyFormat } from '../../hooks/useMoneyFormat'
 import type { Customer } from '../../types'
 
 // ---------------------------------------------------------------------------
@@ -70,6 +70,7 @@ interface CustomerCardProps {
 }
 
 export function CustomerCard({ customer, onPress }: CustomerCardProps) {
+  const { formatMoney } = useMoneyFormat()
   const { bg, text } = getAvatarColors(customer.name)
   const initials = customer.name.slice(0, 2).toUpperCase()
   const isOwing = customer.outstandingBalanceCents > 0
@@ -106,7 +107,7 @@ export function CustomerCard({ customer, onPress }: CustomerCardProps) {
           {isOwing ? (
             <>
               <Text style={styles.amount}>
-                {formatCurrency(customer.outstandingBalanceCents)}
+                {formatMoney(customer.outstandingBalanceCents)}
               </Text>
               <Text style={styles.outstandingLabel}>outstanding</Text>
             </>

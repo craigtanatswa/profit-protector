@@ -100,6 +100,7 @@ export default function SaleDetailScreen() {
     phone: authBusiness?.phone ?? '',
     businessType: authBusiness?.businessType ?? '',
     currency: authBusiness?.currency ?? 'USD',
+    zigRatePerUsd: authBusiness?.zigRatePerUsd ?? 1,
     createdAt: 0,
   }
 
@@ -161,6 +162,7 @@ export default function SaleDetailScreen() {
   }
 
   const currency = businessForReceipt.currency
+  const zigRate = businessForReceipt.zigRatePerUsd ?? 1
   const itemsSold = saleItems.length
   const unitsSold = saleItems.reduce((sum, item) => sum + item.qty, 0)
   const profit = saleItems.reduce(
@@ -211,7 +213,7 @@ export default function SaleDetailScreen() {
                     { color: profit >= 0 ? '#0A7A4B' : '#C0152A' },
                   ]}
                 >
-                  {formatCurrency(profit, currency)}
+                  {formatCurrency(profit, currency, zigRate)}
                 </Text>
               </View>
             </View>

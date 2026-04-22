@@ -21,10 +21,8 @@ import { useAuthStore } from '../../src/stores/authStore'
 import { useDashboard } from '../../src/hooks/useDashboard'
 import { useQuietOfflineRefreshOnFocus } from '../../src/hooks/useQuietOfflineRefreshOnFocus'
 import type { CashBreakdownItem, RecentSaleEntry } from '../../src/hooks/useDashboard'
-import {
-  formatCurrency,
-  formatPaymentMethod,
-} from '../../src/lib/formatters'
+import { formatPaymentMethod } from '../../src/lib/formatters'
+import { useMoneyFormat } from '../../src/hooks/useMoneyFormat'
 import type { Customer, PaymentMethod, Product } from '../../src/types'
 
 // ---------------------------------------------------------------------------
@@ -304,6 +302,7 @@ function MetricsSection({
   outstandingCreditCents,
   creditCustomerCount,
 }: MetricsSectionProps) {
+  const { formatMoney } = useMoneyFormat()
   const salesVariant = todaysSalesCents > 0 ? 'success' : 'default'
   const profitVariant =
     todaysProfitCents > 0 ? 'success' : todaysProfitCents < 0 ? 'danger' : 'default'
@@ -323,7 +322,7 @@ function MetricsSection({
         <View style={{ width: CARD_WIDTH }}>
           <MetricCard
             label="Today's Sales"
-            value={formatCurrency(todaysSalesCents)}
+            value={formatMoney(todaysSalesCents)}
             subValue={`${todaysTransactionCount} transaction${todaysTransactionCount !== 1 ? 's' : ''}`}
             variant={salesVariant}
             icon={
@@ -339,7 +338,7 @@ function MetricsSection({
         <View style={{ width: CARD_WIDTH }}>
           <MetricCard
             label="Today's Profit"
-            value={formatCurrency(todaysProfitCents)}
+            value={formatMoney(todaysProfitCents)}
             subValue={`${todaysMarginPercent}% margin`}
             variant={profitVariant}
             icon={
@@ -355,7 +354,7 @@ function MetricsSection({
         <View style={{ width: CARD_WIDTH }}>
           <MetricCard
             label="Stock Value"
-            value={formatCurrency(totalStockValueCents)}
+            value={formatMoney(totalStockValueCents)}
             subValue={`${totalProductCount} product${totalProductCount !== 1 ? 's' : ''}`}
             variant="default"
             icon={<Ionicons name="cube" size={20} color={iconColorFor('default')} />}
@@ -365,7 +364,7 @@ function MetricsSection({
         <View style={{ width: CARD_WIDTH }}>
           <MetricCard
             label="Credit Owed"
-            value={formatCurrency(outstandingCreditCents)}
+            value={formatMoney(outstandingCreditCents)}
             subValue={`${creditCustomerCount} customer${creditCustomerCount !== 1 ? 's' : ''}`}
             variant={creditVariant}
             icon={
@@ -388,6 +387,7 @@ function MetricsSection({
 // ---------------------------------------------------------------------------
 
 function CashBreakdownCard({ cashBreakdown }: { cashBreakdown: CashBreakdownItem[] }) {
+  const { formatMoney } = useMoneyFormat()
   // Credit row shows total outstanding (same as Credit Owed metric), not cash — exclude from "Total collected"
   const total = cashBreakdown.reduce(
     (sum, item) => sum + (item.method === 'credit' ? 0 : item.totalCents),
@@ -433,7 +433,7 @@ function CashBreakdownCard({ cashBreakdown }: { cashBreakdown: CashBreakdownItem
                 </View>
                 <View style={styles.cashRowRight}>
                   <Text style={styles.cashAmount}>
-                    {formatCurrency(item.totalCents)}
+                    {formatMoney(item.totalCents)}
                   </Text>
                   <Text style={styles.cashCount}>
                     {item.method === 'credit'
@@ -450,7 +450,7 @@ function CashBreakdownCard({ cashBreakdown }: { cashBreakdown: CashBreakdownItem
 
             <View style={styles.cashTotalRow}>
               <Text style={styles.cashTotalLabel}>Total collected</Text>
-              <Text style={styles.cashTotalAmount}>{formatCurrency(total)}</Text>
+              <Text style={styles.cashTotalAmount}>{formatMoney(total)}</Text>
             </View>
           </>
         )}
@@ -608,6 +608,7 @@ function LowStockSection({ products }: { products: Product[] }) {
 // ---------------------------------------------------------------------------
 
 function RecentSalesSection({ recentSales }: { recentSales: RecentSaleEntry[] }) {
+  const { formatMoney } = useMoneyFormat()
   return (
     <>
       <View style={styles.sectionHeaderRow}>
@@ -671,11 +672,11 @@ function RecentSalesSection({ recentSales }: { recentSales: RecentSaleEntry[] })
                 </View>
                 <View style={styles.saleAmountCol}>
                   <Text style={styles.saleTotal}>
-                    {formatCurrency(sale.totalCents)}
+                    {formatMoney(sale.totalCents)}
                   </Text>
                   {profit > 0 && (
                     <Text style={styles.saleProfit}>
-                      +{formatCurrency(profit)} profit
+                      +{formatMoney(profit)} profit
                     </Text>
                   )}
                 </View>
@@ -693,6 +694,7 @@ function RecentSalesSection({ recentSales }: { recentSales: RecentSaleEntry[] })
 // ---------------------------------------------------------------------------
 
 function CreditSection({ customers }: { customers: Customer[] }) {
+  const { formatMoney } = useMoneyFormat()
   if (customers.length === 0) return null
 
   const visible = customers.slice(0, 3)
@@ -720,7 +722,7 @@ function CreditSection({ customers }: { customers: Customer[] }) {
             </View>
             <View style={styles.creditRight}>
               <Text style={styles.creditAmount}>
-                {formatCurrency(customer.outstandingBalanceCents)}
+                {formatMoney(customer.outstandingBalanceCents)}
               </Text>
               <TouchableOpacity
                 onPress={() =>

@@ -35,7 +35,7 @@ import {
 import { useCustomers } from '../../../src/hooks/useCustomers'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useAuthStore } from '../../../src/stores/authStore'
-import { formatCurrency } from '../../../src/lib/formatters'
+import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import { database } from '../../../src/database'
 import type { Customer } from '../../../src/types'
 import type CustomerModel from '../../../src/database/models/Customer'
@@ -282,6 +282,7 @@ function AddCustomerModal({
 
 export default function CustomersScreen() {
   const insets = useSafeAreaInsets()
+  const { formatMoney } = useMoneyFormat()
   const business = useAuthStore((s) => s.business)
   const {
     customers,
@@ -468,7 +469,7 @@ export default function CustomersScreen() {
         </View>
         <View style={[styles.summaryItem, styles.summaryItemCenter]}>
           <Text style={styles.summaryValue}>
-            {formatCurrency(summary.totalOwedCents)}
+            {formatMoney(summary.totalOwedCents)}
           </Text>
           <Text style={styles.summaryLabel}>owed</Text>
         </View>

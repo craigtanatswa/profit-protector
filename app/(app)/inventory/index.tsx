@@ -25,7 +25,7 @@ import { SortModal, type SortOption } from '../../../src/components/products/Sor
 import { EmptyState } from '../../../src/components/ui'
 import { useProducts } from '../../../src/hooks/useProducts'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
-import { formatCurrency } from '../../../src/lib/formatters'
+import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
 
@@ -42,6 +42,7 @@ function SkeletonCard({ opacity }: { opacity: Animated.Value }) {
 // ---------------------------------------------------------------------------
 
 export default function InventoryScreen() {
+  const { formatMoney } = useMoneyFormat()
   const { business } = useAuthStore()
   const businessId = business?.id ?? ''
 
@@ -313,7 +314,7 @@ export default function InventoryScreen() {
             {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
           </Text>
           <Text style={styles.summaryValue}>
-            Stock value: {formatCurrency(stockValue)}
+            Stock value: {formatMoney(stockValue)}
           </Text>
         </View>
       )}

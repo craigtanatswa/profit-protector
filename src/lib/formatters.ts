@@ -1,7 +1,33 @@
-export function formatCurrency(cents: number, currency = 'USD'): string {
-  const dollars = cents / 100
-  const prefix = currency === 'USD' ? '$' : currency + ' '
-  return `${prefix}${dollars.toFixed(2)}`
+import { normalizeZigRatePerUsd } from './currencyDisplay'
+
+/**
+ * @param usdCents — amounts in the database are always US dollar cents
+ * @param currency — business display mode: USD | ZiG | Both
+ * @param zigRatePerUsd — ZiG per 1 USD (e.g. 30 → $5.00 → ZiG 150.00)
+ */
+export function formatCurrency(
+  usdCents: number,
+  currency = 'USD',
+  zigRatePerUsd: number = 1,
+): string {
+  const rate = normalizeZigRatePerUsd(zigRatePerUsd)
+  const usdAmount = usdCents / 100
+
+  if (currency === 'USD') {
+    return `$${usdAmount.toFixed(2)}`
+  }
+
+  if (currency === 'ZiG') {
+    const zig = usdAmount * rate
+    return `ZiG ${zig.toFixed(2)}`
+  }
+
+  if (currency === 'Both') {
+    const zig = usdAmount * rate
+    return `$${usdAmount.toFixed(2)} · ZiG ${zig.toFixed(2)}`
+  }
+
+  return `$${usdAmount.toFixed(2)}`
 }
 
 export function formatDate(timestamp: number): string {
@@ -37,4 +63,13 @@ export function formatPaymentMethod(method: string): string {
     credit: 'Credit / Owing',
   }
   return labels[method] ?? method
+}
+
+export function formatMonthYear(timestamp: number): string {
+  const date = new Date(timestamp)
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ]
+  return `${months[date.getMonth()]} ${date.getFullYear()}`
 }

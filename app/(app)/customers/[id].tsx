@@ -29,7 +29,8 @@ import { Badge, Button, Card, Divider, Input, LoadingScreen } from '../../../src
 import { useCustomerDetail } from '../../../src/hooks/useCustomerDetail'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useAuthStore } from '../../../src/stores/authStore'
-import { formatCurrency, formatDate, formatPaymentMethod } from '../../../src/lib/formatters'
+import { formatDate, formatPaymentMethod } from '../../../src/lib/formatters'
+import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import { database } from '../../../src/database'
 import type CustomerModel from '../../../src/database/models/Customer'
 import type CreditSaleModel from '../../../src/database/models/CreditSale'
@@ -145,6 +146,7 @@ function RecordPaymentModal({
   onClose,
   onSuccess,
 }: RecordPaymentModalProps) {
+  const { formatMoney } = useMoneyFormat()
   const [amount, setAmount] = useState('')
   const [payMethod, setPayMethod] = useState<PayMethod | null>(null)
   const [notes, setNotes] = useState('')
@@ -172,7 +174,7 @@ function RecordPaymentModal({
     const parsedCents = Math.round(parsedNum * 100)
     if (parsedCents > outstandingBalanceCents) {
       setAmountError(
-        `Amount cannot exceed outstanding balance of ${formatCurrency(outstandingBalanceCents)}`,
+        `Amount cannot exceed outstanding balance of ${formatMoney(outstandingBalanceCents)}`,
       )
       return
     }
@@ -261,7 +263,7 @@ function RecordPaymentModal({
       setIsSaving(false)
       Alert.alert('Error', 'Failed to record payment. Please try again.')
     }
-  }, [amount, payMethod, notes, outstandingBalanceCents, customerId, onSuccess])
+  }, [amount, payMethod, notes, outstandingBalanceCents, customerId, onSuccess, formatMoney])
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
@@ -271,7 +273,7 @@ function RecordPaymentModal({
       >
         <Text style={styles.modalTitle}>Record Payment</Text>
         <Text style={styles.paymentSubtitle}>
-          Outstanding: {formatCurrency(outstandingBalanceCents)}
+          Outstanding: {formatMoney(outstandingBalanceCents)}
         </Text>
 
         <View style={styles.modalFields}>
@@ -285,7 +287,7 @@ function RecordPaymentModal({
             }}
             keyboardType="decimal-pad"
             error={amountError ?? undefined}
-            hint={`Outstanding balance: ${formatCurrency(outstandingBalanceCents)}`}
+            hint={`Outstanding balance: ${formatMoney(outstandingBalanceCents)}`}
             leftIcon={<Text style={styles.currencyPrefix}>$</Text>}
           />
 
@@ -541,6 +543,7 @@ type HistoryTab = 'credit' | 'payments'
 
 export default function CustomerDetailScreen() {
   const insets = useSafeAreaInsets()
+  const { formatMoney } = useMoneyFormat()
   const { id } = useLocalSearchParams<{ id: string }>()
 
   const {
@@ -577,9 +580,9 @@ export default function CustomerDetailScreen() {
       setShowPaymentModal(false)
       Alert.alert(
         'Payment Recorded',
-        `${formatCurrency(paidCents)} received from ${customer?.name ?? 'customer'}.\n` +
+        `${formatMoney(paidCents)} received from ${customer?.name ?? 'customer'}.\n` +
           (newBalance > 0
-            ? `Remaining balance: ${formatCurrency(newBalance)}`
+            ? `Remaining balance: ${formatMoney(newBalance)}`
             : 'Account fully settled!'),
       )
     },
@@ -653,7 +656,7 @@ export default function CustomerDetailScreen() {
               <>
                 <Text style={styles.balanceLabel}>Outstanding Balance</Text>
                 <Text style={styles.balanceAmount}>
-                  {formatCurrency(customer.outstandingBalanceCents)}
+                  {formatMoney(customer.outstandingBalanceCents)}
                 </Text>
                 <View style={styles.recordPayBtn}>
                   <Button
@@ -684,11 +687,11 @@ export default function CustomerDetailScreen() {
               label: 'Total Purchases',
               value: `${creditSales.length} sale${creditSales.length !== 1 ? 's' : ''}`,
             },
-            { label: 'Total Spent', value: formatCurrency(totalSpentCents) },
-            { label: 'Total Credit Taken', value: formatCurrency(totalCreditCents) },
+            { label: 'Total Spent', value: formatMoney(totalSpentCents) },
+            { label: 'Total Credit Taken', value: formatMoney(totalCreditCents) },
             {
               label: 'Total Paid Back',
-              value: formatCurrency(totalPaidBackCents),
+              value: formatMoney(totalPaidBackCents),
               valueColor: '#0A7A4B',
             },
           ].map((row, idx, arr) => (
@@ -764,7 +767,7 @@ export default function CustomerDetailScreen() {
                         cs.isSettled ? styles.amountGreen : styles.amountRed,
                       ]}
                     >
-                      {formatCurrency(cs.amountCents)}
+                      {formatMoney(cs.amountCents)}
                     </Text>
                   </View>
                   <View style={styles.historySubRow}>
@@ -778,7 +781,7 @@ export default function CustomerDetailScreen() {
                   {!cs.isSettled && cs.amountPaidCents > 0 && (
                     <View style={styles.progressWrapper}>
                       <Text style={styles.progressLabel}>
-                        Paid: {formatCurrency(cs.amountPaidCents)} of {formatCurrency(cs.amountCents)}
+                        Paid: {formatMoney(cs.amountPaidCents)} of {formatMoney(cs.amountCents)}
                       </Text>
                       <ProgressBar paidCents={cs.amountPaidCents} totalCents={cs.amountCents} />
                     </View>
@@ -807,7 +810,7 @@ export default function CustomerDetailScreen() {
                       </Text>
                     </View>
                     <Text style={[styles.historyCardAmount, styles.amountGreen]}>
-                      {formatCurrency(pr.amountCents)}
+                      {formatMoney(pr.amountCents)}
                     </Text>
                   </View>
                   <View style={styles.historySubRow}>

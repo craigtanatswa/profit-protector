@@ -112,7 +112,8 @@ import { useSales } from '../../../src/hooks/useSales'
 import { useCustomers } from '../../../src/hooks/useCustomers'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { database } from '../../../src/database'
-import { formatCurrency, formatReceiptNumber } from '../../../src/lib/formatters'
+import { formatReceiptNumber } from '../../../src/lib/formatters'
+import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { Product, Customer } from '../../../src/types'
 import type ProductModel from '../../../src/database/models/Product'
 import type SaleModel from '../../../src/database/models/Sale'
@@ -151,6 +152,7 @@ const PAYMENT_METHODS: { key: PaymentMethod; label: string }[] = [
 
 export default function NewSaleScreen() {
   const router = useRouter()
+  const { formatMoney } = useMoneyFormat()
   const business = useAuthStore((s) => s.business)
   const businessId = business?.id ?? ''
 
@@ -462,7 +464,7 @@ export default function NewSaleScreen() {
                   <Text style={styles.productMeta} numberOfLines={1}>
                     {product.category ? `${product.category} · ` : ''}
                     {product.unit}
-                    {' · '}{formatCurrency(product.sellingPriceCents)}
+                    {' · '}{formatMoney(product.sellingPriceCents)}
                   </Text>
                 </TouchableOpacity>
 
@@ -519,6 +521,7 @@ export default function NewSaleScreen() {
         discountExceedsTotal={discountExceedsTotal}
         paymentMethod={paymentMethod}
         selectedCustomer={selectedCustomer}
+        formatMoney={formatMoney}
         onDiscountChange={handleDiscountChange}
         onPaymentMethodChange={setPaymentMethod}
         onOpenCustomerPicker={() => setShowCustomerModal(true)}
@@ -543,7 +546,7 @@ export default function NewSaleScreen() {
           <Text style={styles.confirmButtonText}>Processing...</Text>
         ) : (
           <Text style={styles.confirmButtonText}>
-            Complete Sale · {formatCurrency(Math.max(totalCents, 0))}
+            Complete Sale · {formatMoney(Math.max(totalCents, 0))}
           </Text>
         )}
       </TouchableOpacity>
@@ -620,6 +623,7 @@ interface CartPanelProps {
   discountExceedsTotal: boolean
   paymentMethod: PaymentMethod
   selectedCustomer: Customer | null
+  formatMoney: (usdCents: number) => string
   onDiscountChange: (text: string) => void
   onPaymentMethodChange: (method: PaymentMethod) => void
   onOpenCustomerPicker: () => void
@@ -636,6 +640,7 @@ function CartPanel({
   discountExceedsTotal,
   paymentMethod,
   selectedCustomer,
+  formatMoney,
   onDiscountChange,
   onPaymentMethodChange,
   onOpenCustomerPicker,
@@ -690,7 +695,7 @@ function CartPanel({
               </View>
             </View>
             <Text style={cartStyles.itemTotal}>
-              {formatCurrency(item.qty * item.unitPriceCents)}
+              {formatMoney(item.qty * item.unitPriceCents)}
             </Text>
           </TouchableOpacity>
         ))}
@@ -719,13 +724,13 @@ function CartPanel({
       <View style={cartStyles.totalsSection}>
         <View style={cartStyles.totalRow}>
           <Text style={cartStyles.totalLabel}>Subtotal</Text>
-          <Text style={cartStyles.totalValue}>{formatCurrency(subtotalCents)}</Text>
+          <Text style={cartStyles.totalValue}>{formatMoney(subtotalCents)}</Text>
         </View>
         {discountCents > 0 && (
           <View style={cartStyles.totalRow}>
             <Text style={cartStyles.totalLabel}>Discount</Text>
             <Text style={[cartStyles.totalValue, { color: COLORS.danger }]}>
-              -{formatCurrency(discountCents)}
+              -{formatMoney(discountCents)}
             </Text>
           </View>
         )}
@@ -733,7 +738,7 @@ function CartPanel({
         <View style={cartStyles.totalRow}>
           <Text style={cartStyles.grandTotalLabel}>Total</Text>
           <Text style={cartStyles.grandTotalValue}>
-            {formatCurrency(Math.max(totalCents, 0))}
+            {formatMoney(Math.max(totalCents, 0))}
           </Text>
         </View>
       </View>
@@ -780,7 +785,7 @@ function CartPanel({
                   <Text style={cartStyles.customerName}>{selectedCustomer.name}</Text>
                   {selectedCustomer.outstandingBalanceCents > 0 && (
                     <Text style={cartStyles.customerOwes}>
-                      Owes {formatCurrency(selectedCustomer.outstandingBalanceCents)}
+                      Owes {formatMoney(selectedCustomer.outstandingBalanceCents)}
                     </Text>
                   )}
                 </View>
@@ -817,6 +822,7 @@ interface QtyModalProps {
 }
 
 function QuantityEditorModal({ product, currentQty, onUpdate, onRemove, onClose }: QtyModalProps) {
+  const { formatMoney } = useMoneyFormat()
   const [qty, setQty] = useState(Math.max(currentQty, 1))
   const isInCart = currentQty > 0
 
@@ -828,7 +834,7 @@ function QuantityEditorModal({ product, currentQty, onUpdate, onRemove, onClose 
 
           <Text style={modalStyles.productName}>{product.name}</Text>
           <Text style={modalStyles.pricePerUnit}>
-            {formatCurrency(product.sellingPriceCents)} per {product.unit}
+            {formatMoney(product.sellingPriceCents)} per {product.unit}
           </Text>
 
           <View style={modalStyles.qtyRow}>
@@ -854,7 +860,7 @@ function QuantityEditorModal({ product, currentQty, onUpdate, onRemove, onClose 
 
           <Text style={modalStyles.stockInfo}>{product.stockQty} in stock</Text>
           <Text style={modalStyles.lineTotal}>
-            Total: {formatCurrency(qty * product.sellingPriceCents)}
+            Total: {formatMoney(qty * product.sellingPriceCents)}
           </Text>
 
           <View style={modalStyles.actions}>
@@ -890,6 +896,7 @@ interface CustomerPickerProps {
 }
 
 function CustomerPickerModal({ customers, onSelect, onCreate, onClose }: CustomerPickerProps) {
+  const { formatMoney } = useMoneyFormat()
   const [search, setSearch] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [newName, setNewName] = useState('')
@@ -970,7 +977,7 @@ function CustomerPickerModal({ customers, onSelect, onCreate, onClose }: Custome
               </View>
               {customer.outstandingBalanceCents > 0 && (
                 <Badge
-                  label={`Owes ${formatCurrency(customer.outstandingBalanceCents)}`}
+                  label={`Owes ${formatMoney(customer.outstandingBalanceCents)}`}
                   variant="warning"
                   size="sm"
                 />

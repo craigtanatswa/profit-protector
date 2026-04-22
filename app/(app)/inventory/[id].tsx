@@ -15,7 +15,7 @@ import { ScreenHeader } from '../../../src/components/layout'
 import { Button, Card, EmptyState } from '../../../src/components/ui'
 import { useProductDetail } from '../../../src/hooks/useProductDetail'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
-import { formatCurrency } from '../../../src/lib/formatters'
+import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { StockMovement } from '../../../src/types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -138,6 +138,7 @@ function SkeletonBlock({
 
 export default function ProductDetailScreen() {
   const router = useRouter()
+  const { formatMoney } = useMoneyFormat()
   const { id } = useLocalSearchParams<{ id: string }>()
   const productId = Array.isArray(id) ? id[0] : (id ?? '')
 
@@ -350,10 +351,10 @@ export default function ProductDetailScreen() {
             {/* Right: price, cost, margin */}
             <View style={styles.heroRight}>
               <Text style={styles.heroSellingPrice}>
-                {formatCurrency(sellingPriceCents)}
+                {formatMoney(sellingPriceCents)}
               </Text>
               <Text style={styles.heroCostPrice}>
-                Cost: {formatCurrency(costPriceCents)}
+                Cost: {formatMoney(costPriceCents)}
               </Text>
               <View
                 style={[
@@ -387,7 +388,7 @@ export default function ProductDetailScreen() {
             <View style={styles.stockCol}>
               <Text style={styles.stockLabel}>Stock Value</Text>
               <Text style={[styles.stockValueMed, { color: '#0047AB' }]}>
-                {formatCurrency(stockValueCents)}
+                {formatMoney(stockValueCents)}
               </Text>
             </View>
 
@@ -431,7 +432,7 @@ export default function ProductDetailScreen() {
           </View>
           <View style={styles.statSummaryCol}>
             <Text style={[styles.statSummaryValue, { color: '#0047AB' }]}>
-              {formatCurrency(totalRevenueCents)}
+              {formatMoney(totalRevenueCents)}
             </Text>
             <Text style={styles.statSummaryLabel}>Total Revenue</Text>
           </View>
@@ -442,7 +443,7 @@ export default function ProductDetailScreen() {
                 { color: totalProfitCents >= 0 ? '#0A7A4B' : '#C0152A' },
               ]}
             >
-              {formatCurrency(totalProfitCents)}
+              {formatMoney(totalProfitCents)}
             </Text>
             <Text style={styles.statSummaryLabel}>Total Profit</Text>
           </View>
@@ -504,7 +505,7 @@ export default function ProductDetailScreen() {
           <View style={styles.priceRow}>
             <Text style={styles.priceRowLabel}>Selling Price</Text>
             <Text style={[styles.priceRowValue, { color: '#0047AB', fontWeight: '600' }]}>
-              {formatCurrency(sellingPriceCents)}
+              {formatMoney(sellingPriceCents)}
             </Text>
           </View>
 
@@ -512,7 +513,7 @@ export default function ProductDetailScreen() {
           <View style={styles.priceRow}>
             <Text style={styles.priceRowLabel}>Cost Price</Text>
             <Text style={[styles.priceRowValue, { color: '#0D1B3E' }]}>
-              {formatCurrency(costPriceCents)}
+              {formatMoney(costPriceCents)}
             </Text>
           </View>
 
@@ -532,7 +533,7 @@ export default function ProductDetailScreen() {
                 },
               ]}
             >
-              {formatCurrency(profitCents)}
+              {formatMoney(profitCents)}
             </Text>
           </View>
 
@@ -562,7 +563,7 @@ export default function ProductDetailScreen() {
               Total Stock Value
             </Text>
             <Text style={[styles.priceRowValue, { color: '#0047AB', fontWeight: '600' }]}>
-              {formatCurrency(stockValueCents)}
+              {formatMoney(stockValueCents)}
             </Text>
           </View>
         </Card>

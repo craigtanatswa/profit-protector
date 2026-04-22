@@ -22,7 +22,7 @@ import type { FilterState } from '../../../src/components/sales/FilterPanel'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { useSalesWithItems } from '../../../src/hooks/useSales'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
-import { formatCurrency } from '../../../src/lib/formatters'
+import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { SaleWithItems } from '../../../src/hooks/useSales'
 
 // ─── Date helpers (no external dependency) ───────────────────────────────────
@@ -100,6 +100,7 @@ function SkeletonCard() {
 
 export default function SalesHistoryScreen() {
   const router = useRouter()
+  const { formatMoney } = useMoneyFormat()
   const business = useAuthStore((s) => s.business)
   const { salesWithItems, isLoading, refetch } = useSalesWithItems(business?.id ?? '')
 
@@ -293,12 +294,12 @@ export default function SalesHistoryScreen() {
         <View style={styles.summaryDivider} />
         <View style={styles.summaryItem}>
           <Text style={styles.summaryLabel}>Total</Text>
-          <Text style={styles.summaryValue}>{formatCurrency(summary.totalCents)}</Text>
+          <Text style={styles.summaryValue}>{formatMoney(summary.totalCents)}</Text>
         </View>
         <View style={styles.summaryDivider} />
         <View style={styles.summaryItem}>
           <Text style={styles.summaryLabel}>Profit</Text>
-          <Text style={styles.summaryValue}>{formatCurrency(summary.profitCents)}</Text>
+          <Text style={styles.summaryValue}>{formatMoney(summary.profitCents)}</Text>
         </View>
       </View>
 
@@ -396,7 +397,7 @@ export default function SalesHistoryScreen() {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeaderTitle}>{section.title}</Text>
               <Text style={styles.sectionHeaderSubtotal}>
-                {formatCurrency(section.subtotalCents)}
+                {formatMoney(section.subtotalCents)}
               </Text>
             </View>
           )}

@@ -5,6 +5,8 @@ export interface Business {
   phone: string
   businessType: string
   currency: string
+  /** ZiG per $1 USD; amounts in DB are USD cents */
+  zigRatePerUsd?: number
   supabaseId?: string
   createdAt: number
 }

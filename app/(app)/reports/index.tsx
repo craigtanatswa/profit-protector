@@ -224,7 +224,21 @@ function aggregateForChart(
   return Array.from(monthMap.values()).sort((a, b) => a.date - b.date)
 }
 
-function formatChartYLabel(cents: number): string {
+function formatChartYLabel(cents: number, currency: string, zigRatePerUsd: number): string {
+  const usd = cents / 100
+  const rate = zigRatePerUsd > 0 && Number.isFinite(zigRatePerUsd) ? zigRatePerUsd : 1
+  if (currency === 'ZiG') {
+    const z = usd * rate
+    if (z >= 1_000_000) return `${(z / 1_000_000).toFixed(1)}M`
+    if (z >= 1000) return `${(z / 1000).toFixed(0)}k`
+    if (z >= 100) return z.toFixed(0)
+    return z.toFixed(2)
+  }
+  if (currency === 'Both') {
+    if (cents >= 1_000_00) return `$${(cents / 1_000_00).toFixed(0)}k`
+    if (cents >= 100) return `$${(cents / 100).toFixed(0)}`
+    return `$${(cents / 100).toFixed(2)}`
+  }
   if (cents >= 1_000_00) return `$${(cents / 1_000_00).toFixed(0)}k`
   if (cents >= 100) return `$${(cents / 100).toFixed(0)}`
   return `$${(cents / 100).toFixed(2)}`
@@ -265,9 +279,10 @@ interface BarChartProps {
   selectedBar: number | null
   onSelectBar: (idx: number | null) => void
   currency: string
+  zigRatePerUsd: number
 }
 
-function BarChart({ data, selectedBar, onSelectBar, currency }: BarChartProps) {
+function BarChart({ data, selectedBar, onSelectBar, currency, zigRatePerUsd }: BarChartProps) {
   const { width: screenW } = Dimensions.get('window')
   const chartAreaW = screenW - 32 - CHART_Y_AXIS_W - 8
   const numBars = data.length || 1
@@ -294,7 +309,7 @@ function BarChart({ data, selectedBar, onSelectBar, currency }: BarChartProps) {
                 textAlign: 'right',
               }}
             >
-              {formatChartYLabel(maxValue * pct)}
+              {formatChartYLabel(maxValue * pct, currency, zigRatePerUsd)}
             </Text>
           ))}
           <Text
@@ -307,7 +322,7 @@ function BarChart({ data, selectedBar, onSelectBar, currency }: BarChartProps) {
               textAlign: 'right',
             }}
           >
-            $0
+            {currency === 'ZiG' ? '0' : '$0'}
           </Text>
         </View>
 
@@ -462,7 +477,7 @@ function BarChart({ data, selectedBar, onSelectBar, currency }: BarChartProps) {
                 ? data[selectedBar].label
                 : `Hour ${new Date(data[selectedBar].date).getHours()}:00`}
               {': '}
-              {formatCurrency(data[selectedBar].totalCents, currency)}
+              {formatCurrency(data[selectedBar].totalCents, currency, zigRatePerUsd)}
             </Text>
           </View>
         </View>
@@ -581,6 +596,7 @@ export default function ReportsScreen() {
   const business = useAuthStore(state => state.business)
   const businessId = business?.id ?? ''
   const currency = business?.currency ?? 'USD'
+  const zigRatePerUsd = business?.zigRatePerUsd ?? 1
 
   // ── Date range state ──
   const [period, setPeriod] = useState<Period>('this_month')
@@ -668,7 +684,12 @@ export default function ReportsScreen() {
     setIsExportingPDF(true)
     try {
       await exportReportPDF({
-        business: { id: business.id, name: business.name, currency: business.currency },
+        business: {
+          id: business.id,
+          name: business.name,
+          currency: business.currency,
+          zigRatePerUsd: business.zigRatePerUsd,
+        },
         period: getPeriodDisplayLabel(period),
         startDate: new Date(startMs),
         endDate: new Date(endMs),
@@ -686,14 +707,32 @@ export default function ReportsScreen() {
     } finally {
       setIsExportingPDF(false)
     }
-  }, [business, period, startMs, endMs, totalRevenueCents, totalProfitCents, cogsCents, grossMarginPercent, transactionCount, totalQtySold, paymentBreakdown, topProducts])
+  }, [
+    business,
+    period,
+    startMs,
+    endMs,
+    totalRevenueCents,
+    totalProfitCents,
+    cogsCents,
+    grossMarginPercent,
+    transactionCount,
+    totalQtySold,
+    paymentBreakdown,
+    topProducts,
+  ])
 
   const handleExportCSV = useCallback(async () => {
     if (!business) return
     setIsExportingCSV(true)
     try {
       await exportReportCSV({
-        business: { id: business.id, name: business.name, currency: business.currency },
+        business: {
+          id: business.id,
+          name: business.name,
+          currency: business.currency,
+          zigRatePerUsd: business.zigRatePerUsd,
+        },
         period: getPeriodDisplayLabel(period),
         startMs,
         endMs,
@@ -862,6 +901,7 @@ export default function ReportsScreen() {
               topProductCount={topProducts.length}
               avgSaleValueCents={avgSaleValueCents}
               currency={currency}
+              zigRatePerUsd={zigRatePerUsd}
             />
 
             {/* ── Empty state ── */}
@@ -911,6 +951,7 @@ export default function ReportsScreen() {
                   <PaymentMethodSection
                     breakdown={paymentBreakdown}
                     currency={currency}
+                    zigRatePerUsd={zigRatePerUsd}
                   />
                 </Card>
               </>
@@ -948,7 +989,7 @@ export default function ReportsScreen() {
                           ? chartPeakEntry.label
                           : `Hr ${new Date(chartPeakEntry.date).getHours()}`}
                         {' · '}
-                        {formatCurrency(chartPeakEntry.totalCents, currency)}
+                        {formatCurrency(chartPeakEntry.totalCents, currency, zigRatePerUsd)}
                       </Text>
                     )}
                   </View>
@@ -957,6 +998,7 @@ export default function ReportsScreen() {
                     selectedBar={selectedBar}
                     onSelectBar={setSelectedBar}
                     currency={currency}
+                    zigRatePerUsd={zigRatePerUsd}
                   />
                 </Card>
               </>
@@ -971,6 +1013,7 @@ export default function ReportsScreen() {
                   sort={topProductSort}
                   onSortChange={setTopProductSort}
                   currency={currency}
+                  zigRatePerUsd={zigRatePerUsd}
                 />
               </>
             )}
@@ -988,6 +1031,7 @@ export default function ReportsScreen() {
                     avgProfitCents={avgProfitCents}
                     marginHealth={marginHealth}
                     currency={currency}
+                    zigRatePerUsd={zigRatePerUsd}
                   />
                 </Card>
               </>
@@ -1056,6 +1100,7 @@ interface SummaryCardsProps {
   topProductCount: number
   avgSaleValueCents: number
   currency: string
+  zigRatePerUsd: number
 }
 
 function SummaryCards({
@@ -1067,6 +1112,7 @@ function SummaryCards({
   topProductCount,
   avgSaleValueCents,
   currency,
+  zigRatePerUsd,
 }: SummaryCardsProps) {
   const { width } = Dimensions.get('window')
   const cardWidth = (width - 32 - 10) / 2
@@ -1079,7 +1125,7 @@ function SummaryCards({
       <View style={{ width: cardWidth }}>
         <MetricCard
           label="Total Revenue"
-          value={formatCurrency(totalRevenueCents, currency)}
+          value={formatCurrency(totalRevenueCents, currency, zigRatePerUsd)}
           subValue={`${transactionCount} transaction${transactionCount !== 1 ? 's' : ''}`}
           variant={totalRevenueCents > 0 ? 'success' : 'default'}
           icon={
@@ -1094,7 +1140,7 @@ function SummaryCards({
       <View style={{ width: cardWidth }}>
         <MetricCard
           label="Total Profit"
-          value={formatCurrency(totalProfitCents, currency)}
+          value={formatCurrency(totalProfitCents, currency, zigRatePerUsd)}
           subValue={`${grossMarginPercent}% margin`}
           variant={profitVariant}
           icon={
@@ -1124,7 +1170,7 @@ function SummaryCards({
       <View style={{ width: cardWidth }}>
         <MetricCard
           label="Avg Sale Value"
-          value={formatCurrency(avgSaleValueCents, currency)}
+          value={formatCurrency(avgSaleValueCents, currency, zigRatePerUsd)}
           subValue="per transaction"
           variant="default"
           icon={<Ionicons name="receipt" size={20} color={THEME.textSecondary} />}
@@ -1134,7 +1180,15 @@ function SummaryCards({
   )
 }
 
-function PaymentMethodSection({ breakdown, currency }: { breakdown: PaymentBreakdownItem[]; currency: string }) {
+function PaymentMethodSection({
+  breakdown,
+  currency,
+  zigRatePerUsd,
+}: {
+  breakdown: PaymentBreakdownItem[]
+  currency: string
+  zigRatePerUsd: number
+}) {
   if (breakdown.length === 0) {
     return (
       <View style={{ paddingVertical: 16, alignItems: 'center' }}>
@@ -1178,7 +1232,7 @@ function PaymentMethodSection({ breakdown, currency }: { breakdown: PaymentBreak
               {/* Right: amount + count */}
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={{ fontSize: 14, fontWeight: '600', color: THEME.textPrimary }}>
-                  {formatCurrency(item.totalCents, currency)}
+                  {formatCurrency(item.totalCents, currency, zigRatePerUsd)}
                 </Text>
                 <Text style={{ fontSize: 12, color: THEME.textSecondary }}>
                   {item.count} sale{item.count !== 1 ? 's' : ''} · {item.percent}%
@@ -1215,9 +1269,10 @@ interface TopProductsSectionProps {
   sort: TopProductSort
   onSortChange: (s: TopProductSort) => void
   currency: string
+  zigRatePerUsd: number
 }
 
-function TopProductsSection({ products, sort, onSortChange, currency }: TopProductsSectionProps) {
+function TopProductsSection({ products, sort, onSortChange, currency, zigRatePerUsd }: TopProductsSectionProps) {
   const sortTabs: { key: TopProductSort; label: string }[] = [
     { key: 'revenue', label: 'By Revenue' },
     { key: 'quantity', label: 'By Quantity' },
@@ -1273,15 +1328,15 @@ function TopProductsSection({ products, sort, onSortChange, currency }: TopProdu
         let secondaryValue: string
 
         if (sort === 'revenue') {
-          primaryValue = formatCurrency(product.revenueCents, currency)
+          primaryValue = formatCurrency(product.revenueCents, currency, zigRatePerUsd)
           primaryColor = THEME.primary
           secondaryValue = `${product.qtySold} sold`
         } else if (sort === 'quantity') {
           primaryValue = `${product.qtySold} units`
           primaryColor = THEME.textPrimary
-          secondaryValue = `${formatCurrency(product.revenueCents, currency)} revenue`
+          secondaryValue = `${formatCurrency(product.revenueCents, currency, zigRatePerUsd)} revenue`
         } else {
-          primaryValue = formatCurrency(product.profitCents, currency)
+          primaryValue = formatCurrency(product.profitCents, currency, zigRatePerUsd)
           primaryColor = product.profitCents >= 0 ? THEME.success : THEME.danger
           secondaryValue = `${product.marginPercent}% margin`
         }
@@ -1379,6 +1434,7 @@ interface ProfitAnalysisSectionProps {
   avgProfitCents: number
   marginHealth: { icon: React.ComponentProps<typeof Ionicons>['name']; color: string; label: string }
   currency: string
+  zigRatePerUsd: number
 }
 
 function ProfitAnalysisSection({
@@ -1389,6 +1445,7 @@ function ProfitAnalysisSection({
   avgProfitCents,
   marginHealth,
   currency,
+  zigRatePerUsd,
 }: ProfitAnalysisSectionProps) {
   const profitColor =
     totalProfitCents > 0 ? THEME.success : totalProfitCents < 0 ? THEME.danger : THEME.textSecondary
@@ -1399,7 +1456,7 @@ function ProfitAnalysisSection({
       <View style={styles.profitRow}>
         <Text style={{ fontSize: 14, color: THEME.textPrimary }}>Total Revenue</Text>
         <Text style={{ fontSize: 14, color: THEME.textPrimary }}>
-          {formatCurrency(totalRevenueCents, currency)}
+          {formatCurrency(totalRevenueCents, currency, zigRatePerUsd)}
         </Text>
       </View>
 
@@ -1407,7 +1464,7 @@ function ProfitAnalysisSection({
       <View style={styles.profitRow}>
         <Text style={{ fontSize: 14, color: THEME.danger }}>Cost of Goods Sold</Text>
         <Text style={{ fontSize: 14, color: THEME.danger }}>
-          − {formatCurrency(cogsCents, currency)}
+          − {formatCurrency(cogsCents, currency, zigRatePerUsd)}
         </Text>
       </View>
 
@@ -1418,7 +1475,7 @@ function ProfitAnalysisSection({
       <View style={styles.profitRow}>
         <Text style={{ fontSize: 15, fontWeight: '600', color: profitColor }}>Gross Profit</Text>
         <Text style={{ fontSize: 15, fontWeight: '600', color: profitColor }}>
-          {formatCurrency(totalProfitCents, currency)}
+          {formatCurrency(totalProfitCents, currency, zigRatePerUsd)}
         </Text>
       </View>
 
@@ -1432,7 +1489,7 @@ function ProfitAnalysisSection({
       <View style={styles.profitRow}>
         <Text style={{ fontSize: 14, color: THEME.textSecondary }}>Avg Profit Per Sale</Text>
         <Text style={{ fontSize: 14, color: THEME.textSecondary }}>
-          {formatCurrency(avgProfitCents, currency)}
+          {formatCurrency(avgProfitCents, currency, zigRatePerUsd)}
         </Text>
       </View>
 

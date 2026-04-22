@@ -117,7 +117,7 @@ export default function LoginScreen() {
 
       const { data: biz, error: bizError } = await supabase
         .from('businesses')
-        .select('id, name, owner_name, phone, business_type, currency, login_username')
+        .select('id, name, owner_name, phone, business_type, currency, login_username, zig_rate_per_usd')
         .eq('user_id', user.id)
         .single()
 
@@ -127,6 +127,11 @@ export default function LoginScreen() {
         return
       }
 
+      const zigRate =
+        typeof biz.zig_rate_per_usd === 'number' && biz.zig_rate_per_usd > 0
+          ? biz.zig_rate_per_usd
+          : 1
+
       setBusiness({
         id: biz.id,
         name: biz.name,
@@ -134,6 +139,7 @@ export default function LoginScreen() {
         phone: biz.phone,
         businessType: biz.business_type,
         currency: biz.currency,
+        zigRatePerUsd: zigRate,
         loginUsername: biz.login_username ?? null,
       })
 
@@ -155,6 +161,7 @@ export default function LoginScreen() {
                 record.phone = biz.phone
                 record.businessType = biz.business_type
                 record.currency = biz.currency
+                record.zigRatePerUsd = zigRate
                 record.loginUsername = biz.login_username ?? null
                 record.supabaseId = user.id
               })

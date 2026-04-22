@@ -16,6 +16,9 @@
  * -- If you already created `businesses` without login_username:
  * -- alter table businesses add column if not exists login_username text;
  *
+ * -- ZiG display rate (ZiG per $1 USD); defaults to 1 if missing
+ * -- alter table businesses add column if not exists zig_rate_per_usd numeric default 1;
+ *
  * alter table businesses enable row level security;
  *
  * create policy "Users can manage their own business"
@@ -343,6 +346,7 @@ export default function RegisterScreen() {
               b.phone = data.phone
               b.businessType = data.businessType
               b.currency = data.currency
+              b.zigRatePerUsd = 1
               b.loginUsername = loginUsername || null
               b.supabaseId = user.id
             }),
@@ -367,6 +371,7 @@ export default function RegisterScreen() {
         phone: data.phone,
         business_type: data.businessType,
         currency: data.currency,
+        zig_rate_per_usd: 1,
         login_username: loginUsername || null,
         user_id: user.id,
         created_at: new Date().toISOString(),
@@ -389,6 +394,7 @@ export default function RegisterScreen() {
         phone: data.phone,
         businessType: data.businessType,
         currency: data.currency,
+        zigRatePerUsd: 1,
         loginUsername: loginUsername || null,
       })
       setUser(user)

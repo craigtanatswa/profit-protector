@@ -11,6 +11,7 @@ interface BusinessForReport {
   id: string
   name: string
   currency: string
+  zigRatePerUsd?: number
 }
 
 export interface ExportReportPDFParams {
@@ -61,6 +62,7 @@ function buildReportHTML(params: ExportReportPDFParams): string {
   } = params
 
   const currency = business.currency || 'USD'
+  const zigRate = business.zigRatePerUsd ?? 1
   const generatedAt = formatDateTime(Date.now())
   const profitClass =
     totalProfitCents > 0 ? 'profit-positive' : totalProfitCents < 0 ? 'profit-negative' : ''
@@ -74,12 +76,12 @@ function buildReportHTML(params: ExportReportPDFParams): string {
     <div class="metrics-grid">
       <div class="metric-card">
         <div class="metric-label">Total Revenue</div>
-        <div class="metric-value">${escapeHtml(formatCurrency(totalRevenueCents, currency))}</div>
+        <div class="metric-value">${escapeHtml(formatCurrency(totalRevenueCents, currency, zigRate))}</div>
         <div class="metric-sub">${transactionCount} transactions</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Total Profit</div>
-        <div class="metric-value ${profitClass}">${escapeHtml(formatCurrency(totalProfitCents, currency))}</div>
+        <div class="metric-value ${profitClass}">${escapeHtml(formatCurrency(totalProfitCents, currency, zigRate))}</div>
         <div class="metric-sub">${grossMarginPercent}% margin</div>
       </div>
       <div class="metric-card">
@@ -89,7 +91,7 @@ function buildReportHTML(params: ExportReportPDFParams): string {
       </div>
       <div class="metric-card">
         <div class="metric-label">Avg Sale Value</div>
-        <div class="metric-value">${escapeHtml(formatCurrency(avgSaleValueCents, currency))}</div>
+        <div class="metric-value">${escapeHtml(formatCurrency(avgSaleValueCents, currency, zigRate))}</div>
         <div class="metric-sub">per transaction</div>
       </div>
     </div>
@@ -102,7 +104,7 @@ function buildReportHTML(params: ExportReportPDFParams): string {
     <tr>
       <td>${escapeHtml(formatPaymentMethod(p.method))}</td>
       <td>${p.count}</td>
-      <td style="text-align:right">${escapeHtml(formatCurrency(p.totalCents, currency))}</td>
+      <td style="text-align:right">${escapeHtml(formatCurrency(p.totalCents, currency, zigRate))}</td>
       <td style="text-align:right">${p.percent}%</td>
     </tr>`,
     )
@@ -125,7 +127,7 @@ function buildReportHTML(params: ExportReportPDFParams): string {
         <tr class="total-row">
           <td>Total</td>
           <td>${transactionCount}</td>
-          <td style="text-align:right">${escapeHtml(formatCurrency(totalRevenueCents, currency))}</td>
+          <td style="text-align:right">${escapeHtml(formatCurrency(totalRevenueCents, currency, zigRate))}</td>
           <td style="text-align:right">100%</td>
         </tr>
       </tbody>
@@ -141,8 +143,8 @@ function buildReportHTML(params: ExportReportPDFParams): string {
       <td>${i + 1}</td>
       <td>${escapeHtml(p.productName)}</td>
       <td style="text-align:right">${p.qtySold}</td>
-      <td style="text-align:right">${escapeHtml(formatCurrency(p.revenueCents, currency))}</td>
-      <td style="text-align:right" class="${p.profitCents > 0 ? 'profit-positive' : p.profitCents < 0 ? 'profit-negative' : ''}">${escapeHtml(formatCurrency(p.profitCents, currency))}</td>
+      <td style="text-align:right">${escapeHtml(formatCurrency(p.revenueCents, currency, zigRate))}</td>
+      <td style="text-align:right" class="${p.profitCents > 0 ? 'profit-positive' : p.profitCents < 0 ? 'profit-negative' : ''}">${escapeHtml(formatCurrency(p.profitCents, currency, zigRate))}</td>
       <td style="text-align:right">${p.marginPercent}%</td>
     </tr>`,
     )
@@ -174,15 +176,15 @@ function buildReportHTML(params: ExportReportPDFParams): string {
       <tbody>
         <tr>
           <td>Total Revenue</td>
-          <td style="text-align:right">${escapeHtml(formatCurrency(totalRevenueCents, currency))}</td>
+          <td style="text-align:right">${escapeHtml(formatCurrency(totalRevenueCents, currency, zigRate))}</td>
         </tr>
         <tr>
           <td style="color:#C0152A">Cost of Goods Sold</td>
-          <td style="text-align:right;color:#C0152A">− ${escapeHtml(formatCurrency(cogsCents, currency))}</td>
+          <td style="text-align:right;color:#C0152A">− ${escapeHtml(formatCurrency(cogsCents, currency, zigRate))}</td>
         </tr>
         <tr class="total-row">
           <td class="${profitClass}"><strong>Gross Profit</strong></td>
-          <td style="text-align:right" class="${profitClass}"><strong>${escapeHtml(formatCurrency(totalProfitCents, currency))}</strong></td>
+          <td style="text-align:right" class="${profitClass}"><strong>${escapeHtml(formatCurrency(totalProfitCents, currency, zigRate))}</strong></td>
         </tr>
         <tr>
           <td>Profit Margin</td>
@@ -190,7 +192,7 @@ function buildReportHTML(params: ExportReportPDFParams): string {
         </tr>
         <tr>
           <td style="color:#5A6A8A">Avg Profit Per Sale</td>
-          <td style="text-align:right;color:#5A6A8A">${escapeHtml(formatCurrency(avgProfitCents, currency))}</td>
+          <td style="text-align:right;color:#5A6A8A">${escapeHtml(formatCurrency(avgProfitCents, currency, zigRate))}</td>
         </tr>
       </tbody>
     </table>

@@ -2,7 +2,7 @@ import React from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { Card } from '../ui/Card'
-import { formatCurrency } from '../../lib/formatters'
+import { useMoneyFormat } from '../../hooks/useMoneyFormat'
 import type { Sale, SaleItem, PaymentMethod } from '../../types'
 
 interface SaleCardProps {
@@ -41,6 +41,7 @@ function formatTime(timestamp: number): string {
 }
 
 export function SaleCard({ sale, saleItems, onPress }: SaleCardProps) {
+  const { formatMoney } = useMoneyFormat()
   const badge = PAYMENT_BADGE[sale.paymentMethod] ?? PAYMENT_BADGE.cash_usd
   const borderColor = BORDER_COLOR[sale.paymentMethod] ?? '#0047AB'
 
@@ -67,7 +68,7 @@ export function SaleCard({ sale, saleItems, onPress }: SaleCardProps) {
           <Text style={styles.time}>{formatTime(sale.createdAt)}</Text>
         </View>
         <View style={styles.rightCol}>
-          <Text style={styles.total}>{formatCurrency(sale.totalCents)}</Text>
+          <Text style={styles.total}>{formatMoney(sale.totalCents)}</Text>
           <View
             style={[
               styles.paymentBadge,
@@ -91,7 +92,7 @@ export function SaleCard({ sale, saleItems, onPress }: SaleCardProps) {
         </View>
         <View style={styles.profitRow}>
           <Text style={[styles.profit, { color: profitColor }]}>
-            {formatCurrency(profitCents)}
+            {formatMoney(profitCents)}
           </Text>
           <Text style={styles.profitLabel}>profit</Text>
         </View>

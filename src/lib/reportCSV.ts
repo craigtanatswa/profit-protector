@@ -3,6 +3,7 @@ import * as Sharing from 'expo-sharing'
 import { Q } from '@nozbe/watermelondb'
 import { database } from '../database'
 import { formatDate, formatPaymentMethod } from './formatters'
+import { usdCentsToExportAmount } from './currencyDisplay'
 import type SaleModel from '../database/models/Sale'
 import type SaleItemModel from '../database/models/SaleItem'
 import type CreditSaleModel from '../database/models/CreditSale'
@@ -17,6 +18,7 @@ interface BusinessForCSV {
   id: string
   name: string
   currency: string
+  zigRatePerUsd?: number
 }
 
 export interface ExportReportCSVParams {
@@ -58,6 +60,11 @@ export async function exportReportCSV(params: ExportReportCSVParams): Promise<vo
   const { business, period, startMs, endMs, businessId } = params
 
   if (!database) throw new Error('Database not available')
+
+  const displayCurrency = business.currency || 'USD'
+  const zigRate = business.zigRatePerUsd ?? 1
+  const fmtUsdCents = (cents: number): string =>
+    usdCentsToExportAmount(cents, displayCurrency, zigRate).toFixed(2)
 
   // 1. Fetch all sales in date range (ordered by date ascending)
   const salesRaw = await database
@@ -178,9 +185,9 @@ export async function exportReportCSV(params: ExportReportCSVParams): Promise<vo
           escapeCsvField(''),
           escapeCsvField(''),
           escapeCsvField(0),
-          escapeCsvField((sale.totalCents / 100).toFixed(2)),
+          escapeCsvField(fmtUsdCents(sale.totalCents)),
           escapeCsvField('0.00'),
-          escapeCsvField((sale.totalCents / 100).toFixed(2)),
+          escapeCsvField(fmtUsdCents(sale.totalCents)),
           escapeCsvField('0.00'),
           escapeCsvField(paymentStr),
           escapeCsvField(customerName),
@@ -200,10 +207,10 @@ export async function exportReportCSV(params: ExportReportCSVParams): Promise<vo
             escapeCsvField(item.productNameSnapshot),
             escapeCsvField(category),
             escapeCsvField(item.qty),
-            escapeCsvField((item.unitPriceCents / 100).toFixed(2)),
-            escapeCsvField((item.costPriceCents / 100).toFixed(2)),
-            escapeCsvField((lineTotal / 100).toFixed(2)),
-            escapeCsvField((lineProfit / 100).toFixed(2)),
+            escapeCsvField(fmtUsdCents(item.unitPriceCents)),
+            escapeCsvField(fmtUsdCents(item.costPriceCents)),
+            escapeCsvField(fmtUsdCents(lineTotal)),
+            escapeCsvField(fmtUsdCents(lineProfit)),
             escapeCsvField(paymentStr),
             escapeCsvField(customerName),
           ].join(','),
@@ -222,8 +229,8 @@ export async function exportReportCSV(params: ExportReportCSVParams): Promise<vo
             escapeCsvField(''),
             escapeCsvField(''),
             escapeCsvField(''),
-            escapeCsvField((-sale.discountCents / 100).toFixed(2)),
-            escapeCsvField((-sale.discountCents / 100).toFixed(2)),
+            escapeCsvField((-usdCentsToExportAmount(sale.discountCents, displayCurrency, zigRate)).toFixed(2)),
+            escapeCsvField((-usdCentsToExportAmount(sale.discountCents, displayCurrency, zigRate)).toFixed(2)),
             escapeCsvField(paymentStr),
             escapeCsvField(customerName),
           ].join(','),
@@ -241,12 +248,12 @@ export async function exportReportCSV(params: ExportReportCSVParams): Promise<vo
   rows.push([`Period`, escapeCsvField(period), '', '', '', '', '', '', '', '', '', ''].join(','))
   rows.push([
     'Total Revenue',
-    escapeCsvField((totalRevenueCents / 100).toFixed(2)),
+    escapeCsvField(fmtUsdCents(totalRevenueCents)),
     '', '', '', '', '', '', '', '', '', '',
   ].join(','))
   rows.push([
     'Total Profit',
-    escapeCsvField((totalProfitCents / 100).toFixed(2)),
+    escapeCsvField(fmtUsdCents(totalProfitCents)),
     '', '', '', '', '', '', '', '', '', '',
   ].join(','))
   rows.push([

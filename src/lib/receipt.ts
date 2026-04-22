@@ -21,6 +21,7 @@ function escapeHtml(text: string): string {
 function buildReceiptHTML(params: ReceiptParams): string {
   const { sale, saleItems, business, customer } = params
   const currency = business.currency || 'USD'
+  const zigRate = business.zigRatePerUsd ?? 1
 
   const subtotal = saleItems.reduce((sum, item) => sum + item.unitPriceCents * item.qty, 0)
 
@@ -30,8 +31,8 @@ function buildReceiptHTML(params: ReceiptParams): string {
     <div class="item-row">
       <div class="item-name">${escapeHtml(item.productNameSnapshot)}</div>
       <div class="item-qty">${item.qty}</div>
-      <div class="item-price">${escapeHtml(formatCurrency(item.unitPriceCents, currency))}</div>
-      <div class="item-total">${escapeHtml(formatCurrency(item.unitPriceCents * item.qty, currency))}</div>
+      <div class="item-price">${escapeHtml(formatCurrency(item.unitPriceCents, currency, zigRate))}</div>
+      <div class="item-total">${escapeHtml(formatCurrency(item.unitPriceCents * item.qty, currency, zigRate))}</div>
     </div>`,
     )
     .join('')
@@ -41,7 +42,7 @@ function buildReceiptHTML(params: ReceiptParams): string {
       ? `
     <div class="totals-row">
       <span class="totals-label">Discount</span>
-      <span class="discount-value">-${escapeHtml(formatCurrency(sale.discountCents, currency))}</span>
+      <span class="discount-value">-${escapeHtml(formatCurrency(sale.discountCents, currency, zigRate))}</span>
     </div>`
       : ''
 
@@ -56,7 +57,7 @@ function buildReceiptHTML(params: ReceiptParams): string {
       customer.outstandingBalanceCents > 0
         ? `<div class="payment-row">
       <span></span>
-      <span style="color:#B45309;font-weight:500;">Balance owed: ${escapeHtml(formatCurrency(customer.outstandingBalanceCents, currency))}</span>
+      <span style="color:#B45309;font-weight:500;">Balance owed: ${escapeHtml(formatCurrency(customer.outstandingBalanceCents, currency, zigRate))}</span>
     </div>`
         : ''
     }`
@@ -121,7 +122,7 @@ function buildReceiptHTML(params: ReceiptParams): string {
 
   <div class="totals-row">
     <span class="totals-label">Subtotal</span>
-    <span class="totals-value">${escapeHtml(formatCurrency(subtotal, currency))}</span>
+    <span class="totals-value">${escapeHtml(formatCurrency(subtotal, currency, zigRate))}</span>
   </div>
 
   ${discountHTML}
@@ -130,7 +131,7 @@ function buildReceiptHTML(params: ReceiptParams): string {
 
   <div class="total-row">
     <span class="total-label">TOTAL</span>
-    <span class="total-value">${escapeHtml(formatCurrency(sale.totalCents, currency))}</span>
+    <span class="total-value">${escapeHtml(formatCurrency(sale.totalCents, currency, zigRate))}</span>
   </div>
 
   <div class="payment-row">

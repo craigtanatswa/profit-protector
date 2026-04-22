@@ -9,6 +9,7 @@ export default class Business extends Model {
   @field('phone') phone!: string
   @field('business_type') businessType!: string
   @field('currency') currency!: string
+  @field('zig_rate_per_usd') zigRatePerUsd!: number | null
   @field('login_username') loginUsername!: string | null
   @field('supabase_id') supabaseId!: string | null
   @readonly @date('created_at') createdAt!: Date

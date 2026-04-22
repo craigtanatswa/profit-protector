@@ -14,6 +14,7 @@ interface ReceiptCardProps {
 export function ReceiptCard({ sale, saleItems, business, customer }: ReceiptCardProps) {
   const subtotal = saleItems.reduce((sum, item) => sum + item.unitPriceCents * item.qty, 0)
   const currency = business.currency || 'USD'
+  const zigRate = business.zigRatePerUsd ?? 1
 
   return (
     <Card padding="lg" style={styles.card}>
@@ -47,9 +48,9 @@ export function ReceiptCard({ sale, saleItems, business, customer }: ReceiptCard
             {item.productNameSnapshot}
           </Text>
           <Text style={styles.itemQty}>{item.qty}</Text>
-          <Text style={styles.itemPrice}>{formatCurrency(item.unitPriceCents, currency)}</Text>
+          <Text style={styles.itemPrice}>{formatCurrency(item.unitPriceCents, currency, zigRate)}</Text>
           <Text style={styles.itemTotal}>
-            {formatCurrency(item.unitPriceCents * item.qty, currency)}
+            {formatCurrency(item.unitPriceCents * item.qty, currency, zigRate)}
           </Text>
         </View>
       ))}
@@ -59,7 +60,7 @@ export function ReceiptCard({ sale, saleItems, business, customer }: ReceiptCard
       {/* Subtotal */}
       <View style={styles.totalsRow}>
         <Text style={styles.totalsLabel}>Subtotal</Text>
-        <Text style={styles.totalsValue}>{formatCurrency(subtotal, currency)}</Text>
+        <Text style={styles.totalsValue}>{formatCurrency(subtotal, currency, zigRate)}</Text>
       </View>
 
       {/* Discount */}
@@ -67,7 +68,7 @@ export function ReceiptCard({ sale, saleItems, business, customer }: ReceiptCard
         <View style={styles.totalsRow}>
           <Text style={styles.totalsLabel}>Discount</Text>
           <Text style={styles.discountValue}>
-            -{formatCurrency(sale.discountCents, currency)}
+            -{formatCurrency(sale.discountCents, currency, zigRate)}
           </Text>
         </View>
       )}
@@ -78,7 +79,7 @@ export function ReceiptCard({ sale, saleItems, business, customer }: ReceiptCard
       {/* Total */}
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>TOTAL</Text>
-        <Text style={styles.totalValue}>{formatCurrency(sale.totalCents, currency)}</Text>
+        <Text style={styles.totalValue}>{formatCurrency(sale.totalCents, currency, zigRate)}</Text>
       </View>
 
       {/* Payment method */}
@@ -98,7 +99,7 @@ export function ReceiptCard({ sale, saleItems, business, customer }: ReceiptCard
             <View style={styles.paymentRow}>
               <Text style={styles.paymentLabel} />
               <Text style={styles.balanceOwed}>
-                Balance owed: {formatCurrency(customer.outstandingBalanceCents, currency)}
+                Balance owed: {formatCurrency(customer.outstandingBalanceCents, currency, zigRate)}
               </Text>
             </View>
           )}

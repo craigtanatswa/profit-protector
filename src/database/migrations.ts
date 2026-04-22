@@ -49,5 +49,14 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      toVersion: 6,
+      steps: [
+        addColumns({
+          table: 'businesses',
+          columns: [{ name: 'zig_rate_per_usd', type: 'number', isOptional: true }],
+        }),
+      ],
+    },
   ],
 })

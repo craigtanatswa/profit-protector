@@ -3,7 +3,7 @@ import React from 'react'
 import { StyleSheet, Text, View, type ViewStyle } from 'react-native'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
-import { formatCurrency } from '../../lib/formatters'
+import { useMoneyFormat } from '../../hooks/useMoneyFormat'
 import type { Product } from '../../types'
 
 interface ProductCardProps {
@@ -12,6 +12,7 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, onPress }: ProductCardProps) {
+  const { formatMoney } = useMoneyFormat()
   const { name, category, sellingPriceCents, unit, stockQty, lowStockThreshold } = product
 
   const isOutOfStock = stockQty === 0
@@ -45,7 +46,7 @@ export function ProductCard({ product, onPress }: ProductCardProps) {
           )}
         </View>
         <View style={styles.priceContainer}>
-          <Text style={styles.price}>{formatCurrency(sellingPriceCents)}</Text>
+          <Text style={styles.price}>{formatMoney(sellingPriceCents)}</Text>
           <Text style={styles.unitLabel}>per {unit}</Text>
         </View>
       </View>
