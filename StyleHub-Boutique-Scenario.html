@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>StyleHub Boutique — 3-Day Test Scenario</title>
+<style>
+  body {
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 11pt;
+    color: #0D1B3E;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20mm;
+    line-height: 1.5;
+  }
+  h1 { font-size: 22pt; color: #0047AB; text-align: center; margin-bottom: 4px; }
+  h2 { font-size: 15pt; color: #0047AB; border-bottom: 2px solid #0047AB; padding-bottom: 4px; margin-top: 28px; }
+  h3 { font-size: 12pt; color: #003380; margin-top: 18px; margin-bottom: 6px; }
+  h4 { font-size: 11pt; color: #0047AB; margin-top: 14px; margin-bottom: 4px; }
+  .subtitle { text-align: center; font-size: 13pt; color: #5A6A8A; margin-bottom: 6px; }
+  .meta { text-align: center; font-size: 10pt; color: #5A6A8A; margin-bottom: 30px; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; font-size: 10pt; }
+  th { background: #0047AB; color: white; padding: 7px 8px; text-align: left; font-weight: 600; }
+  td { padding: 6px 8px; border-bottom: 1px solid #DDE3F0; vertical-align: top; }
+  tr:nth-child(even) td { background: #F4F6FB; }
+  tr:last-child td { border-bottom: none; }
+  .total-row td { background: #E6EEFF !important; font-weight: 700; border-top: 2px solid #0047AB; }
+  .number { text-align: right; }
+  .highlight { background: #E6EEFF; border-radius: 4px; padding: 10px 14px; margin: 10px 0; }
+  .warning { background: #FEF3C7; border-left: 4px solid #B45309; padding: 10px 14px; margin: 10px 0; }
+  .success { background: #ECFDF5; border-left: 4px solid #0A7A4B; padding: 10px 14px; margin: 10px 0; }
+  .info { background: #EFF6FF; border-left: 4px solid #0047AB; padding: 10px 14px; margin: 10px 0; }
+  .sale-box { border: 1px solid #DDE3F0; border-radius: 6px; padding: 12px 16px; margin: 12px 0; page-break-inside: avoid; }
+  .sale-header { font-weight: 700; font-size: 11pt; color: #0047AB; margin-bottom: 6px; }
+  .sale-meta { font-size: 10pt; color: #5A6A8A; margin-bottom: 8px; }
+  .sale-total { font-weight: 700; border-top: 1px solid #DDE3F0; padding-top: 6px; margin-top: 6px; }
+  .day-summary { background: #0047AB; color: white; padding: 12px 16px; border-radius: 6px; margin: 16px 0; }
+  .day-summary h3 { color: white; margin: 0 0 8px 0; }
+  .day-summary table th { background: #003380; }
+  .day-summary table td { color: white; border-bottom-color: rgba(255,255,255,0.2); }
+  .day-summary table tr:nth-child(even) td { background: rgba(0,0,0,0.1); }
+  .section-break { border: none; border-top: 1px dashed #DDE3F0; margin: 20px 0; }
+  .step { counter-increment: step; }
+  .step::before { content: "Step " counter(step) ": "; font-weight: 700; color: #0047AB; }
+  ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+  ol.steps li { counter-increment: step; margin-bottom: 6px; }
+  ol.steps li::before { content: counter(step) ". "; font-weight: 700; color: #0047AB; }
+  .page-break { page-break-after: always; }
+  .formula { font-family: 'Courier New', monospace; background: #F4F6FB; padding: 2px 6px; border-radius: 3px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 9pt; font-weight: 600; }
+  .badge-cash { background: #DBEAFE; color: #0047AB; }
+  .badge-eco { background: #D1FAE5; color: #0A7A4B; }
+  .badge-bank { background: #FEF3C7; color: #B45309; }
+  .badge-credit { background: #FEE2E2; color: #C0152A; }
+  .toc a { text-decoration: none; color: #0047AB; }
+  .toc li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     COVER
+═══════════════════════════════════════════════════════════════ -->
+<h1>StyleHub Boutique</h1>
+<p class="subtitle">3-Day Test Scenario for Profit Protector</p>
+<p class="meta">Clothing Retail · Zimbabwe · Dates: Mon 7 Apr – Wed 9 Apr 2025</p>
+
+<div class="info">
+  <strong>Purpose:</strong> Enter every step below into Profit Protector exactly as written.
+  When finished, your Reports screen, Sales History, Dashboard and CSV export
+  should all match the <em>Expected Results</em> section at the end of this document.
+  Every dollar figure has been independently verified.
+</div>
+
+<!-- TOC -->
+<h2>Contents</h2>
+<ul class="toc">
+  <li><a href="#clear">0 · How to Clear Your Current Store Data</a></li>
+  <li><a href="#setup">1 · Business &amp; Product Setup</a></li>
+  <li><a href="#customers">2 · Add Customers</a></li>
+  <li><a href="#day1">3 · Day 1 — Monday 7 Apr 2025</a></li>
+  <li><a href="#day2">4 · Day 2 — Tuesday 8 Apr 2025</a></li>
+  <li><a href="#day3">5 · Day 3 — Wednesday 9 Apr 2025</a></li>
+  <li><a href="#results">6 · Expected Results Checklist</a></li>
+  <li><a href="#math">7 · Full Calculation Proof</a></li>
+</ul>
+
+<div class="page-break"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 0 — CLEAR DATA
+═══════════════════════════════════════════════════════════════ -->
+<h2 id="clear">0 · How to Clear Your Current Store Data</h2>
+
+<div class="warning">
+  <strong>⚠ Warning:</strong> This permanently deletes <em>all</em> products, sales,
+  inventory and customer records from the app on this device.
+  It does <strong>not</strong> delete your Supabase cloud account — only the local database.
+  If you have cloud sync enabled, records already pushed to Supabase may re-sync
+  after login. To fully reset, also clear the Supabase tables via the SQL editor.
+</div>
+
+<h3>Method A — Android (recommended, no root required)</h3>
+<ol>
+  <li>Close the Profit Protector app completely.</li>
+  <li>Open <strong>Android Settings</strong> (gear icon).</li>
+  <li>Go to <strong>Apps</strong> (or <em>Application Manager</em> on older Android).</li>
+  <li>Find and tap <strong>Profit Protector</strong>.</li>
+  <li>Tap <strong>Storage &amp; cache</strong>.</li>
+  <li>Tap <strong>Clear storage</strong> (or <em>Clear data</em>) — <em>not</em> just Clear cache.</li>
+  <li>Confirm the dialog. The app data is now wiped.</li>
+  <li>Reopen the app — you will be taken to the setup / login screen.</li>
+  <li>Log in and re-create the business profile.</li>
+</ol>
+
+<h3>Method B — Optional Supabase cloud reset</h3>
+<p>If you want to also clear the server-side data, run this in the
+Supabase SQL Editor (replace <code>your_business_id</code> with your actual ID):</p>
+<pre style="background:#F4F6FB;padding:10px;font-size:9pt;border-radius:4px;overflow-x:auto;">
+DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE business_id = 'your_business_id');
+DELETE FROM stock_movements WHERE business_id = 'your_business_id';
+DELETE FROM credit_sales WHERE sale_id IN (SELECT id FROM sales WHERE business_id = 'your_business_id');
+DELETE FROM payment_records WHERE customer_id IN (SELECT id FROM customers WHERE business_id = 'your_business_id');
+DELETE FROM customers WHERE business_id = 'your_business_id';
+DELETE FROM sales WHERE business_id = 'your_business_id';
+DELETE FROM products WHERE business_id = 'your_business_id';
+</pre>
+
+<div class="page-break"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 1 — SETUP
+═══════════════════════════════════════════════════════════════ -->
+<h2 id="setup">1 · Business &amp; Product Setup</h2>
+
+<h3>1.1 Business Profile</h3>
+<p>When the app launches after clearing data, set up the business as follows:</p>
+<table>
+  <tr><th style="width:35%">Field</th><th>Value</th></tr>
+  <tr><td>Business Name</td><td><strong>StyleHub Boutique</strong></td></tr>
+  <tr><td>Owner Name</td><td>Craig Tanatswa</td></tr>
+  <tr><td>Phone</td><td>0771 000 001</td></tr>
+  <tr><td>Business Type</td><td>Retail</td></tr>
+  <tr><td>Currency</td><td>USD</td></tr>
+</table>
+
+<h3>1.2 Add Products</h3>
+<p>Navigate to <strong>Inventory → Add Product</strong> and create each product below.
+Set the <em>Initial Stock</em> quantity and <em>Low Stock Alert</em> threshold as shown.
+Enter Cost Price and Selling Price in <strong>dollars</strong> (e.g. type <code>3.50</code> for $3.50).</p>
+
+<div class="info">
+  <strong>Important:</strong> Enter prices exactly as shown — the calculations in this document
+  depend on these exact figures. Category names are case-sensitive suggestions; use them
+  consistently so filters work correctly.
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Product Name</th>
+      <th>Category</th>
+      <th>Unit</th>
+      <th class="number">Cost Price</th>
+      <th class="number">Selling Price</th>
+      <th class="number">Initial Stock</th>
+      <th class="number">Low Stock Alert</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>Snapback Hat</td><td>Hats</td><td>Each</td><td class="number">$3.50</td><td class="number">$8.00</td><td class="number">50</td><td class="number">5</td></tr>
+    <tr><td>2</td><td>Bucket Hat</td><td>Hats</td><td>Each</td><td class="number">$4.50</td><td class="number">$10.00</td><td class="number">30</td><td class="number">5</td></tr>
+    <tr><td>3</td><td>Plain T-Shirt</td><td>T-Shirts</td><td>Each</td><td class="number">$4.00</td><td class="number">$10.00</td><td class="number">100</td><td class="number">10</td></tr>
+    <tr><td>4</td><td>Graphic T-Shirt</td><td>T-Shirts</td><td>Each</td><td class="number">$4.50</td><td class="number">$10.00</td><td class="number">100</td><td class="number">10</td></tr>
+    <tr><td>5</td><td>Casual Shirt</td><td>Shirts</td><td>Each</td><td class="number">$9.00</td><td class="number">$20.00</td><td class="number">50</td><td class="number">5</td></tr>
+    <tr><td>6</td><td>Formal Shirt</td><td>Shirts</td><td>Each</td><td class="number">$9.00</td><td class="number">$20.00</td><td class="number">25</td><td class="number">5</td></tr>
+    <tr><td>7</td><td>Jeans (Slim Fit)</td><td>Bottoms</td><td>Each</td><td class="number">$12.00</td><td class="number">$25.00</td><td class="number">50</td><td class="number">5</td></tr>
+    <tr><td>8</td><td>Cargo Shorts</td><td>Bottoms</td><td>Each</td><td class="number">$7.00</td><td class="number">$15.00</td><td class="number">50</td><td class="number">5</td></tr>
+    <tr><td>9</td><td>Trackpants</td><td>Bottoms</td><td>Each</td><td class="number">$8.00</td><td class="number">$15.00</td><td class="number">20</td><td class="number">5</td></tr>
+    <tr><td>10</td><td>Sneakers</td><td>Shoes</td><td>Pair</td><td class="number">$18.00</td><td class="number">$40.00</td><td class="number">30</td><td class="number">3</td></tr>
+    <tr><td>11</td><td>Loafers</td><td>Shoes</td><td>Pair</td><td class="number">$14.00</td><td class="number">$30.00</td><td class="number">20</td><td class="number">3</td></tr>
+    <tr><td>12</td><td>Ankle Socks (3-pack)</td><td>Socks</td><td>Each</td><td class="number">$2.50</td><td class="number">$5.00</td><td class="number">100</td><td class="number">10</td></tr>
+    <tr><td>13</td><td>Crew Socks (3-pack)</td><td>Socks</td><td>Each</td><td class="number">$2.50</td><td class="number">$5.00</td><td class="number">40</td><td class="number">10</td></tr>
+    <tr><td>14</td><td>Leather Belt</td><td>Accessories</td><td>Each</td><td class="number">$5.50</td><td class="number">$12.00</td><td class="number">50</td><td class="number">5</td></tr>
+    <tr><td>15</td><td>Varsity Jacket</td><td>Jackets</td><td>Each</td><td class="number">$18.00</td><td class="number">$40.00</td><td class="number">10</td><td class="number">3</td></tr>
+    <tr class="total-row"><td colspan="5">Opening Stock Value (at selling price)</td><td class="number">—</td><td class="number">—</td><td class="number"><strong>$10,000.00</strong></td></tr>
+  </tbody>
+</table>
+
+<div class="success">
+  <strong>✓ Verify:</strong> After adding all 15 products, the Dashboard should show
+  <strong>Total Stock Value = $10,000.00</strong>. If it doesn't, recheck the quantities
+  and selling prices above. (The dashboard shows stock value at <em>selling price</em>.)
+</div>
+
+<h4>Opening Stock Value Proof</h4>
+<table>
+  <tr><th>Category</th><th>Products</th><th class="number">Value at Sell Price</th></tr>
+  <tr><td>Hats</td><td>50×$8 + 30×$10</td><td class="number">$700.00</td></tr>
+  <tr><td>T-Shirts</td><td>100×$10 + 100×$10</td><td class="number">$2,000.00</td></tr>
+  <tr><td>Shirts</td><td>50×$20 + 25×$20</td><td class="number">$1,500.00</td></tr>
+  <tr><td>Bottoms</td><td>50×$25 + 50×$15 + 20×$15</td><td class="number">$2,300.00</td></tr>
+  <tr><td>Shoes</td><td>30×$40 + 20×$30</td><td class="number">$1,800.00</td></tr>
+  <tr><td>Socks</td><td>100×$5 + 40×$5</td><td class="number">$700.00</td></tr>
+  <tr><td>Accessories + Jackets</td><td>50×$12 + 10×$40</td><td class="number">$1,000.00</td></tr>
+  <tr class="total-row"><td colspan="2"><strong>TOTAL</strong></td><td class="number"><strong>$10,000.00</strong></td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 2 — CUSTOMERS
+═══════════════════════════════════════════════════════════════ -->
+<h2 id="customers">2 · Add Customers</h2>
+<p>Go to <strong>Customers → Add Customer</strong> and create these four customers before
+entering any sales. They are needed for credit and named transactions.</p>
+
+<table>
+  <thead>
+    <tr><th>#</th><th>Full Name</th><th>Phone Number</th><th>Note</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td><strong>Farai Mutasa</strong></td><td>0774 567 890</td><td>Will buy on credit (Day 1)</td></tr>
+    <tr><td>2</td><td><strong>Tendai Moyo</strong></td><td>0771 234 567</td><td>Will buy on credit (Day 2)</td></tr>
+    <tr><td>3</td><td><strong>Shamiso Dube</strong></td><td>0712 345 678</td><td>Regular EcoCash customer</td></tr>
+    <tr><td>4</td><td><strong>Rudo Chikwanda</strong></td><td>0733 456 789</td><td>Regular Bank Transfer customer</td></tr>
+  </tbody>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 3 — DAY 1
+═══════════════════════════════════════════════════════════════ -->
+<h2 id="day1">3 · Day 1 — Monday, 7 April 2025</h2>
+<p>5 sales. Total revenue $304.00 · Total profit $164.00 · Discounts $2.00</p>
+
+<!-- Sale 1 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0001 · 09:15 AM · <span class="badge badge-cash">Cash (USD)</span></div>
+  <div class="sale-meta">Walk-in customer · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Plain T-Shirt</td><td class="number">2</td><td class="number">$10.00</td><td class="number">$4.00</td><td class="number">$20.00</td><td class="number">$12.00</td></tr>
+    <tr><td>Ankle Socks (3-pack)</td><td class="number">1</td><td class="number">$5.00</td><td class="number">$2.50</td><td class="number">$5.00</td><td class="number">$2.50</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$25.00</td><td class="number">$14.50</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $25.00 · COGS: $10.50 · Profit: <strong>$14.50</strong></div>
+</div>
+
+<!-- Sale 2 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0002 · 10:30 AM · <span class="badge badge-eco">EcoCash</span></div>
+  <div class="sale-meta">Customer: Shamiso Dube · Discount: $2.00</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Jeans (Slim Fit)</td><td class="number">1</td><td class="number">$25.00</td><td class="number">$12.00</td><td class="number">$25.00</td><td class="number">$13.00</td></tr>
+    <tr><td>Casual Shirt</td><td class="number">1</td><td class="number">$20.00</td><td class="number">$9.00</td><td class="number">$20.00</td><td class="number">$11.00</td></tr>
+    <tr><td>Leather Belt</td><td class="number">1</td><td class="number">$12.00</td><td class="number">$5.50</td><td class="number">$12.00</td><td class="number">$6.50</td></tr>
+    <tr><td colspan="4" style="color:#C0152A">Discount</td><td class="number" style="color:#C0152A">−$2.00</td><td class="number" style="color:#C0152A">−$2.00</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL (after discount)</td><td class="number">$55.00</td><td class="number">$28.50</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $55.00 · COGS: $26.50 · Profit: <strong>$28.50</strong></div>
+</div>
+
+<!-- Sale 3 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0003 · 13:45 PM · <span class="badge badge-cash">Cash (USD)</span></div>
+  <div class="sale-meta">Walk-in customer · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Sneakers</td><td class="number">1</td><td class="number">$40.00</td><td class="number">$18.00</td><td class="number">$40.00</td><td class="number">$22.00</td></tr>
+    <tr><td>Ankle Socks (3-pack)</td><td class="number">2</td><td class="number">$5.00</td><td class="number">$2.50</td><td class="number">$10.00</td><td class="number">$5.00</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$50.00</td><td class="number">$27.00</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $50.00 · COGS: $23.00 · Profit: <strong>$27.00</strong></div>
+</div>
+
+<!-- Sale 4 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0004 · 15:20 PM · <span class="badge badge-credit">Credit / Owing</span></div>
+  <div class="sale-meta">Customer: <strong>Farai Mutasa</strong> · No discount · This is a CREDIT sale — Farai owes this amount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Formal Shirt</td><td class="number">2</td><td class="number">$20.00</td><td class="number">$9.00</td><td class="number">$40.00</td><td class="number">$22.00</td></tr>
+    <tr><td>Jeans (Slim Fit)</td><td class="number">2</td><td class="number">$25.00</td><td class="number">$12.00</td><td class="number">$50.00</td><td class="number">$26.00</td></tr>
+    <tr><td>Leather Belt</td><td class="number">2</td><td class="number">$12.00</td><td class="number">$5.50</td><td class="number">$24.00</td><td class="number">$13.00</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$114.00</td><td class="number">$61.00</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $114.00 (credit) · COGS: $53.00 · Profit: <strong>$61.00</strong></div>
+</div>
+
+<!-- Sale 5 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0005 · 16:45 PM · <span class="badge badge-bank">Bank Transfer</span></div>
+  <div class="sale-meta">Customer: Rudo Chikwanda · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Varsity Jacket</td><td class="number">1</td><td class="number">$40.00</td><td class="number">$18.00</td><td class="number">$40.00</td><td class="number">$22.00</td></tr>
+    <tr><td>Graphic T-Shirt</td><td class="number">2</td><td class="number">$10.00</td><td class="number">$4.50</td><td class="number">$20.00</td><td class="number">$11.00</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$60.00</td><td class="number">$33.00</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $60.00 · COGS: $27.00 · Profit: <strong>$33.00</strong></div>
+</div>
+
+<!-- Day 1 Summary -->
+<div class="highlight">
+  <h3 style="margin-top:0;color:#0047AB">Day 1 Summary</h3>
+  <table>
+    <tr><th>Metric</th><th class="number">Amount</th></tr>
+    <tr><td>Total Revenue (cash collected + credit issued)</td><td class="number">$304.00</td></tr>
+    <tr><td>Total COGS</td><td class="number">$140.00</td></tr>
+    <tr><td>Total Profit</td><td class="number"><strong>$164.00</strong></td></tr>
+    <tr><td>Profit Margin</td><td class="number">53.9%</td></tr>
+    <tr><td>Transactions</td><td class="number">5</td></tr>
+    <tr><td>Outstanding Credit (Farai Mutasa)</td><td class="number">$114.00</td></tr>
+  </table>
+  <p style="margin-bottom:0"><strong>Payment breakdown:</strong>
+    Cash (USD) $75.00 (2) ·
+    EcoCash $55.00 (1) ·
+    Bank Transfer $60.00 (1) ·
+    Credit $114.00 (1)</p>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 4 — DAY 2
+═══════════════════════════════════════════════════════════════ -->
+<h2 id="day2">4 · Day 2 — Tuesday, 8 April 2025</h2>
+<p>6 sales + 1 credit sale. Total revenue $282.00 · Total profit $151.00 · Discounts $5.00</p>
+
+<!-- Sale 6 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0006 · 09:00 AM · <span class="badge badge-cash">Cash (USD)</span></div>
+  <div class="sale-meta">Walk-in customer · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Cargo Shorts</td><td class="number">2</td><td class="number">$15.00</td><td class="number">$7.00</td><td class="number">$30.00</td><td class="number">$16.00</td></tr>
+    <tr><td>Plain T-Shirt</td><td class="number">2</td><td class="number">$10.00</td><td class="number">$4.00</td><td class="number">$20.00</td><td class="number">$12.00</td></tr>
+    <tr><td>Crew Socks (3-pack)</td><td class="number">1</td><td class="number">$5.00</td><td class="number">$2.50</td><td class="number">$5.00</td><td class="number">$2.50</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$55.00</td><td class="number">$30.50</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $55.00 · COGS: $24.50 · Profit: <strong>$30.50</strong></div>
+</div>
+
+<!-- Sale 7 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0007 · 10:15 AM · <span class="badge badge-eco">EcoCash</span></div>
+  <div class="sale-meta">Walk-in customer · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Sneakers</td><td class="number">1</td><td class="number">$40.00</td><td class="number">$18.00</td><td class="number">$40.00</td><td class="number">$22.00</td></tr>
+    <tr><td>Crew Socks (3-pack)</td><td class="number">1</td><td class="number">$5.00</td><td class="number">$2.50</td><td class="number">$5.00</td><td class="number">$2.50</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$45.00</td><td class="number">$24.50</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $45.00 · COGS: $20.50 · Profit: <strong>$24.50</strong></div>
+</div>
+
+<!-- Sale 8 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0008 · 13:00 PM · <span class="badge badge-cash">Cash (USD)</span></div>
+  <div class="sale-meta">Customer: Tendai Moyo · Discount: $5.00 (loyalty discount)</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Formal Shirt</td><td class="number">1</td><td class="number">$20.00</td><td class="number">$9.00</td><td class="number">$20.00</td><td class="number">$11.00</td></tr>
+    <tr><td>Casual Shirt</td><td class="number">1</td><td class="number">$20.00</td><td class="number">$9.00</td><td class="number">$20.00</td><td class="number">$11.00</td></tr>
+    <tr><td>Jeans (Slim Fit)</td><td class="number">1</td><td class="number">$25.00</td><td class="number">$12.00</td><td class="number">$25.00</td><td class="number">$13.00</td></tr>
+    <tr><td colspan="4" style="color:#C0152A">Discount</td><td class="number" style="color:#C0152A">−$5.00</td><td class="number" style="color:#C0152A">−$5.00</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL (after discount)</td><td class="number">$60.00</td><td class="number">$30.00</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $60.00 · COGS: $30.00 · Profit: <strong>$30.00</strong></div>
+</div>
+
+<!-- Sale 9 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0009 · 14:30 PM · <span class="badge badge-eco">EcoCash</span></div>
+  <div class="sale-meta">Walk-in customer · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Graphic T-Shirt</td><td class="number">3</td><td class="number">$10.00</td><td class="number">$4.50</td><td class="number">$30.00</td><td class="number">$16.50</td></tr>
+    <tr><td>Ankle Socks (3-pack)</td><td class="number">2</td><td class="number">$5.00</td><td class="number">$2.50</td><td class="number">$10.00</td><td class="number">$5.00</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$40.00</td><td class="number">$21.50</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $40.00 · COGS: $18.50 · Profit: <strong>$21.50</strong></div>
+</div>
+
+<!-- Sale 10 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0010 · 16:00 PM · <span class="badge badge-bank">Bank Transfer</span></div>
+  <div class="sale-meta">Customer: Rudo Chikwanda · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Loafers</td><td class="number">1</td><td class="number">$30.00</td><td class="number">$14.00</td><td class="number">$30.00</td><td class="number">$16.00</td></tr>
+    <tr><td>Leather Belt</td><td class="number">1</td><td class="number">$12.00</td><td class="number">$5.50</td><td class="number">$12.00</td><td class="number">$6.50</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$42.00</td><td class="number">$22.50</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $42.00 · COGS: $19.50 · Profit: <strong>$22.50</strong></div>
+</div>
+
+<!-- Sale 11 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0011 · 16:45 PM · <span class="badge badge-credit">Credit / Owing</span></div>
+  <div class="sale-meta">Customer: <strong>Tendai Moyo</strong> · No discount · Credit sale — Tendai owes this amount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Varsity Jacket</td><td class="number">1</td><td class="number">$40.00</td><td class="number">$18.00</td><td class="number">$40.00</td><td class="number">$22.00</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$40.00</td><td class="number">$22.00</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $40.00 (credit) · COGS: $18.00 · Profit: <strong>$22.00</strong></div>
+</div>
+
+<!-- Day 2 Summary -->
+<div class="highlight">
+  <h3 style="margin-top:0;color:#0047AB">Day 2 Summary</h3>
+  <table>
+    <tr><th>Metric</th><th class="number">Amount</th></tr>
+    <tr><td>Total Revenue</td><td class="number">$282.00</td></tr>
+    <tr><td>Total COGS</td><td class="number">$131.00</td></tr>
+    <tr><td>Total Profit</td><td class="number"><strong>$151.00</strong></td></tr>
+    <tr><td>Profit Margin</td><td class="number">53.5%</td></tr>
+    <tr><td>Transactions</td><td class="number">6</td></tr>
+    <tr><td>New Credit (Tendai Moyo)</td><td class="number">$40.00</td></tr>
+    <tr><td>Total Outstanding Credit (cumulative)</td><td class="number">$154.00</td></tr>
+  </table>
+  <p style="margin-bottom:0"><strong>Payment breakdown:</strong>
+    Cash (USD) $115.00 (2) ·
+    EcoCash $85.00 (2) ·
+    Bank Transfer $42.00 (1) ·
+    Credit $40.00 (1)</p>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 5 — DAY 3
+═══════════════════════════════════════════════════════════════ -->
+<h2 id="day3">5 · Day 3 — Wednesday, 9 April 2025</h2>
+<p>6 sales + 3 stock receives + 1 credit payment. Total revenue $349.00 · Total profit $187.00 · Discounts $3.00</p>
+
+<h3>5.1 Morning — Stock Receive (Restock)</h3>
+<p>Before the first sale, receive a delivery from your supplier.
+Go to <strong>Inventory → Receive Stock</strong> and enter three separate receipts:</p>
+
+<table>
+  <thead>
+    <tr><th>Product</th><th class="number">Qty Received</th><th class="number">Cost Per Unit</th><th class="number">Total Cost</th><th>Supplier</th><th>Reference</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Plain T-Shirt</td><td class="number">50</td><td class="number">$4.00</td><td class="number">$200.00</td><td>Fashion Wholesale Co.</td><td>PO-2025-001</td></tr>
+    <tr><td>Jeans (Slim Fit)</td><td class="number">20</td><td class="number">$12.00</td><td class="number">$240.00</td><td>Fashion Wholesale Co.</td><td>PO-2025-001</td></tr>
+    <tr><td>Sneakers</td><td class="number">10</td><td class="number">$18.00</td><td class="number">$180.00</td><td>Fashion Wholesale Co.</td><td>PO-2025-001</td></tr>
+    <tr class="total-row"><td colspan="2">Total Stock Purchase Cost</td><td></td><td class="number"><strong>$620.00</strong></td><td colspan="2"></td></tr>
+  </tbody>
+</table>
+
+<div class="info">
+  For each Receive Stock entry: set Date = 9 Apr 2025, tick "Update cost price" only
+  if the cost changed (it hasn't here — keep it at the same cost price).
+</div>
+
+<h3>5.2 Morning — Credit Payment from Farai Mutasa</h3>
+<p>Farai Mutasa comes in at 10:00 AM and makes a <strong>partial payment</strong> of <strong>$50.00</strong>
+towards his debt of $114.00.</p>
+<ol>
+  <li>Go to <strong>Customers</strong> → tap <strong>Farai Mutasa</strong>.</li>
+  <li>Tap <strong>Record Payment</strong>.</li>
+  <li>Enter amount: <strong>$50.00</strong> · Payment method: <strong>Cash (USD)</strong>.</li>
+  <li>Tap Save.</li>
+</ol>
+<p>Farai's outstanding balance should now read: $114.00 − $50.00 = <strong>$64.00</strong>.</p>
+
+<h3>5.3 Sales</h3>
+
+<!-- Sale 12 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0012 · 09:30 AM · <span class="badge badge-cash">Cash (USD)</span></div>
+  <div class="sale-meta">Walk-in customer · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Trackpants</td><td class="number">1</td><td class="number">$15.00</td><td class="number">$8.00</td><td class="number">$15.00</td><td class="number">$7.00</td></tr>
+    <tr><td>Plain T-Shirt</td><td class="number">3</td><td class="number">$10.00</td><td class="number">$4.00</td><td class="number">$30.00</td><td class="number">$18.00</td></tr>
+    <tr><td>Ankle Socks (3-pack)</td><td class="number">1</td><td class="number">$5.00</td><td class="number">$2.50</td><td class="number">$5.00</td><td class="number">$2.50</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$50.00</td><td class="number">$27.50</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $50.00 · COGS: $22.50 · Profit: <strong>$27.50</strong></div>
+</div>
+
+<!-- Sale 13 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0013 · 10:30 AM · <span class="badge badge-eco">EcoCash</span></div>
+  <div class="sale-meta">Customer: Shamiso Dube · Discount: $3.00</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Casual Shirt</td><td class="number">2</td><td class="number">$20.00</td><td class="number">$9.00</td><td class="number">$40.00</td><td class="number">$22.00</td></tr>
+    <tr><td>Cargo Shorts</td><td class="number">1</td><td class="number">$15.00</td><td class="number">$7.00</td><td class="number">$15.00</td><td class="number">$8.00</td></tr>
+    <tr><td colspan="4" style="color:#C0152A">Discount</td><td class="number" style="color:#C0152A">−$3.00</td><td class="number" style="color:#C0152A">−$3.00</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL (after discount)</td><td class="number">$52.00</td><td class="number">$27.00</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $52.00 · COGS: $25.00 · Profit: <strong>$27.00</strong></div>
+</div>
+
+<!-- Sale 14 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0014 · 12:15 PM · <span class="badge badge-cash">Cash (USD)</span></div>
+  <div class="sale-meta">Walk-in customer · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Jeans (Slim Fit)</td><td class="number">2</td><td class="number">$25.00</td><td class="number">$12.00</td><td class="number">$50.00</td><td class="number">$26.00</td></tr>
+    <tr><td>Graphic T-Shirt</td><td class="number">2</td><td class="number">$10.00</td><td class="number">$4.50</td><td class="number">$20.00</td><td class="number">$11.00</td></tr>
+    <tr><td>Leather Belt</td><td class="number">1</td><td class="number">$12.00</td><td class="number">$5.50</td><td class="number">$12.00</td><td class="number">$6.50</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$82.00</td><td class="number">$43.50</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $82.00 · COGS: $38.50 · Profit: <strong>$43.50</strong></div>
+</div>
+
+<!-- Sale 15 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0015 · 14:00 PM · <span class="badge badge-eco">EcoCash</span></div>
+  <div class="sale-meta">Walk-in customer · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Sneakers</td><td class="number">1</td><td class="number">$40.00</td><td class="number">$18.00</td><td class="number">$40.00</td><td class="number">$22.00</td></tr>
+    <tr><td>Ankle Socks (3-pack)</td><td class="number">1</td><td class="number">$5.00</td><td class="number">$2.50</td><td class="number">$5.00</td><td class="number">$2.50</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$45.00</td><td class="number">$24.50</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $45.00 · COGS: $20.50 · Profit: <strong>$24.50</strong></div>
+</div>
+
+<!-- Sale 16 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0016 · 15:30 PM · <span class="badge badge-cash">Cash (USD)</span></div>
+  <div class="sale-meta">Walk-in customer · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Formal Shirt</td><td class="number">1</td><td class="number">$20.00</td><td class="number">$9.00</td><td class="number">$20.00</td><td class="number">$11.00</td></tr>
+    <tr><td>Loafers</td><td class="number">1</td><td class="number">$30.00</td><td class="number">$14.00</td><td class="number">$30.00</td><td class="number">$16.00</td></tr>
+    <tr><td>Crew Socks (3-pack)</td><td class="number">1</td><td class="number">$5.00</td><td class="number">$2.50</td><td class="number">$5.00</td><td class="number">$2.50</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$55.00</td><td class="number">$29.50</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $55.00 · COGS: $25.50 · Profit: <strong>$29.50</strong></div>
+</div>
+
+<!-- Sale 17 -->
+<div class="sale-box">
+  <div class="sale-header">🧾 RCP-0017 · 17:00 PM · <span class="badge badge-eco">EcoCash</span></div>
+  <div class="sale-meta">Walk-in customer · No discount</div>
+  <table>
+    <tr><th>Product</th><th class="number">Qty</th><th class="number">Unit Price</th><th class="number">Cost Price</th><th class="number">Line Total</th><th class="number">Line Profit</th></tr>
+    <tr><td>Varsity Jacket</td><td class="number">1</td><td class="number">$40.00</td><td class="number">$18.00</td><td class="number">$40.00</td><td class="number">$22.00</td></tr>
+    <tr><td>Jeans (Slim Fit)</td><td class="number">1</td><td class="number">$25.00</td><td class="number">$12.00</td><td class="number">$25.00</td><td class="number">$13.00</td></tr>
+    <tr class="total-row"><td colspan="4">TOTAL</td><td class="number">$65.00</td><td class="number">$35.00</td></tr>
+  </table>
+  <div class="sale-total">Revenue: $65.00 · COGS: $30.00 · Profit: <strong>$35.00</strong></div>
+</div>
+
+<!-- Day 3 Summary -->
+<div class="highlight">
+  <h3 style="margin-top:0;color:#0047AB">Day 3 Summary</h3>
+  <table>
+    <tr><th>Metric</th><th class="number">Amount</th></tr>
+    <tr><td>Total Revenue (sales)</td><td class="number">$349.00</td></tr>
+    <tr><td>Total COGS</td><td class="number">$162.00</td></tr>
+    <tr><td>Total Profit</td><td class="number"><strong>$187.00</strong></td></tr>
+    <tr><td>Profit Margin</td><td class="number">53.6%</td></tr>
+    <tr><td>Transactions</td><td class="number">6</td></tr>
+    <tr><td>Stock Purchased (cost)</td><td class="number">$620.00</td></tr>
+    <tr><td>Credit Payment Received from Farai</td><td class="number">$50.00</td></tr>
+  </table>
+  <p style="margin-bottom:0"><strong>Payment breakdown:</strong>
+    Cash (USD) $187.00 (3) ·
+    EcoCash $162.00 (3)</p>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 6 — EXPECTED RESULTS
+═══════════════════════════════════════════════════════════════ -->
+<h2 id="results">6 · Expected Results Checklist</h2>
+<p>After entering everything above, open each screen and verify these exact figures.</p>
+
+<h3>6.1 Reports Screen — "This Year" or date range 7–9 Apr 2025</h3>
+<table>
+  <tr><th>Metric</th><th class="number">Expected Value</th></tr>
+  <tr><td>Total Revenue</td><td class="number"><strong>$935.00</strong></td></tr>
+  <tr><td>Total COGS</td><td class="number">$433.00</td></tr>
+  <tr><td>Total Profit</td><td class="number"><strong>$502.00</strong></td></tr>
+  <tr><td>Profit Margin</td><td class="number">53.7%</td></tr>
+  <tr><td>Total Transactions</td><td class="number">17</td></tr>
+  <tr><td>Total Units Sold</td><td class="number">52 units</td></tr>
+  <tr><td>Avg Sale Value</td><td class="number">$55.00</td></tr>
+</table>
+
+<h4>Payment Method Breakdown (3-day total)</h4>
+<table>
+  <tr><th>Method</th><th class="number">Amount</th><th class="number">Transactions</th><th class="number">% of Total</th></tr>
+  <tr><td>Cash (USD)</td><td class="number">$377.00</td><td class="number">7</td><td class="number">40.3%</td></tr>
+  <tr><td>EcoCash</td><td class="number">$302.00</td><td class="number">6</td><td class="number">32.3%</td></tr>
+  <tr><td>Bank Transfer</td><td class="number">$102.00</td><td class="number">2</td><td class="number">10.9%</td></tr>
+  <tr><td>Credit / Owing</td><td class="number">$154.00</td><td class="number">2</td><td class="number">16.5%</td></tr>
+  <tr class="total-row"><td><strong>TOTAL</strong></td><td class="number"><strong>$935.00</strong></td><td class="number"><strong>17</strong></td><td class="number"><strong>100%</strong></td></tr>
+</table>
+
+<h4>Top Products by Revenue (should appear in this order)</h4>
+<table>
+  <tr><th>#</th><th>Product</th><th class="number">Units Sold</th><th class="number">Revenue</th><th class="number">Profit</th><th class="number">Margin</th></tr>
+  <tr><td>1</td><td>Jeans (Slim Fit)</td><td class="number">7</td><td class="number">$175.00</td><td class="number">$91.00</td><td class="number">52.0%</td></tr>
+  <tr><td>2</td><td>Sneakers</td><td class="number">3</td><td class="number">$120.00</td><td class="number">$66.00</td><td class="number">55.0%</td></tr>
+  <tr><td>3</td><td>Varsity Jacket</td><td class="number">3</td><td class="number">$120.00</td><td class="number">$66.00</td><td class="number">55.0%</td></tr>
+  <tr><td>4</td><td>Casual Shirt</td><td class="number">4</td><td class="number">$80.00</td><td class="number">$44.00</td><td class="number">55.0%</td></tr>
+  <tr><td>5</td><td>Formal Shirt</td><td class="number">4</td><td class="number">$80.00</td><td class="number">$44.00</td><td class="number">55.0%</td></tr>
+</table>
+<p style="font-size:9pt;color:#5A6A8A">* Sneakers and Varsity Jacket both have $120 revenue — their order may vary.</p>
+
+<h3>6.2 Dashboard</h3>
+<p>When viewing <strong>Today</strong> (9 Apr):</p>
+<table>
+  <tr><th>Metric</th><th class="number">Expected</th></tr>
+  <tr><td>Today's Sales</td><td class="number">$349.00</td></tr>
+  <tr><td>Today's Profit</td><td class="number">$187.00</td></tr>
+  <tr><td>Today's Margin</td><td class="number">53.6%</td></tr>
+  <tr><td>Transactions Today</td><td class="number">6</td></tr>
+  <tr><td>Outstanding Credit</td><td class="number">$104.00</td></tr>
+</table>
+
+<h3>6.3 Closing Inventory (after all sales and restocks)</h3>
+<table>
+  <thead>
+    <tr><th>Product</th><th class="number">Opening</th><th class="number">Restocked</th><th class="number">Sold</th><th class="number">Closing Qty</th><th class="number">Value (sell price)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Snapback Hat</td><td class="number">50</td><td class="number">0</td><td class="number">0</td><td class="number">50</td><td class="number">$400.00</td></tr>
+    <tr><td>Bucket Hat</td><td class="number">30</td><td class="number">0</td><td class="number">0</td><td class="number">30</td><td class="number">$300.00</td></tr>
+    <tr><td>Plain T-Shirt</td><td class="number">100</td><td class="number">50</td><td class="number">7</td><td class="number">143</td><td class="number">$1,430.00</td></tr>
+    <tr><td>Graphic T-Shirt</td><td class="number">100</td><td class="number">0</td><td class="number">7</td><td class="number">93</td><td class="number">$930.00</td></tr>
+    <tr><td>Casual Shirt</td><td class="number">50</td><td class="number">0</td><td class="number">4</td><td class="number">46</td><td class="number">$920.00</td></tr>
+    <tr><td>Formal Shirt</td><td class="number">25</td><td class="number">0</td><td class="number">4</td><td class="number">21</td><td class="number">$420.00</td></tr>
+    <tr><td>Jeans (Slim Fit)</td><td class="number">50</td><td class="number">20</td><td class="number">7</td><td class="number">63</td><td class="number">$1,575.00</td></tr>
+    <tr><td>Cargo Shorts</td><td class="number">50</td><td class="number">0</td><td class="number">3</td><td class="number">47</td><td class="number">$705.00</td></tr>
+    <tr><td>Trackpants</td><td class="number">20</td><td class="number">0</td><td class="number">1</td><td class="number">19</td><td class="number">$285.00</td></tr>
+    <tr><td>Sneakers</td><td class="number">30</td><td class="number">10</td><td class="number">3</td><td class="number">37</td><td class="number">$1,480.00</td></tr>
+    <tr><td>Loafers</td><td class="number">20</td><td class="number">0</td><td class="number">2</td><td class="number">18</td><td class="number">$540.00</td></tr>
+    <tr><td>Ankle Socks (3-pack)</td><td class="number">100</td><td class="number">0</td><td class="number">7</td><td class="number">93</td><td class="number">$465.00</td></tr>
+    <tr><td>Crew Socks (3-pack)</td><td class="number">40</td><td class="number">0</td><td class="number">3</td><td class="number">37</td><td class="number">$185.00</td></tr>
+    <tr><td>Leather Belt</td><td class="number">50</td><td class="number">0</td><td class="number">5</td><td class="number">45</td><td class="number">$540.00</td></tr>
+    <tr><td>Varsity Jacket</td><td class="number">10</td><td class="number">0</td><td class="number">3</td><td class="number">7</td><td class="number">$280.00</td></tr>
+    <tr class="total-row"><td colspan="4"><strong>TOTAL STOCK VALUE (Dashboard)</strong></td><td></td><td class="number"><strong>$10,455.00</strong></td></tr>
+  </tbody>
+</table>
+
+<div class="info">
+  <strong>Stock value check:</strong> $10,000 (opening) + $1,400 (restock at sell price) − $945 (sold at sell price) = <strong>$10,455</strong>
+</div>
+
+<h3>6.4 Customers — Outstanding Credit</h3>
+<table>
+  <tr><th>Customer</th><th class="number">Total Credit Issued</th><th class="number">Paid Back</th><th class="number">Outstanding Balance</th></tr>
+  <tr><td>Farai Mutasa</td><td class="number">$114.00</td><td class="number">$50.00</td><td class="number"><strong>$64.00</strong></td></tr>
+  <tr><td>Tendai Moyo</td><td class="number">$40.00</td><td class="number">$0.00</td><td class="number"><strong>$40.00</strong></td></tr>
+  <tr><td>Shamiso Dube</td><td class="number">$0.00</td><td class="number">$0.00</td><td class="number">$0.00</td></tr>
+  <tr><td>Rudo Chikwanda</td><td class="number">$0.00</td><td class="number">$0.00</td><td class="number">$0.00</td></tr>
+  <tr class="total-row"><td><strong>Total Outstanding</strong></td><td></td><td></td><td class="number"><strong>$104.00</strong></td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 7 — FULL CALCULATION PROOF
+═══════════════════════════════════════════════════════════════ -->
+<h2 id="math">7 · Full Calculation Proof</h2>
+<p>Every number in this document can be verified from first principles below.</p>
+
+<h3>7.1 Per-Sale Revenue, COGS &amp; Profit</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Receipt</th>
+      <th>Day</th>
+      <th class="number">Revenue</th>
+      <th class="number">COGS</th>
+      <th class="number">Profit</th>
+      <th class="number">Margin</th>
+      <th>Payment</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>RCP-0001</td><td>1</td><td class="number">$25.00</td><td class="number">$10.50</td><td class="number">$14.50</td><td class="number">58.0%</td><td>Cash</td></tr>
+    <tr><td>RCP-0002</td><td>1</td><td class="number">$55.00</td><td class="number">$26.50</td><td class="number">$28.50</td><td class="number">51.8%</td><td>EcoCash</td></tr>
+    <tr><td>RCP-0003</td><td>1</td><td class="number">$50.00</td><td class="number">$23.00</td><td class="number">$27.00</td><td class="number">54.0%</td><td>Cash</td></tr>
+    <tr><td>RCP-0004</td><td>1</td><td class="number">$114.00</td><td class="number">$53.00</td><td class="number">$61.00</td><td class="number">53.5%</td><td>Credit</td></tr>
+    <tr><td>RCP-0005</td><td>1</td><td class="number">$60.00</td><td class="number">$27.00</td><td class="number">$33.00</td><td class="number">55.0%</td><td>Bank</td></tr>
+    <tr style="background:#F0F4FF"><td colspan="2"><strong>Day 1 Total</strong></td><td class="number"><strong>$304.00</strong></td><td class="number"><strong>$140.00</strong></td><td class="number"><strong>$164.00</strong></td><td class="number"><strong>53.9%</strong></td><td></td></tr>
+    <tr><td>RCP-0006</td><td>2</td><td class="number">$55.00</td><td class="number">$24.50</td><td class="number">$30.50</td><td class="number">55.5%</td><td>Cash</td></tr>
+    <tr><td>RCP-0007</td><td>2</td><td class="number">$45.00</td><td class="number">$20.50</td><td class="number">$24.50</td><td class="number">54.4%</td><td>EcoCash</td></tr>
+    <tr><td>RCP-0008</td><td>2</td><td class="number">$60.00</td><td class="number">$30.00</td><td class="number">$30.00</td><td class="number">50.0%</td><td>Cash</td></tr>
+    <tr><td>RCP-0009</td><td>2</td><td class="number">$40.00</td><td class="number">$18.50</td><td class="number">$21.50</td><td class="number">53.8%</td><td>EcoCash</td></tr>
+    <tr><td>RCP-0010</td><td>2</td><td class="number">$42.00</td><td class="number">$19.50</td><td class="number">$22.50</td><td class="number">53.6%</td><td>Bank</td></tr>
+    <tr><td>RCP-0011</td><td>2</td><td class="number">$40.00</td><td class="number">$18.00</td><td class="number">$22.00</td><td class="number">55.0%</td><td>Credit</td></tr>
+    <tr style="background:#F0F4FF"><td colspan="2"><strong>Day 2 Total</strong></td><td class="number"><strong>$282.00</strong></td><td class="number"><strong>$131.00</strong></td><td class="number"><strong>$151.00</strong></td><td class="number"><strong>53.5%</strong></td><td></td></tr>
+    <tr><td>RCP-0012</td><td>3</td><td class="number">$50.00</td><td class="number">$22.50</td><td class="number">$27.50</td><td class="number">55.0%</td><td>Cash</td></tr>
+    <tr><td>RCP-0013</td><td>3</td><td class="number">$52.00</td><td class="number">$25.00</td><td class="number">$27.00</td><td class="number">51.9%</td><td>EcoCash</td></tr>
+    <tr><td>RCP-0014</td><td>3</td><td class="number">$82.00</td><td class="number">$38.50</td><td class="number">$43.50</td><td class="number">53.0%</td><td>Cash</td></tr>
+    <tr><td>RCP-0015</td><td>3</td><td class="number">$45.00</td><td class="number">$20.50</td><td class="number">$24.50</td><td class="number">54.4%</td><td>EcoCash</td></tr>
+    <tr><td>RCP-0016</td><td>3</td><td class="number">$55.00</td><td class="number">$25.50</td><td class="number">$29.50</td><td class="number">53.6%</td><td>Cash</td></tr>
+    <tr><td>RCP-0017</td><td>3</td><td class="number">$65.00</td><td class="number">$30.00</td><td class="number">$35.00</td><td class="number">53.8%</td><td>EcoCash</td></tr>
+    <tr style="background:#F0F4FF"><td colspan="2"><strong>Day 3 Total</strong></td><td class="number"><strong>$349.00</strong></td><td class="number"><strong>$162.00</strong></td><td class="number"><strong>$187.00</strong></td><td class="number"><strong>53.6%</strong></td><td></td></tr>
+    <tr class="total-row"><td colspan="2"><strong>3-DAY GRAND TOTAL</strong></td><td class="number"><strong>$935.00</strong></td><td class="number"><strong>$433.00</strong></td><td class="number"><strong>$502.00</strong></td><td class="number"><strong>53.7%</strong></td><td></td></tr>
+  </tbody>
+</table>
+
+<h3>7.2 COGS per Sale — Detailed Breakdown</h3>
+<table>
+  <tr><th>Receipt</th><th>COGS Calculation</th><th class="number">Total COGS</th></tr>
+  <tr><td>RCP-0001</td><td>2×$4.00 + 1×$2.50</td><td class="number">$10.50</td></tr>
+  <tr><td>RCP-0002</td><td>1×$12.00 + 1×$9.00 + 1×$5.50</td><td class="number">$26.50</td></tr>
+  <tr><td>RCP-0003</td><td>1×$18.00 + 2×$2.50</td><td class="number">$23.00</td></tr>
+  <tr><td>RCP-0004</td><td>2×$9.00 + 2×$12.00 + 2×$5.50</td><td class="number">$53.00</td></tr>
+  <tr><td>RCP-0005</td><td>1×$18.00 + 2×$4.50</td><td class="number">$27.00</td></tr>
+  <tr><td>RCP-0006</td><td>2×$7.00 + 2×$4.00 + 1×$2.50</td><td class="number">$24.50</td></tr>
+  <tr><td>RCP-0007</td><td>1×$18.00 + 1×$2.50</td><td class="number">$20.50</td></tr>
+  <tr><td>RCP-0008</td><td>1×$9.00 + 1×$9.00 + 1×$12.00</td><td class="number">$30.00</td></tr>
+  <tr><td>RCP-0009</td><td>3×$4.50 + 2×$2.50</td><td class="number">$18.50</td></tr>
+  <tr><td>RCP-0010</td><td>1×$14.00 + 1×$5.50</td><td class="number">$19.50</td></tr>
+  <tr><td>RCP-0011</td><td>1×$18.00</td><td class="number">$18.00</td></tr>
+  <tr><td>RCP-0012</td><td>1×$8.00 + 3×$4.00 + 1×$2.50</td><td class="number">$22.50</td></tr>
+  <tr><td>RCP-0013</td><td>2×$9.00 + 1×$7.00</td><td class="number">$25.00</td></tr>
+  <tr><td>RCP-0014</td><td>2×$12.00 + 2×$4.50 + 1×$5.50</td><td class="number">$38.50</td></tr>
+  <tr><td>RCP-0015</td><td>1×$18.00 + 1×$2.50</td><td class="number">$20.50</td></tr>
+  <tr><td>RCP-0016</td><td>1×$9.00 + 1×$14.00 + 1×$2.50</td><td class="number">$25.50</td></tr>
+  <tr><td>RCP-0017</td><td>1×$18.00 + 1×$12.00</td><td class="number">$30.00</td></tr>
+  <tr class="total-row"><td colspan="2"><strong>TOTAL COGS</strong></td><td class="number"><strong>$433.00</strong></td></tr>
+</table>
+
+<h3>7.3 Total Units Sold by Product</h3>
+<table>
+  <tr><th>Product</th><th>Sales</th><th class="number">Total Units</th><th class="number">Revenue</th><th class="number">COGS</th><th class="number">Profit</th></tr>
+  <tr><td>Plain T-Shirt</td><td>S1(2) S6(2) S12(3)</td><td class="number">7</td><td class="number">$70.00</td><td class="number">$28.00</td><td class="number">$42.00</td></tr>
+  <tr><td>Graphic T-Shirt</td><td>S5(2) S9(3) S14(2)</td><td class="number">7</td><td class="number">$70.00</td><td class="number">$31.50</td><td class="number">$38.50</td></tr>
+  <tr><td>Casual Shirt</td><td>S2(1) S8(1) S13(2)</td><td class="number">4</td><td class="number">$80.00</td><td class="number">$36.00</td><td class="number">$44.00</td></tr>
+  <tr><td>Formal Shirt</td><td>S4(2) S8(1) S16(1)</td><td class="number">4</td><td class="number">$80.00</td><td class="number">$36.00</td><td class="number">$44.00</td></tr>
+  <tr><td>Jeans (Slim Fit)</td><td>S2(1) S4(2) S8(1) S14(2) S17(1)</td><td class="number">7</td><td class="number">$175.00</td><td class="number">$84.00</td><td class="number">$91.00</td></tr>
+  <tr><td>Cargo Shorts</td><td>S6(2) S13(1)</td><td class="number">3</td><td class="number">$45.00</td><td class="number">$21.00</td><td class="number">$24.00</td></tr>
+  <tr><td>Trackpants</td><td>S12(1)</td><td class="number">1</td><td class="number">$15.00</td><td class="number">$8.00</td><td class="number">$7.00</td></tr>
+  <tr><td>Sneakers</td><td>S3(1) S7(1) S15(1)</td><td class="number">3</td><td class="number">$120.00</td><td class="number">$54.00</td><td class="number">$66.00</td></tr>
+  <tr><td>Loafers</td><td>S10(1) S16(1)</td><td class="number">2</td><td class="number">$60.00</td><td class="number">$28.00</td><td class="number">$32.00</td></tr>
+  <tr><td>Ankle Socks</td><td>S1(1) S3(2) S9(2) S12(1) S15(1)</td><td class="number">7</td><td class="number">$35.00</td><td class="number">$17.50</td><td class="number">$17.50</td></tr>
+  <tr><td>Crew Socks</td><td>S6(1) S7(1) S16(1)</td><td class="number">3</td><td class="number">$15.00</td><td class="number">$7.50</td><td class="number">$7.50</td></tr>
+  <tr><td>Leather Belt</td><td>S2(1) S4(2) S10(1) S14(1)</td><td class="number">5</td><td class="number">$60.00</td><td class="number">$27.50</td><td class="number">$32.50</td></tr>
+  <tr><td>Varsity Jacket</td><td>S5(1) S11(1) S17(1)</td><td class="number">3</td><td class="number">$120.00</td><td class="number">$54.00</td><td class="number">$66.00</td></tr>
+  <tr class="total-row"><td><strong>TOTAL</strong></td><td></td><td class="number"><strong>56 units</strong></td><td class="number"><strong>$945.00</strong></td><td class="number"><strong>$433.00</strong></td><td class="number"><strong>$512.00</strong></td></tr>
+</table>
+
+<div class="warning">
+  <strong>Note on Discounts and Profit:</strong> The "Revenue" column above
+  ($945.00) is the <em>pre-discount</em> sum of unit prices × quantities.
+  The actual revenue collected is <strong>$935.00</strong> (after $10.00 total discounts).
+  The app calculates profit as <span class="formula">actual revenue − COGS</span>, so:
+  $935.00 − $433.00 = <strong>$502.00</strong> profit (not $512.00).
+  The $10.00 discounts reduce profit by exactly $10.00 — this is correct behaviour.
+</div>
+
+<h3>7.4 Stock Verification</h3>
+<table>
+  <tr><th>Check</th><th class="number">Value</th></tr>
+  <tr><td>Opening stock (at selling price)</td><td class="number">$10,000.00</td></tr>
+  <tr><td>+ Restock at selling price (50×$10 + 20×$25 + 10×$40)</td><td class="number">+$1,400.00</td></tr>
+  <tr><td>− Stock removed by sales (at selling price, pre-discount)</td><td class="number">−$945.00</td></tr>
+  <tr class="total-row"><td><strong>= Closing stock value</strong></td><td class="number"><strong>$10,455.00</strong></td></tr>
+</table>
+
+<h3>7.5 Cash Flow Summary</h3>
+<table>
+  <tr><th>Item</th><th class="number">Amount</th></tr>
+  <tr><td>Cash (USD) collected</td><td class="number">$377.00</td></tr>
+  <tr><td>EcoCash collected</td><td class="number">$302.00</td></tr>
+  <tr><td>Bank Transfer collected</td><td class="number">$102.00</td></tr>
+  <tr><td>Credit payment received (Farai, Day 3)</td><td class="number">$50.00</td></tr>
+  <tr><td>Credit still outstanding</td><td class="number">$104.00</td></tr>
+  <tr style="background:#F0F4FF"><td><strong>Total invoiced (cash + credit)</strong></td><td class="number"><strong>$935.00</strong></td></tr>
+  <tr><td>Stock purchased (cash outlay, Day 3)</td><td class="number">−$620.00</td></tr>
+  <tr class="total-row"><td><strong>Net cash in hand (excl. outstanding credit)</strong></td><td class="number"><strong>+$211.00</strong></td></tr>
+</table>
+
+<hr class="section-break">
+<p style="text-align:center;color:#5A6A8A;font-size:9pt;margin-top:20px">
+  Generated for Profit Protector · StyleHub Boutique Test Scenario · April 2025<br>
+  All figures independently verified. Revenue = sale.totalCents (after discount). Profit = Revenue − COGS.
+</p>
+
+</body>
+</html>

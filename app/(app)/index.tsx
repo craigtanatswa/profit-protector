@@ -633,11 +633,9 @@ function RecentSalesSection({ recentSales }: { recentSales: RecentSaleEntry[] })
         </Card>
       ) : (
         recentSales.map(({ sale, saleItems }) => {
-          const profit = saleItems.reduce(
-            (sum, item) =>
-              sum + (item.unitPriceCents - item.costPriceCents) * item.qty,
-            0,
-          )
+          // Profit = actual revenue received (after discount) minus COGS.
+          const cog = saleItems.reduce((sum, item) => sum + item.costPriceCents * item.qty, 0)
+          const profit = sale.totalCents - cog
 
           const paymentVariant: 'info' | 'warning' | 'danger' | 'neutral' =
             sale.paymentMethod === 'credit'

@@ -179,15 +179,11 @@ export default function SalesHistoryScreen() {
   const summary = useMemo(() => {
     const count = filtered.length
     const totalCents = filtered.reduce((sum, { sale }) => sum + sale.totalCents, 0)
-    const profitCents = filtered.reduce(
-      (sum, { saleItems }) =>
-        sum +
-        saleItems.reduce(
-          (s, item) => s + (item.unitPriceCents - item.costPriceCents) * item.qty,
-          0,
-        ),
-      0,
-    )
+    // Profit = actual revenue (after discount) minus COGS — consistent with Reports screen.
+    const profitCents = filtered.reduce((sum, { sale, saleItems }) => {
+      const cog = saleItems.reduce((s, item) => s + item.costPriceCents * item.qty, 0)
+      return sum + sale.totalCents - cog
+    }, 0)
     return { count, totalCents, profitCents }
   }, [filtered])
 

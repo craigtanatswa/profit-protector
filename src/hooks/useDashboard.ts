@@ -212,11 +212,17 @@ export function useDashboard(businessId: string): DashboardData {
           {},
         )
 
+        // Profit = actual revenue received (after discount) minus cost of goods sold.
+        // Using sale.totalCents rather than sum-of-margins ensures discounts reduce profit
+        // correctly, keeping this consistent with the Reports screen.
         let todaysProfitCents = 0
         for (const saleRecord of todaySalesRaw) {
-          for (const item of itemsBySaleId[saleRecord.id] ?? []) {
-            todaysProfitCents += (item.unitPriceCents - item.costPriceCents) * item.qty
-          }
+          const items = itemsBySaleId[saleRecord.id] ?? []
+          const cogForSale = items.reduce(
+            (sum, item) => sum + item.costPriceCents * item.qty,
+            0,
+          )
+          todaysProfitCents += saleRecord.totalCents - cogForSale
         }
         const todaysMarginPercent =
           todaysSalesCents > 0
