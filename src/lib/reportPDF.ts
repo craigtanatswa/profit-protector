@@ -1,5 +1,6 @@
 import * as Print from 'expo-print'
 import * as Sharing from 'expo-sharing'
+import { getBusinessLogoDataUri } from './businessLogo'
 import { formatCurrency, formatDate, formatDateTime, formatPaymentMethod } from './formatters'
 import type { PaymentBreakdownItem, TopProduct } from '../hooks/useReports'
 
@@ -45,7 +46,7 @@ function escapeHtml(text: string): string {
 // HTML builder
 // ---------------------------------------------------------------------------
 
-function buildReportHTML(params: ExportReportPDFParams): string {
+function buildReportHTML(params: ExportReportPDFParams, logoDataUri: string | null): string {
   const {
     business,
     period,
@@ -216,6 +217,15 @@ function buildReportHTML(params: ExportReportPDFParams): string {
       padding-bottom: 16px;
       margin-bottom: 24px;
     }
+    .logo-wrap {
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .logo-img {
+      max-height: 72px;
+      max-width: 200px;
+      object-fit: contain;
+    }
     .business-name {
       font-size: 24px;
       font-weight: 700;
@@ -307,6 +317,11 @@ function buildReportHTML(params: ExportReportPDFParams): string {
 </head>
 <body>
   <div class="header">
+    ${
+      logoDataUri
+        ? `<div class="logo-wrap"><img class="logo-img" src="${logoDataUri}" alt="" /></div>`
+        : ''
+    }
     <div class="business-name">${escapeHtml(business.name)}</div>
     <div class="report-title">Business Report — ${escapeHtml(period)}</div>
     <div class="period">${escapeHtml(formatDate(startDate.getTime()))} to ${escapeHtml(formatDate(endDate.getTime()))}</div>
@@ -334,7 +349,8 @@ function buildReportHTML(params: ExportReportPDFParams): string {
 // ---------------------------------------------------------------------------
 
 export async function exportReportPDF(params: ExportReportPDFParams): Promise<void> {
-  const html = buildReportHTML(params)
+  const logoDataUri = await getBusinessLogoDataUri()
+  const html = buildReportHTML(params, logoDataUri)
   const { uri } = await Print.printToFileAsync({ html })
   await Sharing.shareAsync(uri, { mimeType: 'application/pdf' })
 }

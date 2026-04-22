@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { Q } from '@nozbe/watermelondb'
 import { Ionicons } from '@expo/vector-icons'
@@ -11,6 +11,7 @@ import { useAuthStore } from '../../../src/stores/authStore'
 import { ScreenHeader } from '../../../src/components/layout'
 import { Button, EmptyState, LoadingScreen } from '../../../src/components/ui'
 import { ReceiptCard } from '../../../src/components/receipts/ReceiptCard'
+import { getBusinessLogoDisplayUri } from '../../../src/lib/businessLogo'
 import { shareReceipt, printReceiptBluetooth } from '../../../src/lib/receipt'
 import { formatCurrency } from '../../../src/lib/formatters'
 import { mapSaleRecord, mapSaleItemRecord } from '../../../src/hooks/useSales'
@@ -33,6 +34,13 @@ export default function SaleDetailScreen() {
   const [notFound, setNotFound] = useState(false)
   const [isSharing, setIsSharing] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
+  const [headerLogoUri, setHeaderLogoUri] = useState<string | null>(null)
+
+  useFocusEffect(
+    useCallback(() => {
+      setHeaderLogoUri(getBusinessLogoDisplayUri())
+    }, []),
+  )
 
   const load = useCallback(async () => {
     if (!database || !id) {
@@ -226,6 +234,7 @@ export default function SaleDetailScreen() {
           saleItems={saleItems}
           business={businessForReceipt}
           customer={customer ?? undefined}
+          headerLogoUri={headerLogoUri}
         />
 
         {/* Share + Print buttons */}

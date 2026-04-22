@@ -1,5 +1,5 @@
 import React from 'react'
-import { StyleSheet, Text, View } from 'react-native'
+import { Image, StyleSheet, Text, View } from 'react-native'
 import type { Sale, SaleItem, Business, Customer } from '../../types'
 import { formatCurrency, formatDateTime, formatPaymentMethod } from '../../lib/formatters'
 import { Card } from '../ui/Card'
@@ -9,9 +9,11 @@ interface ReceiptCardProps {
   saleItems: SaleItem[]
   business: Business
   customer?: Customer
+  /** Local file URI of optional business logo (same as PDF/print). */
+  headerLogoUri?: string | null
 }
 
-export function ReceiptCard({ sale, saleItems, business, customer }: ReceiptCardProps) {
+export function ReceiptCard({ sale, saleItems, business, customer, headerLogoUri }: ReceiptCardProps) {
   const subtotal = saleItems.reduce((sum, item) => sum + item.unitPriceCents * item.qty, 0)
   const currency = business.currency || 'USD'
   const zigRate = business.zigRatePerUsd ?? 1
@@ -19,6 +21,11 @@ export function ReceiptCard({ sale, saleItems, business, customer }: ReceiptCard
   return (
     <Card padding="lg" style={styles.card}>
       {/* Business header */}
+      {headerLogoUri != null && headerLogoUri.length > 0 ? (
+        <View style={styles.logoWrap}>
+          <Image source={{ uri: headerLogoUri }} style={styles.logoImg} resizeMode="contain" />
+        </View>
+      ) : null}
       <Text style={styles.businessName}>{business.name}</Text>
       <Text style={styles.businessPhone}>{business.phone}</Text>
 
@@ -118,6 +125,15 @@ export function ReceiptCard({ sale, saleItems, business, customer }: ReceiptCard
 const styles = StyleSheet.create({
   card: {
     marginHorizontal: 16,
+  },
+  logoWrap: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  logoImg: {
+    height: 48,
+    width: '100%',
+    maxWidth: 200,
   },
   businessName: {
     fontSize: 22,

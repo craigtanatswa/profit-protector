@@ -22,6 +22,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -35,7 +36,7 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import * as SecureStore from 'expo-secure-store'
 import { Q } from '@nozbe/watermelondb'
@@ -51,6 +52,11 @@ import { exportReportCSV } from '../../../src/lib/reportCSV'
 import { syncAll } from '../../../src/lib/sync'
 import { formatDateTime, formatMonthYear } from '../../../src/lib/formatters'
 import { buildSupabaseEmailFromPhone, buildLegacySupabaseEmailFromPhone } from '../../../src/lib/authIdentity'
+import {
+  getBusinessLogoDisplayUri,
+  pickAndSaveBusinessLogoFromDevice,
+  removeBusinessLogo,
+} from '../../../src/lib/businessLogo'
 import Business from '../../../src/database/models/Business'
 
 // ---------------------------------------------------------------------------
@@ -609,6 +615,119 @@ const rs = StyleSheet.create({
 })
 
 // ---------------------------------------------------------------------------
+// BusinessLogoModal
+// ---------------------------------------------------------------------------
+
+function BusinessLogoModal({
+  visible,
+  onClose,
+  onChanged,
+}: {
+  visible: boolean
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [previewUri, setPreviewUri] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (visible) {
+      setPreviewUri(getBusinessLogoDisplayUri())
+    }
+  }, [visible])
+
+  const handleChoose = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await pickAndSaveBusinessLogoFromDevice()
+      onChanged()
+      setPreviewUri(getBusinessLogoDisplayUri())
+    } catch (e) {
+      const msg = (e as Error)?.message ?? String(e)
+      if (msg === 'No image selected') return
+      Alert.alert('Error', msg || 'Could not save logo.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleRemove = () => {
+    if (!previewUri) return
+    Alert.alert('Remove logo?', 'Reports and receipts will no longer show your logo.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          removeBusinessLogo()
+          setPreviewUri(null)
+          onChanged()
+        },
+      },
+    ])
+  }
+
+  return (
+    <ModalSheet visible={visible} onClose={onClose} title="Business Logo">
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <Text style={bl.hint}>
+          Optional image shown at the top of PDF reports and printed or shared receipts. You will be asked to pick an
+          image file (JPG, PNG, or WebP) from your device. Preferably without a background for the best results.
+        </Text>
+        <View style={bl.previewBox}>
+          {previewUri ? (
+            <Image source={{ uri: previewUri }} style={bl.previewImg} resizeMode="contain" />
+          ) : (
+            <Text style={bl.previewPlaceholder}>No logo yet — tap Choose Image</Text>
+          )}
+        </View>
+        <View style={bl.actions}>
+          <Button
+            label={busy ? 'Working...' : 'Choose Image'}
+            onPress={handleChoose}
+            variant="primary"
+            size="lg"
+            fullWidth
+            loading={busy}
+            disabled={busy}
+          />
+          {previewUri ? (
+            <Button
+              label="Remove Logo"
+              onPress={handleRemove}
+              variant="danger"
+              size="lg"
+              fullWidth
+              disabled={busy}
+            />
+          ) : null}
+          <Button label="Done" onPress={onClose} variant="secondary" size="lg" fullWidth disabled={busy} />
+        </View>
+      </ScrollView>
+    </ModalSheet>
+  )
+}
+
+const bl = StyleSheet.create({
+  hint: { fontSize: 14, color: '#5A6A8A', lineHeight: 20, marginBottom: 16 },
+  previewBox: {
+    minHeight: 140,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#DDE3F0',
+    backgroundColor: '#F4F6FB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    marginBottom: 8,
+  },
+  previewImg: { width: '100%', height: 120 },
+  previewPlaceholder: { fontSize: 14, color: '#AABBCC', textAlign: 'center' },
+  actions: { gap: 10, marginTop: 16, marginBottom: 8 },
+})
+
+// ---------------------------------------------------------------------------
 // ChangePasswordModal
 // ---------------------------------------------------------------------------
 
@@ -928,8 +1047,20 @@ export default function SettingsScreen() {
   const [editBizVisible, setEditBizVisible] = useState(false)
   const [currencyVisible, setCurrencyVisible] = useState(false)
   const [receiptVisible, setReceiptVisible] = useState(false)
+  const [logoModalVisible, setLogoModalVisible] = useState(false)
   const [changePassVisible, setChangePassVisible] = useState(false)
   const [deleteVisible, setDeleteVisible] = useState(false)
+
+  const [heroLogoUri, setHeroLogoUri] = useState<string | null>(null)
+  const refreshLogo = useCallback(() => {
+    setHeroLogoUri(getBusinessLogoDisplayUri())
+  }, [])
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshLogo()
+    }, [refreshLogo]),
+  )
 
   // Notification settings
   const [lowStockAlertsEnabled, setLowStockAlertsEnabled] = useState(true)
@@ -1104,6 +1235,11 @@ export default function SettingsScreen() {
       >
         {/* ── Business Profile Hero ── */}
         <View style={s.hero}>
+          {heroLogoUri ? (
+            <View style={s.heroLogoWrap}>
+              <Image source={{ uri: heroLogoUri }} style={s.heroLogo} resizeMode="contain" />
+            </View>
+          ) : null}
           <View style={s.heroAvatar}>
             <Text style={s.heroAvatarText}>{businessInitial}</Text>
           </View>
@@ -1160,6 +1296,15 @@ export default function SettingsScreen() {
             label="Receipt Settings"
             description="Receipt number format, footer message"
             onPress={() => setReceiptVisible(true)}
+          />
+          <SettingsRow
+            icon="image-outline"
+            iconColor="#0047AB"
+            iconBackground="#E6EEFF"
+            label="Business Logo"
+            description="Shown on PDF reports and receipt headers"
+            value={heroLogoUri ? 'Added' : undefined}
+            onPress={() => setLogoModalVisible(true)}
           />
         </SettingsSection>
 
@@ -1387,6 +1532,11 @@ export default function SettingsScreen() {
       <EditBusinessModal visible={editBizVisible} onClose={() => setEditBizVisible(false)} />
       <CurrencyModal visible={currencyVisible} onClose={() => setCurrencyVisible(false)} />
       <ReceiptSettingsModal visible={receiptVisible} onClose={() => setReceiptVisible(false)} />
+      <BusinessLogoModal
+        visible={logoModalVisible}
+        onClose={() => setLogoModalVisible(false)}
+        onChanged={refreshLogo}
+      />
       <ChangePasswordModal visible={changePassVisible} onClose={() => setChangePassVisible(false)} />
       <DeleteConfirmModal visible={deleteVisible} onClose={() => setDeleteVisible(false)} />
     </SafeAreaView>
@@ -1409,6 +1559,18 @@ const s = StyleSheet.create({
     paddingVertical: 24,
     alignItems: 'center',
   },
+  heroLogoWrap: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    maxWidth: 220,
+    maxHeight: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroLogo: { width: 196, height: 56 },
   heroAvatar: {
     width: 64,
     height: 64,

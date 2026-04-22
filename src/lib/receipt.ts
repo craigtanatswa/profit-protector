@@ -1,6 +1,7 @@
 import * as Print from 'expo-print'
 import * as Sharing from 'expo-sharing'
 import type { Sale, SaleItem, Business, Customer } from '../types'
+import { getBusinessLogoDataUri } from './businessLogo'
 import { formatCurrency, formatDateTime, formatPaymentMethod } from './formatters'
 
 interface ReceiptParams {
@@ -18,7 +19,7 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
-function buildReceiptHTML(params: ReceiptParams): string {
+function buildReceiptHTML(params: ReceiptParams, logoDataUri: string | null): string {
   const { sale, saleItems, business, customer } = params
   const currency = business.currency || 'USD'
   const zigRate = business.zigRatePerUsd ?? 1
@@ -78,6 +79,8 @@ function buildReceiptHTML(params: ReceiptParams): string {
       padding: 8mm;
     }
     .center { text-align: center; }
+    .logo-wrap { margin-bottom: 8px; }
+    .logo-img { max-height: 48px; max-width: 100%; object-fit: contain; }
     .business-name { font-size: 18px; font-weight: 700; text-align: center; margin-bottom: 2px; }
     .business-phone { font-size: 11px; color: #5A6A8A; text-align: center; margin-bottom: 8px; }
     .divider { border-top: 1px dashed #DDE3F0; margin: 8px 0; }
@@ -102,6 +105,11 @@ function buildReceiptHTML(params: ReceiptParams): string {
   </style>
 </head>
 <body>
+  ${
+    logoDataUri
+      ? `<div class="center logo-wrap"><img class="logo-img" src="${logoDataUri}" alt="" /></div>`
+      : ''
+  }
   <div class="business-name">${escapeHtml(business.name)}</div>
   <div class="business-phone">${escapeHtml(business.phone)}</div>
   <div class="divider"></div>
@@ -151,7 +159,8 @@ function buildReceiptHTML(params: ReceiptParams): string {
 }
 
 export async function generateReceiptPDF(params: ReceiptParams): Promise<string> {
-  const html = buildReceiptHTML(params)
+  const logoDataUri = await getBusinessLogoDataUri()
+  const html = buildReceiptHTML(params, logoDataUri)
   const { uri } = await Print.printToFileAsync({
     html,
     base64: false,
@@ -175,8 +184,9 @@ export async function shareReceipt(params: ReceiptParams): Promise<void> {
 
 export async function printReceiptBluetooth(params: ReceiptParams): Promise<void> {
   try {
+    const logoDataUri = await getBusinessLogoDataUri()
     await Print.printAsync({
-      html: buildReceiptHTML(params),
+      html: buildReceiptHTML(params, logoDataUri),
       printerUrl: undefined,
     })
   } catch (error: unknown) {
