@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
-import { View } from 'react-native'
-import { Tabs, router } from 'expo-router'
+import { useCallback, useEffect } from 'react'
+import { StyleSheet, View } from 'react-native'
+import { Tabs, router, type Href } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { Text } from 'react-native'
 import * as Notifications from 'expo-notifications'
@@ -13,6 +13,115 @@ import { NotificationBanner } from '../../src/components/ui/NotificationBanner'
 
 const ACTIVE_COLOR = '#0047AB'
 const INACTIVE_COLOR = '#718096'
+
+// ─── Stable tab-bar icon components ─────────────────────────────────────────
+// Defined at module scope so React Navigation receives the same reference on
+// every render and skips unnecessary reconciliation.
+
+type TabIconProps = { focused: boolean; color: string; size: number }
+
+const HomeIcon = ({ focused, color, size }: TabIconProps) => (
+  <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} />
+)
+const SalesIcon = ({ focused, color, size }: TabIconProps) => (
+  <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={size} color={color} />
+)
+const InventoryIcon = ({ focused, color, size }: TabIconProps) => (
+  <Ionicons name={focused ? 'cube' : 'cube-outline'} size={size} color={color} />
+)
+const ReportsIcon = ({ focused, color, size }: TabIconProps) => (
+  <Ionicons name={focused ? 'bar-chart' : 'bar-chart-outline'} size={size} color={color} />
+)
+const CustomersIcon = ({ focused, color, size }: TabIconProps) => (
+  <Ionicons name={focused ? 'people' : 'people-outline'} size={size} color={color} />
+)
+const SettingsIcon = ({ focused, color, size }: TabIconProps) => (
+  <Ionicons name={focused ? 'settings' : 'settings-outline'} size={size} color={color} />
+)
+
+// ─── Stable header title for Dashboard ───────────────────────────────────────
+const DashboardHeaderTitle = () => (
+  <View style={headerTitleStyles.row}>
+    <BrandLogo variant="full" width={32} height={32} />
+    <Text style={headerTitleStyles.text}>Dashboard</Text>
+  </View>
+)
+
+const headerTitleStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  text: { fontSize: 17, fontWeight: '600', color: '#1A202C' },
+})
+
+// ─── Stable tab navigator screenOptions ──────────────────────────────────────
+const TAB_SCREEN_OPTIONS = {
+  tabBarActiveTintColor: ACTIVE_COLOR,
+  tabBarInactiveTintColor: INACTIVE_COLOR,
+  tabBarStyle: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E9ECEF',
+  },
+  headerStyle: { backgroundColor: '#FFFFFF' },
+  headerTintColor: '#0047AB',
+  headerShadowVisible: false,
+} as const
+
+// ─── Stable screen options objects ───────────────────────────────────────────
+const DASHBOARD_OPTIONS = {
+  title: 'Dashboard',
+  headerTitle: DashboardHeaderTitle,
+  tabBarIcon: HomeIcon,
+} as const
+
+const SALES_OPTIONS = {
+  title: 'Sales',
+  headerShown: false,
+  tabBarIcon: SalesIcon,
+} as const
+
+const INVENTORY_OPTIONS = {
+  title: 'Stock',
+  headerShown: false,
+  tabBarIcon: InventoryIcon,
+} as const
+
+const REPORTS_OPTIONS = {
+  title: 'Reports',
+  headerShown: false,
+  tabBarIcon: ReportsIcon,
+} as const
+
+const CUSTOMERS_OPTIONS = {
+  title: 'Customers',
+  headerShown: false,
+  tabBarIcon: CustomersIcon,
+} as const
+
+const SETTINGS_OPTIONS = {
+  title: 'Settings',
+  headerShown: false,
+  tabBarIcon: SettingsIcon,
+} as const
+
+// ─── Tab-press listener: always navigate to the root of the tab ──────────────
+function tabToRoot(href: Href) {
+  return {
+    tabPress: (e: { preventDefault: () => void }) => {
+      e.preventDefault()
+      router.replace(href)
+    },
+  }
+}
+
+// Pre-built listener objects so they are the same reference each render
+const LISTENERS = {
+  dashboard: tabToRoot('/(app)'),
+  sales: tabToRoot('/(app)/sales'),
+  inventory: tabToRoot('/(app)/inventory'),
+  reports: tabToRoot('/(app)/reports'),
+  customers: tabToRoot('/(app)/customers'),
+  settings: tabToRoot('/(app)/settings'),
+} as const
 
 export default function AppLayout() {
   useAutoSync()
@@ -39,128 +148,58 @@ export default function AppLayout() {
     return () => sub.remove()
   }, [showBanner])
 
+  const handleBannerPress = useCallback(() => {
+    hideBanner()
+    if (bannerProps.productId) {
+      router.push({
+        pathname: '/(app)/inventory/[id]',
+        params: { id: bannerProps.productId },
+      })
+    }
+  }, [hideBanner, bannerProps.productId])
+
   return (
-    <View style={{ flex: 1 }}>
+    <View style={rootStyle}>
       <NotificationBanner
         {...bannerProps}
-        onPress={() => {
-          hideBanner()
-          if (bannerProps.productId) {
-            router.push({
-              pathname: '/(app)/inventory/[id]',
-              params: { id: bannerProps.productId },
-            })
-          }
-        }}
+        onPress={handleBannerPress}
         onDismiss={hideBanner}
       />
 
-      <Tabs
-        screenOptions={{
-          tabBarActiveTintColor: ACTIVE_COLOR,
-          tabBarInactiveTintColor: INACTIVE_COLOR,
-          tabBarStyle: {
-            backgroundColor: '#FFFFFF',
-            borderTopWidth: 1,
-            borderTopColor: '#E9ECEF',
-          },
-          headerStyle: {
-            backgroundColor: '#FFFFFF',
-          },
-          headerTintColor: '#0047AB',
-          headerShadowVisible: false,
-        }}
-      >
+      <Tabs screenOptions={TAB_SCREEN_OPTIONS}>
         <Tabs.Screen
           name="index"
-          options={{
-            title: 'Dashboard',
-            headerTitle: () => (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <BrandLogo variant="full" width={32} height={32} />
-                <Text style={{ fontSize: 17, fontWeight: '600', color: '#1A202C' }}>Dashboard</Text>
-              </View>
-            ),
-            tabBarIcon: ({ focused, color, size }) => (
-              <Ionicons
-                name={focused ? 'home' : 'home-outline'}
-                size={size}
-                color={color}
-              />
-            ),
-          }}
+          listeners={LISTENERS.dashboard}
+          options={DASHBOARD_OPTIONS}
         />
         <Tabs.Screen
           name="sales"
-          options={{
-            title: 'Sales',
-            headerShown: false,
-            tabBarIcon: ({ focused, color, size }) => (
-              <Ionicons
-                name={focused ? 'receipt' : 'receipt-outline'}
-                size={size}
-                color={color}
-              />
-            ),
-          }}
+          listeners={LISTENERS.sales}
+          options={SALES_OPTIONS}
         />
         <Tabs.Screen
           name="inventory"
-          options={{
-            title: 'Stock',
-            headerShown: false,
-            tabBarIcon: ({ focused, color, size }) => (
-              <Ionicons
-                name={focused ? 'cube' : 'cube-outline'}
-                size={size}
-                color={color}
-              />
-            ),
-          }}
+          listeners={LISTENERS.inventory}
+          options={INVENTORY_OPTIONS}
         />
         <Tabs.Screen
           name="reports"
-          options={{
-            title: 'Reports',
-            headerShown: false,
-            tabBarIcon: ({ focused, color, size }) => (
-              <Ionicons
-                name={focused ? 'bar-chart' : 'bar-chart-outline'}
-                size={size}
-                color={color}
-              />
-            ),
-          }}
+          listeners={LISTENERS.reports}
+          options={REPORTS_OPTIONS}
         />
         <Tabs.Screen
           name="customers"
-          options={{
-            title: 'Customers',
-            headerShown: false,
-            tabBarIcon: ({ focused, color, size }) => (
-              <Ionicons
-                name={focused ? 'people' : 'people-outline'}
-                size={size}
-                color={color}
-              />
-            ),
-          }}
+          listeners={LISTENERS.customers}
+          options={CUSTOMERS_OPTIONS}
         />
         <Tabs.Screen
           name="settings"
-          options={{
-            title: 'Settings',
-            headerShown: false,
-            tabBarIcon: ({ focused, color, size }) => (
-              <Ionicons
-                name={focused ? 'settings' : 'settings-outline'}
-                size={size}
-                color={color}
-              />
-            ),
-          }}
+          listeners={LISTENERS.settings}
+          options={SETTINGS_OPTIONS}
         />
       </Tabs>
     </View>
   )
 }
+
+const rootStyle = { flex: 1 }

@@ -154,7 +154,7 @@ export function useSalesWithItems(businessId: string) {
     return () => subscription.unsubscribe()
   }, [businessId, refreshToken])
 
-  const refetch = () => setRefreshToken((t) => t + 1)
+  const refetch = useCallback(() => setRefreshToken((t) => t + 1), [])
 
   return { salesWithItems, isLoading, totalCount, refetch }
 }

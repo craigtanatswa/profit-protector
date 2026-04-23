@@ -276,6 +276,9 @@ function AddCustomerModal({
   )
 }
 
+// Stable separator
+const CustomerSeparator = () => <View style={{ height: 8 }} />
+
 // ---------------------------------------------------------------------------
 // Customer List Screen
 // ---------------------------------------------------------------------------
@@ -389,8 +392,7 @@ export default function CustomersScreen() {
     })
   }, [])
 
-  // Empty state decision
-  function renderEmptyState() {
+  const renderEmptyState = useCallback(() => {
     if (customers.length === 0) {
       return (
         <View style={styles.emptyWrapper}>
@@ -442,7 +444,19 @@ export default function CustomersScreen() {
     }
 
     return null
-  }
+  }, [customers.length, searchText, activeTab, setShowAddModal])
+
+  const renderCustomer = useCallback(
+    ({ item }: { item: Customer }) => (
+      <HighlightWrapper isHighlighted={item.id === newCustomerId}>
+        <CustomerCard
+          customer={item}
+          onPress={() => handleNavigateToDetail(item)}
+        />
+      </HighlightWrapper>
+    ),
+    [newCustomerId, handleNavigateToDetail],
+  )
 
   if (isLoading) {
     return <LoadingScreen />
@@ -539,16 +553,12 @@ export default function CustomersScreen() {
             colors={['#0047AB']}
           />
         }
-        ListEmptyComponent={renderEmptyState()}
-        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-        renderItem={({ item }) => (
-          <HighlightWrapper isHighlighted={item.id === newCustomerId}>
-            <CustomerCard
-              customer={item}
-              onPress={() => handleNavigateToDetail(item)}
-            />
-          </HighlightWrapper>
-        )}
+        ListEmptyComponent={renderEmptyState}
+        ItemSeparatorComponent={CustomerSeparator}
+        renderItem={renderCustomer}
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={5}
       />
 
       {/* FAB */}

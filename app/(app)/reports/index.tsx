@@ -1,7 +1,6 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
-  Dimensions,
   Modal,
   Platform,
   ScrollView,
@@ -9,6 +8,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker'
@@ -283,7 +283,7 @@ interface BarChartProps {
 }
 
 function BarChart({ data, selectedBar, onSelectBar, currency, zigRatePerUsd }: BarChartProps) {
-  const { width: screenW } = Dimensions.get('window')
+  const { width: screenW } = useWindowDimensions()
   const chartAreaW = screenW - 32 - CHART_Y_AXIS_W - 8
   const numBars = data.length || 1
   const barWidth = Math.max(MIN_BAR_W, Math.min(MAX_BAR_W, Math.floor((chartAreaW - numBars * 4) / numBars)))
@@ -639,11 +639,9 @@ export default function ReportsScreen() {
   } = useReports(businessId, startMs, endMs)
 
   // Reset selected bar when period changes
-  const prevPeriodRef = useRef(period)
-  if (prevPeriodRef.current !== period) {
-    prevPeriodRef.current = period
-    if (selectedBar !== null) setSelectedBar(null)
-  }
+  useEffect(() => {
+    setSelectedBar(null)
+  }, [period])
 
   // ── Chart data ──
   const chartData = useMemo(
@@ -1114,7 +1112,7 @@ function SummaryCards({
   currency,
   zigRatePerUsd,
 }: SummaryCardsProps) {
-  const { width } = Dimensions.get('window')
+  const { width } = useWindowDimensions()
   const cardWidth = (width - 32 - 10) / 2
 
   const profitVariant =
@@ -1272,12 +1270,14 @@ interface TopProductsSectionProps {
   zigRatePerUsd: number
 }
 
+const TOP_PRODUCTS_SORT_TABS: { key: TopProductSort; label: string }[] = [
+  { key: 'revenue', label: 'By Revenue' },
+  { key: 'quantity', label: 'By Quantity' },
+  { key: 'profit', label: 'By Profit' },
+]
+
 function TopProductsSection({ products, sort, onSortChange, currency, zigRatePerUsd }: TopProductsSectionProps) {
-  const sortTabs: { key: TopProductSort; label: string }[] = [
-    { key: 'revenue', label: 'By Revenue' },
-    { key: 'quantity', label: 'By Quantity' },
-    { key: 'profit', label: 'By Profit' },
-  ]
+  const sortTabs = TOP_PRODUCTS_SORT_TABS
 
   const topValue = products.length > 0
     ? sort === 'revenue'

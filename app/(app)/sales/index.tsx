@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState, memo } from 'react'
 import {
   Animated,
   RefreshControl,
@@ -74,6 +74,10 @@ interface Section {
   subtotalCents: number
   data: SaleWithItems[]
 }
+
+// ─── Stable list separators (module-level = same reference every render) ──────
+const ItemSep = () => <View style={styles.itemSeparator} />
+const SectionSep = () => <View style={styles.sectionSep} />
 
 // ─── Skeleton card ────────────────────────────────────────────────────────────
 
@@ -262,6 +266,36 @@ export default function SalesHistoryScreen() {
     })
   }
 
+  // ─── Stable list renderers ────────────────────────────────────────────────
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: Section }) => (
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionHeaderTitle}>{section.title}</Text>
+        <Text style={styles.sectionHeaderSubtotal}>
+          {formatMoney(section.subtotalCents)}
+        </Text>
+      </View>
+    ),
+    [formatMoney],
+  )
+
+  const renderItem = useCallback(
+    ({ item: entry }: { item: SaleWithItems }) => (
+      <SaleCard
+        sale={entry.sale}
+        saleItems={entry.saleItems}
+        onPress={() =>
+          router.push({
+            pathname: '/(app)/sales/[id]',
+            params: { id: entry.sale.id },
+          })
+        }
+      />
+    ),
+    [],
+  )
+
   // ─── Refresh ──────────────────────────────────────────────────────────────
 
   async function handleRefresh() {
@@ -385,6 +419,9 @@ export default function SalesHistoryScreen() {
           sections={sections}
           keyExtractor={(entry) => entry.sale.id}
           stickySectionHeadersEnabled
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
@@ -393,28 +430,10 @@ export default function SalesHistoryScreen() {
               colors={['#0047AB']}
             />
           }
-          renderSectionHeader={({ section }) => (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionHeaderTitle}>{section.title}</Text>
-              <Text style={styles.sectionHeaderSubtotal}>
-                {formatMoney(section.subtotalCents)}
-              </Text>
-            </View>
-          )}
-          renderItem={({ item: entry }) => (
-            <SaleCard
-              sale={entry.sale}
-              saleItems={entry.saleItems}
-              onPress={() =>
-                router.push({
-                  pathname: '/(app)/sales/[id]',
-                  params: { id: entry.sale.id },
-                })
-              }
-            />
-          )}
-          ItemSeparatorComponent={() => <View style={styles.itemSeparator} />}
-          SectionSeparatorComponent={() => <View style={styles.sectionSep} />}
+          renderSectionHeader={renderSectionHeader}
+          renderItem={renderItem}
+          ItemSeparatorComponent={ItemSep}
+          SectionSeparatorComponent={SectionSep}
         />
       )}
 

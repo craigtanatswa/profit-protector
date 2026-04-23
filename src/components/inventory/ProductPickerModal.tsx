@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import {
   FlatList,
   Modal,
@@ -31,12 +31,12 @@ export function ProductPickerModal({
   const [search, setSearch] = useState('')
   const { products } = useProducts(businessId)
 
-  const filtered =
-    search.trim().length > 0
-      ? products.filter((p) =>
-          p.name.toLowerCase().includes(search.toLowerCase().trim()),
-        )
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return q.length > 0
+      ? products.filter((p) => p.name.toLowerCase().includes(q))
       : products
+  }, [products, search])
 
   function stockColor(product: Product): string {
     if (product.stockQty <= 0) return '#C0152A'
@@ -124,6 +124,9 @@ export function ProductPickerModal({
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           keyboardShouldPersistTaps="handled"
+          initialNumToRender={15}
+          maxToRenderPerBatch={15}
+          windowSize={5}
           ListEmptyComponent={
             <EmptyState
               icon="cube-outline"

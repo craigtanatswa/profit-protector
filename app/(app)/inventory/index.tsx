@@ -29,6 +29,9 @@ import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
 
+// Stable separator — module-level avoids creating a new component every render
+const ItemSeparator = () => <View style={styles.itemSep} />
+
 // ---------------------------------------------------------------------------
 // Skeleton card shown while products are loading
 // ---------------------------------------------------------------------------
@@ -335,9 +338,12 @@ export default function InventoryScreen() {
             styles.listContent,
             sortedProducts.length === 0 && styles.listContentEmpty,
           ]}
-          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+          ItemSeparatorComponent={ItemSeparator}
           ListEmptyComponent={renderEmpty}
           keyboardShouldPersistTaps="handled"
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          windowSize={5}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
@@ -466,9 +472,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 12,
     paddingBottom: 8,
-    gap: 8,
     flexDirection: 'row',
+    flexWrap: 'nowrap',
     alignItems: 'center',
+    // gap + horizontal ScrollView: add spacing via margin on pills instead
   },
   pill: {
     backgroundColor: '#FFFFFF',
@@ -477,6 +484,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingVertical: 6,
     paddingHorizontal: 16,
+    marginRight: 8,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   pillSelected: {
     backgroundColor: '#0047AB',
@@ -486,6 +496,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: '#5A6A8A',
+    flexShrink: 0,
   },
   pillTextSelected: {
     color: '#FFFFFF',
@@ -507,6 +518,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#0D1B3E',
     fontWeight: '500',
+  },
+
+  itemSep: {
+    height: 10,
   },
 
   // Product list
