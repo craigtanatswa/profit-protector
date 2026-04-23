@@ -18,6 +18,7 @@ import { StatusBar } from 'expo-status-bar'
 
 import { Button, Card, Badge, MetricCard } from '../../src/components/ui'
 import { useAuthStore } from '../../src/stores/authStore'
+import { checkAndNotifyLowStock } from '../../src/lib/notifications'
 import { useDashboard } from '../../src/hooks/useDashboard'
 import { useQuietOfflineRefreshOnFocus } from '../../src/hooks/useQuietOfflineRefreshOnFocus'
 import type { CashBreakdownItem, RecentSaleEntry } from '../../src/hooks/useDashboard'
@@ -782,6 +783,7 @@ export default function DashboardScreen() {
     refetch()
     if (businessId) {
       await triggerSync(businessId)
+      checkAndNotifyLowStock(businessId).catch(() => {})
     }
     setIsRefreshing(false)
   }

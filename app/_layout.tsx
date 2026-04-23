@@ -6,6 +6,7 @@ import { database } from '../src/database'
 import { supabase } from '../src/lib/supabase'
 import { useAuthStore } from '../src/stores/authStore'
 import { LoadingScreen } from '../src/components/ui/LoadingScreen'
+import { requestNotificationPermissions } from '../src/lib/notifications'
 import "../global.css"
 
 // Always clear the stored session on cold start in dev so the login screen
@@ -58,6 +59,14 @@ function AuthGate() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    requestNotificationPermissions().then((granted) => {
+      if (granted) {
+        console.log('Notifications permission granted')
+      }
+    })
+  }, [])
+
   const shell = (
     <>
       <StatusBar style="dark" />

@@ -105,6 +105,7 @@ import { useRouter } from 'expo-router'
 
 import { ScreenHeader } from '../../../src/components/layout'
 import { Badge, Button, EmptyState } from '../../../src/components/ui'
+import { sendLowStockNotification } from '../../../src/lib/notifications'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { useCartStore } from '../../../src/stores/cartStore'
 import { useProducts } from '../../../src/hooks/useProducts'
@@ -370,6 +371,26 @@ export default function NewSaleScreen() {
       // there is no ID mismatch between local and remote records.
       const { triggerSync } = useAuthStore.getState()
       triggerSync(business.id).catch(() => {})
+
+      // Fire-and-forget low stock notifications — must not block sale completion
+      ;(async () => {
+        for (const item of items) {
+          try {
+            const product = await database!.get<ProductModel>('products').find(item.productId)
+            if (product.stockQty <= product.lowStockThreshold) {
+              sendLowStockNotification({
+                productId: product.id,
+                productName: product.name,
+                currentStock: product.stockQty,
+                threshold: product.lowStockThreshold,
+                unit: product.unit,
+              }).catch((err) => console.warn('Notification failed:', err.message))
+            }
+          } catch {
+            // Ignore lookup failures
+          }
+        }
+      })()
 
       clearCart()
       setDiscountInput('')

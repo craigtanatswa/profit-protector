@@ -27,6 +27,7 @@ import type StockMovementModel from '../../../src/database/models/StockMovement'
 import { formatDate } from '../../../src/lib/formatters'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { getProductById } from '../../../src/hooks/useProducts'
+import { sendLowStockNotification } from '../../../src/lib/notifications'
 import type { AdjustmentReason, Product } from '../../../src/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -321,6 +322,17 @@ export default function AdjustStockScreen() {
         .then(({ error }) => {
           if (error) console.warn('Stock movement sync failed:', error.message)
         })
+
+      // Fire-and-forget low stock notification for removals
+      if (isRemoving && newStockQty <= selectedProduct.lowStockThreshold) {
+        sendLowStockNotification({
+          productId: selectedProduct.id,
+          productName: selectedProduct.name,
+          currentStock: newStockQty,
+          threshold: selectedProduct.lowStockThreshold,
+          unit: selectedProduct.unit,
+        }).catch((err) => console.warn('Notification failed:', err.message))
+      }
 
       const unit = selectedProduct.unit
       const productName = selectedProduct.name
