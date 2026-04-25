@@ -50,10 +50,6 @@ export function formatDateTime(timestamp: number): string {
   return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}, ${hours}:${minutes}`
 }
 
-export function formatReceiptNumber(n: number): string {
-  return `RCP-${String(n).padStart(4, '0')}`
-}
-
 export function formatPaymentMethod(method: string): string {
   const labels: Record<string, string> = {
     cash_usd: 'Cash (USD)',

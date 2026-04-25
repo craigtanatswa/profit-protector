@@ -102,6 +102,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import { Q } from '@nozbe/watermelondb'
 
 import { ScreenHeader } from '../../../src/components/layout'
 import { Badge, Button, EmptyState } from '../../../src/components/ui'
@@ -113,7 +114,7 @@ import { useSales } from '../../../src/hooks/useSales'
 import { useCustomers } from '../../../src/hooks/useCustomers'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { database } from '../../../src/database'
-import { formatReceiptNumber } from '../../../src/lib/formatters'
+import { formatShortReceipt6 } from '../../../src/lib/receiptNumber'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { Product, Customer } from '../../../src/types'
 import type ProductModel from '../../../src/database/models/Product'
@@ -177,7 +178,7 @@ export default function NewSaleScreen() {
   const totalCents = subtotalCents - discountCents
 
   const { products, refetch: refetchProducts } = useProducts(businessId)
-  const { totalSalesCount, refetch: refetchSales } = useSales(businessId)
+  const { refetch: refetchSales } = useSales(businessId)
   const { customers, createCustomer, refreshLocal: refreshCustomersLocal } =
     useCustomers(businessId)
 
@@ -310,9 +311,13 @@ export default function NewSaleScreen() {
     Keyboard.dismiss()
 
     try {
-      const receiptNumber = formatReceiptNumber(totalSalesCount + 1)
-
       const newSaleId = await database.write(async () => {
+        const salesBefore = await database!
+          .get<SaleModel>('sales')
+          .query(Q.where('business_id', business.id))
+          .fetchCount()
+        const receiptNumber = formatShortReceipt6(salesBefore)
+
         const newSale = await database!.get<SaleModel>('sales').create((s) => {
           s.businessId = business.id
           s.totalCents = totalCents
@@ -407,7 +412,6 @@ export default function NewSaleScreen() {
     database,
     business,
     canComplete,
-    totalSalesCount,
     totalCents,
     discountCents,
     paymentMethod,
