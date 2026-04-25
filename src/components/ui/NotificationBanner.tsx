@@ -17,6 +17,8 @@ export interface NotificationBannerProps {
   productId?: string | null
   onPress: () => void
   onDismiss: () => void
+  /** Extra top offset (added after safe area inset), e.g. to stack below another banner */
+  topOffsetExtra?: number
 }
 
 export function NotificationBanner({
@@ -26,6 +28,7 @@ export function NotificationBanner({
   type,
   onPress,
   onDismiss,
+  topOffsetExtra = 0,
 }: NotificationBannerProps) {
   const insets = useSafeAreaInsets()
   const slideAnim = useRef(new Animated.Value(-120)).current
@@ -69,7 +72,10 @@ export function NotificationBanner({
     <Animated.View
       style={[
         styles.container,
-        { top: insets.top + 8, transform: [{ translateY: slideAnim }] },
+        {
+          top: insets.top + 8 + topOffsetExtra,
+          transform: [{ translateY: slideAnim }],
+        },
         { backgroundColor: bgColor, borderColor },
       ]}
     >

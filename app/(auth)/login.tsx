@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import * as SecureStore from 'expo-secure-store'
 import { useRouter } from 'expo-router'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -16,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { Button, Card, Divider, Input, LoadingScreen } from '../../src/components/ui'
 import { BrandLogo, KeyboardAvoidingWrapper } from '../../src/components/layout'
 import { resolveEmailForSignIn } from '../../src/lib/authLogin'
+import { fetchBusinessRowForUser } from '../../src/lib/businessRemote'
 import { supabase } from '../../src/lib/supabase'
 import { useAuthStore } from '../../src/stores/authStore'
 import { database } from '../../src/database'
@@ -57,11 +59,7 @@ export default function LoginScreen() {
   })
 
   const handleForgotPassword = () => {
-    Alert.alert(
-      'Reset Password',
-      "Enter your phone number on the next screen and we'll help you reset your password.",
-      [{ text: 'OK' }],
-    )
+    router.push('/(auth)/forgot-password')
   }
 
   const onSubmit = async (values: LoginForm) => {
@@ -115,11 +113,7 @@ export default function LoginScreen() {
 
       setUser(user)
 
-      const { data: biz, error: bizError } = await supabase
-        .from('businesses')
-        .select('id, name, owner_name, phone, business_type, currency, login_username, zig_rate_per_usd')
-        .eq('user_id', user.id)
-        .single()
+      const { data: biz, error: bizError } = await fetchBusinessRowForUser(user.id)
 
       if (bizError || !biz) {
         Alert.alert('Login Failed', bizError?.message ?? 'Could not load your business data.')
@@ -132,6 +126,12 @@ export default function LoginScreen() {
           ? biz.zig_rate_per_usd
           : 1
 
+      const recoveryEmailVerified = biz.recovery_email_verified === true
+      const recoveryEmail =
+        typeof biz.recovery_email === 'string' && biz.recovery_email.trim() !== ''
+          ? biz.recovery_email.trim()
+          : undefined
+
       setBusiness({
         id: biz.id,
         name: biz.name,
@@ -141,7 +141,15 @@ export default function LoginScreen() {
         currency: biz.currency,
         zigRatePerUsd: zigRate,
         loginUsername: biz.login_username ?? null,
+        recoveryEmail,
+        recoveryEmailVerified,
       })
+
+      if (!recoveryEmailVerified) {
+        await SecureStore.setItemAsync('shown_email_prompt', 'false')
+      } else {
+        await SecureStore.setItemAsync('shown_email_prompt', 'true')
+      }
 
       // WatermelonDB: restore business on new device if not already present locally
       if (database) {
@@ -164,6 +172,8 @@ export default function LoginScreen() {
                 record.zigRatePerUsd = zigRate
                 record.loginUsername = biz.login_username ?? null
                 record.supabaseId = user.id
+                record.recoveryEmail = recoveryEmail ?? null
+                record.recoveryEmailVerified = recoveryEmailVerified
               })
             })
 

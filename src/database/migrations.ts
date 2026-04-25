@@ -58,5 +58,17 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      toVersion: 7,
+      steps: [
+        addColumns({
+          table: 'businesses',
+          columns: [
+            { name: 'recovery_email', type: 'string', isOptional: true },
+            { name: 'recovery_email_verified', type: 'boolean' },
+          ],
+        }),
+      ],
+    },
   ],
 })

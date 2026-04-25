@@ -73,3 +73,14 @@ export function formatMonthYear(timestamp: number): string {
   ]
   return `${months[date.getMonth()]} ${date.getFullYear()}`
 }
+
+/** e.g. "chipo@gmail.com" → "ch***@gmail.com" */
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split('@')
+  if (domain == null || domain === '' || local == null) {
+    return email
+  }
+  const prefix = local.length >= 2 ? local.slice(0, 2) : local
+  const masked = `${prefix}***`
+  return `${masked}@${domain}`
+}

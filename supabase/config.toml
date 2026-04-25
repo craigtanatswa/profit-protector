@@ -1,0 +1,29 @@
+
+[functions.send-otp-email]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-otp-email/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/send-otp-email/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/send-otp-email/*.html" ]
+
+[functions.send-recovery-otp]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-recovery-otp/deno.json"
+entrypoint = "./functions/send-recovery-otp/index.ts"
+
+[functions.verify-recovery-otp]
+enabled = true
+verify_jwt = true
+import_map = "./functions/verify-recovery-otp/deno.json"
+entrypoint = "./functions/verify-recovery-otp/index.ts"
+
+[functions.complete-recovery-password]
+enabled = true
+verify_jwt = true
+import_map = "./functions/complete-recovery-password/deno.json"
+entrypoint = "./functions/complete-recovery-password/index.ts"

@@ -62,10 +62,13 @@ import { Ionicons } from '@expo/vector-icons'
 import * as Crypto from 'expo-crypto'
 
 import { Button, Input } from '../../src/components/ui'
+import { EmailVerificationModal } from '../../src/components/auth/EmailVerificationModal'
 import { BrandLogo, KeyboardAvoidingWrapper, ScreenHeader } from '../../src/components/layout'
 import { database } from '../../src/database'
 import Business from '../../src/database/models/Business'
 import { supabase } from '../../src/lib/supabase'
+import { sendEmailOTP } from '../../src/lib/emailOTP'
+import { isMissingRecoveryColumnsError } from '../../src/lib/businessRemote'
 import {
   buildSupabaseEmailFromPhone,
   isValidOptionalLoginUsername,
@@ -98,6 +101,12 @@ const registerSchema = z
     confirmPassword: z.string(),
     currency: z.string().min(1, 'Please select a currency'),
     monthlyProfitGoalCents: z.number().optional(),
+    recoveryEmail: z
+      .string()
+      .transform(s => s.trim())
+      .refine(s => s === '' || z.string().email().safeParse(s).success, {
+        message: 'Please enter a valid email address',
+      }),
   })
   .refine(data => data.password === data.confirmPassword, {
     message: 'Passwords do not match',
@@ -122,7 +131,7 @@ type RegisterFormData = z.infer<typeof registerSchema>
 
 const STEP_FIELDS: Record<number, Array<keyof RegisterFormData>> = {
   1: ['businessName', 'businessType'],
-  2: ['ownerName', 'phone', 'loginUsername', 'password', 'confirmPassword'],
+  2: ['ownerName', 'phone', 'loginUsername', 'recoveryEmail', 'password', 'confirmPassword'],
   3: ['currency'],
 }
 
@@ -243,6 +252,10 @@ export default function RegisterScreen() {
   const [currentStep, setCurrentStep] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
   const [profitGoalText, setProfitGoalText] = useState('')
+  const [pendingRecoveryVerify, setPendingRecoveryVerify] = useState<{
+    businessId: string
+    email: string
+  } | null>(null)
 
   const {
     control,
@@ -261,6 +274,7 @@ export default function RegisterScreen() {
       confirmPassword: '',
       currency: '',
       monthlyProfitGoalCents: undefined,
+      recoveryEmail: '',
     },
     mode: 'onTouched',
   })
@@ -295,6 +309,7 @@ export default function RegisterScreen() {
     setIsLoading(true)
     try {
       const loginUsername = data.loginUsername
+      const recoveryEmailTrimmed = data.recoveryEmail ?? ''
       const email = buildSupabaseEmailFromPhone(data.phone)
 
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
@@ -349,6 +364,8 @@ export default function RegisterScreen() {
               b.zigRatePerUsd = 1
               b.loginUsername = loginUsername || null
               b.supabaseId = user.id
+              b.recoveryEmail = recoveryEmailTrimmed || null
+              b.recoveryEmailVerified = false
             }),
           )
           businessId = record.id
@@ -364,7 +381,7 @@ export default function RegisterScreen() {
         businessId = Crypto.randomUUID()
       }
 
-      const { error: insertError } = await supabase.from('businesses').insert({
+      const insertBase = {
         id: businessId,
         name: data.businessName,
         owner_name: data.ownerName,
@@ -375,7 +392,20 @@ export default function RegisterScreen() {
         login_username: loginUsername || null,
         user_id: user.id,
         created_at: new Date().toISOString(),
-      })
+      }
+
+      let insertError = (
+        await supabase.from('businesses').insert({
+          ...insertBase,
+          recovery_email: recoveryEmailTrimmed || null,
+          recovery_email_verified: false,
+        })
+      ).error
+
+      if (insertError && isMissingRecoveryColumnsError(insertError)) {
+        const retry = await supabase.from('businesses').insert(insertBase)
+        insertError = retry.error
+      }
 
       if (insertError) {
         let insMsg = insertError.message
@@ -396,8 +426,24 @@ export default function RegisterScreen() {
         currency: data.currency,
         zigRatePerUsd: 1,
         loginUsername: loginUsername || null,
+        recoveryEmail: recoveryEmailTrimmed || undefined,
+        recoveryEmailVerified: false,
       })
       setUser(user)
+
+      if (recoveryEmailTrimmed) {
+        const sent = await sendEmailOTP(recoveryEmailTrimmed, 'add_email')
+        if (!sent.success) {
+          Alert.alert(
+            'Email verification',
+            sent.error ??
+              'Could not send a verification code. You can verify your email later in Settings.',
+          )
+        }
+        setIsLoading(false)
+        setPendingRecoveryVerify({ businessId, email: recoveryEmailTrimmed })
+        return
+      }
 
       router.replace('/(app)')
     } catch (err: unknown) {
@@ -407,6 +453,70 @@ export default function RegisterScreen() {
       )
       setIsLoading(false)
     }
+  }
+
+  const handleRecoveryVerified = async () => {
+    if (!pendingRecoveryVerify || !database) {
+      setPendingRecoveryVerify(null)
+      router.replace('/(app)')
+      return
+    }
+    const { businessId, email } = pendingRecoveryVerify
+    try {
+      const { error: remoteErr } = await supabase
+        .from('businesses')
+        .update({
+          recovery_email: email,
+          recovery_email_verified: true,
+        })
+        .eq('id', businessId)
+
+      if (remoteErr) {
+        if (isMissingRecoveryColumnsError(remoteErr)) {
+          Alert.alert(
+            'Database update needed',
+            'Your Supabase project is missing recovery email columns. Add them in the SQL Editor (see Settings screen comments), then verify your email again in Settings.',
+          )
+        } else {
+          Alert.alert('Error', remoteErr.message)
+        }
+      } else {
+        const records = await database.get<Business>('businesses').query().fetch()
+        const localRecord = records.find((r) => r.id === businessId) ?? records[0]
+        if (localRecord) {
+          await database.write(async () => {
+            await localRecord.update((b) => {
+              b.recoveryEmail = email
+              b.recoveryEmailVerified = true
+            })
+          })
+        }
+
+        const prev = useAuthStore.getState().business
+        if (prev) {
+          setBusiness({
+            ...prev,
+            recoveryEmail: email,
+            recoveryEmailVerified: true,
+          })
+        }
+        Alert.alert('Email verified!', 'Your recovery email is confirmed.')
+      }
+    } catch {
+      Alert.alert('Error', 'Could not save verification. You can try again in Settings.')
+    } finally {
+      setPendingRecoveryVerify(null)
+      router.replace('/(app)')
+    }
+  }
+
+  const handleRecoverySkipped = () => {
+    Alert.alert(
+      'Recovery email',
+      'You can verify your email later in Settings.',
+    )
+    setPendingRecoveryVerify(null)
+    router.replace('/(app)')
   }
 
   // -------------------------------------------------------------------------
@@ -483,6 +593,26 @@ export default function RegisterScreen() {
             keyboardType="number-pad"
             autoCapitalize="none"
             editable={!isLoading}
+          />
+        )}
+      />
+
+      <Controller
+        control={control}
+        name="recoveryEmail"
+        render={({ field: { onChange, value } }) => (
+          <Input
+            label="Recovery Email"
+            placeholder="your@email.com"
+            value={value}
+            onChangeText={onChange}
+            error={errors.recoveryEmail?.message}
+            hint="Recommended — used to recover your account if you lose access"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!isLoading}
+            leftIcon={<Ionicons name="mail-outline" size={18} color="#5A6A8A" />}
           />
         )}
       />
@@ -637,6 +767,14 @@ export default function RegisterScreen() {
           </View>
         </View>
       </KeyboardAvoidingWrapper>
+
+      <EmailVerificationModal
+        visible={pendingRecoveryVerify != null}
+        email={pendingRecoveryVerify?.email ?? ''}
+        purpose="add_email"
+        onSuccess={handleRecoveryVerified}
+        onCancel={handleRecoverySkipped}
+      />
     </View>
   )
 }

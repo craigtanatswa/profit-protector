@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import * as SecureStore from 'expo-secure-store'
 import {
   Animated,
   Dimensions,
@@ -16,7 +17,7 @@ import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 
-import { Button, Card, Badge, MetricCard } from '../../src/components/ui'
+import { Button, Card, Badge, MetricCard, NotificationBanner } from '../../src/components/ui'
 import { useAuthStore } from '../../src/stores/authStore'
 import { checkAndNotifyLowStock } from '../../src/lib/notifications'
 import { useDashboard } from '../../src/hooks/useDashboard'
@@ -750,10 +751,12 @@ function CreditSection({ customers }: { customers: Customer[] }) {
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets()
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [emailSecurityBannerVisible, setEmailSecurityBannerVisible] = useState(false)
 
   const { business, triggerSync } = useAuthStore()
   const businessId = business?.id ?? ''
   const ownerName = business?.ownerName ?? 'there'
+  const recoveryVerified = business?.recoveryEmailVerified === true
 
   const {
     todaysSalesCents,
@@ -777,6 +780,30 @@ export default function DashboardScreen() {
       refetch()
     }, [refetch]),
   )
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!business?.id) return
+      if (business.recoveryEmailVerified) {
+        if (!cancelled) setEmailSecurityBannerVisible(false)
+        return
+      }
+      const flag = await SecureStore.getItemAsync('shown_email_prompt')
+      if (!cancelled && flag === 'false') {
+        setEmailSecurityBannerVisible(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [business?.id, business?.recoveryEmailVerified])
+
+  useEffect(() => {
+    if (business?.recoveryEmailVerified) {
+      setEmailSecurityBannerVisible(false)
+    }
+  }, [business?.recoveryEmailVerified])
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
@@ -802,6 +829,23 @@ export default function DashboardScreen() {
   return (
     <>
       <StatusBar style="light" />
+      <NotificationBanner
+        visible={emailSecurityBannerVisible}
+        title="Secure your account"
+        message="Add a recovery email in Settings to protect your business data"
+        type="warning"
+        productId={null}
+        topOffsetExtra={56}
+        onPress={() => {
+          setEmailSecurityBannerVisible(false)
+          void SecureStore.setItemAsync('shown_email_prompt', 'true')
+          router.push({ pathname: '/(app)/settings', params: { focus: 'security' } })
+        }}
+        onDismiss={() => {
+          void SecureStore.setItemAsync('shown_email_prompt', 'true')
+          setEmailSecurityBannerVisible(false)
+        }}
+      />
       <View style={styles.root}>
         {/* ── Custom cobalt header ── */}
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
@@ -810,7 +854,27 @@ export default function DashboardScreen() {
               <Text style={styles.greetingText}>
                 Good {getGreeting()},
               </Text>
-              <Text style={styles.businessName}>{ownerName}</Text>
+              <View style={styles.nameRow}>
+                <Text style={styles.businessName}>{ownerName}</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    router.push({ pathname: '/(app)/settings', params: { focus: 'security' } })
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                  disabled={recoveryVerified}
+                >
+                  <Ionicons
+                    name={recoveryVerified ? 'shield-checkmark' : 'shield-outline'}
+                    size={14}
+                    color={
+                      recoveryVerified
+                        ? 'rgba(255,255,255,0.7)'
+                        : 'rgba(255,255,255,0.5)'
+                    }
+                    style={styles.shieldIcon}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
             <View style={styles.headerRight}>
               <DashboardSyncIndicator />
@@ -916,11 +980,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.8)',
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
   businessName: {
     fontSize: 22,
     fontWeight: '700',
     color: '#FFFFFF',
-    marginTop: 2,
+  },
+  shieldIcon: {
+    marginLeft: 6,
   },
   syncRow: {
     flexDirection: 'row',

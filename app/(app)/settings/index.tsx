@@ -16,9 +16,13 @@
  *
  * -- ZiG per $1 USD (display conversion; ledger stays USD cents)
  * alter table businesses add column if not exists zig_rate_per_usd numeric default 1;
+ *
+ * -- Recovery email (run in Supabase SQL Editor)
+ * alter table businesses add column if not exists recovery_email text;
+ * alter table businesses add column if not exists recovery_email_verified boolean not null default false;
  */
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -36,12 +40,14 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useFocusEffect, useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import * as SecureStore from 'expo-secure-store'
 import { Q } from '@nozbe/watermelondb'
 
-import { Button, Input, LoadingScreen } from '../../../src/components/ui'
+import { Badge, Button, Input, LoadingScreen } from '../../../src/components/ui'
+import { AddRecoveryEmailModal } from '../../../src/components/settings/AddRecoveryEmailModal'
+import { ChangePasswordModal } from '../../../src/components/settings/ChangePasswordModal'
 import { ScreenHeader } from '../../../src/components/layout'
 import { SettingsRow } from '../../../src/components/settings/SettingsRow'
 import { SettingsSection } from '../../../src/components/settings/SettingsSection'
@@ -50,8 +56,7 @@ import { database } from '../../../src/database'
 import { supabase } from '../../../src/lib/supabase'
 import { exportReportCSV } from '../../../src/lib/reportCSV'
 import { syncAll } from '../../../src/lib/sync'
-import { formatDateTime, formatMonthYear } from '../../../src/lib/formatters'
-import { buildSupabaseEmailFromPhone, buildLegacySupabaseEmailFromPhone } from '../../../src/lib/authIdentity'
+import { formatDateTime, formatMonthYear, maskEmail } from '../../../src/lib/formatters'
 import {
   getBusinessLogoDisplayUri,
   pickAndSaveBusinessLogoFromDevice,
@@ -728,164 +733,6 @@ const bl = StyleSheet.create({
 })
 
 // ---------------------------------------------------------------------------
-// ChangePasswordModal
-// ---------------------------------------------------------------------------
-
-function ChangePasswordModal({
-  visible,
-  onClose,
-}: {
-  visible: boolean
-  onClose: () => void
-}) {
-  const business = useAuthStore((s) => s.business)
-
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [showCurrent, setShowCurrent] = useState(false)
-  const [showNew, setShowNew] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [errors, setErrors] = useState<{
-    currentPassword?: string
-    newPassword?: string
-    confirmPassword?: string
-  }>({})
-
-  useEffect(() => {
-    if (!visible) return
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
-    setErrors({})
-    setShowCurrent(false)
-    setShowNew(false)
-    setShowConfirm(false)
-  }, [visible])
-
-  const validate = (): boolean => {
-    const errs: typeof errors = {}
-    if (!currentPassword) errs.currentPassword = 'Current password is required'
-    if (!newPassword || newPassword.length < 6) errs.newPassword = 'New password must be at least 6 characters'
-    if (newPassword !== confirmPassword) errs.confirmPassword = 'Passwords do not match'
-    setErrors(errs)
-    return Object.keys(errs).length === 0
-  }
-
-  const handleSave = async () => {
-    if (!validate() || !business) return
-    setSaving(true)
-    try {
-      // Re-authenticate with current password
-      const primaryEmail = buildSupabaseEmailFromPhone(business.phone)
-      const legacyEmail = buildLegacySupabaseEmailFromPhone(business.phone)
-
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: primaryEmail,
-        password: currentPassword,
-      })
-
-      let reauthed = !authError
-      if (!reauthed) {
-        const { error: legacyError } = await supabase.auth.signInWithPassword({
-          email: legacyEmail,
-          password: currentPassword,
-        })
-        reauthed = !legacyError
-      }
-
-      if (!reauthed) {
-        setErrors({ currentPassword: 'Current password is incorrect' })
-        setSaving(false)
-        return
-      }
-
-      // Update password
-      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
-      if (updateError) {
-        Alert.alert('Error', updateError.message)
-        setSaving(false)
-        return
-      }
-
-      Alert.alert('Success', 'Password updated successfully.')
-      onClose()
-    } catch {
-      Alert.alert('Error', 'Could not update password. Please try again.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <ModalSheet visible={visible} onClose={onClose} title="Change Password">
-      <View style={cp.fields}>
-        <Input
-          label="Current Password"
-          placeholder="Enter current password"
-          value={currentPassword}
-          onChangeText={setCurrentPassword}
-          secureTextEntry={!showCurrent}
-          error={errors.currentPassword}
-          editable={!saving}
-          rightIcon={
-            <TouchableOpacity onPress={() => setShowCurrent((v) => !v)}>
-              <Ionicons name={showCurrent ? 'eye-off-outline' : 'eye-outline'} size={18} color="#718096" />
-            </TouchableOpacity>
-          }
-        />
-        <Input
-          label="New Password"
-          placeholder="At least 6 characters"
-          value={newPassword}
-          onChangeText={setNewPassword}
-          secureTextEntry={!showNew}
-          error={errors.newPassword}
-          editable={!saving}
-          rightIcon={
-            <TouchableOpacity onPress={() => setShowNew((v) => !v)}>
-              <Ionicons name={showNew ? 'eye-off-outline' : 'eye-outline'} size={18} color="#718096" />
-            </TouchableOpacity>
-          }
-        />
-        <Input
-          label="Confirm New Password"
-          placeholder="Repeat new password"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry={!showConfirm}
-          error={errors.confirmPassword}
-          editable={!saving}
-          rightIcon={
-            <TouchableOpacity onPress={() => setShowConfirm((v) => !v)}>
-              <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={18} color="#718096" />
-            </TouchableOpacity>
-          }
-        />
-      </View>
-
-      <View style={cp.actions}>
-        <Button
-          label={saving ? 'Updating...' : 'Update Password'}
-          onPress={handleSave}
-          variant="primary"
-          size="lg"
-          fullWidth
-          loading={saving}
-          disabled={saving}
-        />
-      </View>
-    </ModalSheet>
-  )
-}
-
-const cp = StyleSheet.create({
-  fields: { gap: 16 },
-  actions: { marginTop: 24 },
-})
-
-// ---------------------------------------------------------------------------
 // DeleteConfirmModal
 // ---------------------------------------------------------------------------
 
@@ -1036,8 +883,10 @@ const dc = StyleSheet.create({
 
 export default function SettingsScreen() {
   const router = useRouter()
+  const { focus: focusParam } = useLocalSearchParams<{ focus?: string }>()
   const business = useAuthStore((s) => s.business)
   const user = useAuthStore((s) => s.user)
+  const setBusiness = useAuthStore((s) => s.setBusiness)
   const logout = useAuthStore((s) => s.logout)
   const syncStatus = useAuthStore((s) => s.syncStatus)
   const lastSyncedAt = useAuthStore((s) => s.lastSyncedAt)
@@ -1049,7 +898,11 @@ export default function SettingsScreen() {
   const [receiptVisible, setReceiptVisible] = useState(false)
   const [logoModalVisible, setLogoModalVisible] = useState(false)
   const [changePassVisible, setChangePassVisible] = useState(false)
+  const [addEmailVisible, setAddEmailVisible] = useState(false)
   const [deleteVisible, setDeleteVisible] = useState(false)
+
+  const scrollRef = useRef<ScrollView>(null)
+  const securitySectionY = useRef(0)
 
   const [heroLogoUri, setHeroLogoUri] = useState<string | null>(null)
   const refreshLogo = useCallback(() => {
@@ -1060,6 +913,16 @@ export default function SettingsScreen() {
     useCallback(() => {
       refreshLogo()
     }, [refreshLogo]),
+  )
+
+  useFocusEffect(
+    useCallback(() => {
+      if (focusParam !== 'security' || securitySectionY.current <= 0) return
+      const y = Math.max(0, securitySectionY.current - 24)
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ y, animated: true })
+      })
+    }, [focusParam]),
   )
 
   // Notification settings
@@ -1229,6 +1092,7 @@ export default function SettingsScreen() {
       <ScreenHeader title="Settings" showBorder />
 
       <ScrollView
+        ref={scrollRef}
         style={s.scroll}
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -1392,25 +1256,59 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         {/* ── Section 4: Security ── */}
-        <SettingsSection title="Security">
-          <SettingsRow
-            icon="lock-closed-outline"
-            iconColor="#0047AB"
-            iconBackground="#E6EEFF"
-            label="Change Password"
-            description="Update your login password"
-            onPress={() => setChangePassVisible(true)}
-          />
-          <SettingsRow
-            icon="call-outline"
-            iconColor="#5A6A8A"
-            iconBackground="#F4F6FB"
-            label="Phone Number"
-            value={business?.phone}
-            showChevron={false}
-            description="To change your phone number contact support"
-          />
-        </SettingsSection>
+        <View
+          onLayout={(e) => {
+            securitySectionY.current = e.nativeEvent.layout.y
+          }}
+        >
+          <SettingsSection title="Security">
+            <SettingsRow
+              icon="mail-outline"
+              iconColor="#0047AB"
+              iconBackground="#E6EEFF"
+              label="Recovery Email"
+              description={
+                business?.recoveryEmail != null &&
+                business.recoveryEmail.trim() !== ''
+                  ? undefined
+                  : 'Add email for account recovery'
+              }
+              value={
+                business?.recoveryEmail != null && business.recoveryEmail.trim() !== ''
+                  ? maskEmail(business.recoveryEmail.trim())
+                  : 'Not set'
+              }
+              showChevron={false}
+              rightElement={
+                business?.recoveryEmail != null && business.recoveryEmail.trim() !== '' ? (
+                  <Badge
+                    variant={business.recoveryEmailVerified ? 'success' : 'warning'}
+                    label={business.recoveryEmailVerified ? 'Verified' : 'Unverified'}
+                    size="sm"
+                  />
+                ) : undefined
+              }
+              onPress={() => setAddEmailVisible(true)}
+            />
+            <SettingsRow
+              icon="lock-closed-outline"
+              iconColor="#0047AB"
+              iconBackground="#E6EEFF"
+              label="Change Password"
+              description="Update your login password"
+              onPress={() => setChangePassVisible(true)}
+            />
+            <SettingsRow
+              icon="call-outline"
+              iconColor="#5A6A8A"
+              iconBackground="#F4F6FB"
+              label="Phone Number"
+              value={business?.phone}
+              showChevron={false}
+              description="Contact support to change phone number"
+            />
+          </SettingsSection>
+        </View>
 
         {/* ── Section 5: Notifications ── */}
         <SettingsSection title="Notifications">
@@ -1537,7 +1435,22 @@ export default function SettingsScreen() {
         onClose={() => setLogoModalVisible(false)}
         onChanged={refreshLogo}
       />
-      <ChangePasswordModal visible={changePassVisible} onClose={() => setChangePassVisible(false)} />
+      {business != null && user != null ? (
+        <AddRecoveryEmailModal
+          visible={addEmailVisible}
+          onClose={() => setAddEmailVisible(false)}
+          business={business}
+          userId={user.id}
+          setBusiness={setBusiness}
+        />
+      ) : null}
+      {business != null ? (
+        <ChangePasswordModal
+          visible={changePassVisible}
+          onClose={() => setChangePassVisible(false)}
+          business={business}
+        />
+      ) : null}
       <DeleteConfirmModal visible={deleteVisible} onClose={() => setDeleteVisible(false)} />
     </SafeAreaView>
   )

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { syncAll } from '../lib/sync'
 import type { SyncStatus } from '../lib/sync'
 
-interface BusinessInfo {
+export interface BusinessInfo {
   id: string
   name: string
   ownerName: string
@@ -15,6 +15,8 @@ interface BusinessInfo {
   zigRatePerUsd: number
   /** Normalized login username when set; otherwise sign-in uses phone. */
   loginUsername?: string | null
+  recoveryEmail?: string
+  recoveryEmailVerified: boolean
 }
 
 interface AuthState {

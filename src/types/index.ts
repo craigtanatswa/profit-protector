@@ -9,6 +9,8 @@ export interface Business {
   zigRatePerUsd?: number
   supabaseId?: string
   createdAt: number
+  recoveryEmail?: string
+  recoveryEmailVerified: boolean
 }
 
 export interface Product {

@@ -110,6 +110,8 @@ export default function SaleDetailScreen() {
     currency: authBusiness?.currency ?? 'USD',
     zigRatePerUsd: authBusiness?.zigRatePerUsd ?? 1,
     createdAt: 0,
+    recoveryEmail: authBusiness?.recoveryEmail,
+    recoveryEmailVerified: authBusiness?.recoveryEmailVerified ?? false,
   }
 
   const handleShare = async () => {
