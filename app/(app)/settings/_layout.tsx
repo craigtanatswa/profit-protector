@@ -14,6 +14,10 @@ export default function SettingsLayout() {
         name="privacy-policy"
         options={{ title: 'Privacy Policy', headerShown: false }}
       />
+      <Stack.Screen
+        name="terms-of-service"
+        options={{ title: 'Terms of Service', headerShown: false }}
+      />
     </Stack>
   )
 }

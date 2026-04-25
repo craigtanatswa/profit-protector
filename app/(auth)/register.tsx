@@ -101,10 +101,10 @@ const registerSchema = z
     confirmPassword: z.string(),
     currency: z.string().min(1, 'Please select a currency'),
     monthlyProfitGoalCents: z.number().optional(),
-    acceptedPrivacy: z
+    agreedToLegal: z
       .boolean()
       .refine(v => v === true, {
-        message: 'You must accept the Privacy Policy to create an account',
+        message: 'You must accept the Terms of Service and Privacy Policy to create an account',
       }),
     recoveryEmail: z
       .string()
@@ -137,7 +137,7 @@ type RegisterFormData = z.infer<typeof registerSchema>
 const STEP_FIELDS: Record<number, Array<keyof RegisterFormData>> = {
   1: ['businessName', 'businessType'],
   2: ['ownerName', 'phone', 'loginUsername', 'recoveryEmail', 'password', 'confirmPassword'],
-  3: ['currency', 'acceptedPrivacy'],
+  3: ['currency', 'agreedToLegal'],
 }
 
 const BUSINESS_TYPES = [
@@ -279,7 +279,7 @@ export default function RegisterScreen() {
       confirmPassword: '',
       currency: '',
       monthlyProfitGoalCents: undefined,
-      acceptedPrivacy: false,
+      agreedToLegal: false,
       recoveryEmail: '',
     },
     mode: 'onTouched',
@@ -718,7 +718,7 @@ export default function RegisterScreen() {
 
       <Controller
         control={control}
-        name="acceptedPrivacy"
+        name="agreedToLegal"
         render={({ field: { onChange, value } }) => (
           <View>
             <View style={styles.privacyRow}>
@@ -739,6 +739,13 @@ export default function RegisterScreen() {
               <Text style={styles.privacyLabel}>
                 I have read and agree to the{' '}
                 <Text
+                  onPress={() => router.push('/(auth)/terms-of-service')}
+                  style={styles.privacyLink}
+                >
+                  Terms of Service
+                </Text>
+                {' and the '}
+                <Text
                   onPress={() => router.push('/(auth)/privacy-policy')}
                   style={styles.privacyLink}
                 >
@@ -746,8 +753,8 @@ export default function RegisterScreen() {
                 </Text>
               </Text>
             </View>
-            {errors.acceptedPrivacy?.message != null && (
-              <Text style={styles.errorText}>{errors.acceptedPrivacy.message}</Text>
+            {errors.agreedToLegal?.message != null && (
+              <Text style={styles.errorText}>{errors.agreedToLegal.message}</Text>
             )}
           </View>
         )}

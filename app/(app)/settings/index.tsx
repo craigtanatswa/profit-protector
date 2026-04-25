@@ -1400,7 +1400,7 @@ export default function SettingsScreen() {
             iconColor="#5A6A8A"
             iconBackground="#F4F6FB"
             label="Terms of Service"
-            onPress={() => Linking.openURL('https://profitprotector.app/terms')}
+            onPress={() => router.push('/(app)/settings/terms-of-service')}
           />
         </SettingsSection>
 
