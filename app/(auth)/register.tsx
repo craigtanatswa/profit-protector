@@ -101,6 +101,11 @@ const registerSchema = z
     confirmPassword: z.string(),
     currency: z.string().min(1, 'Please select a currency'),
     monthlyProfitGoalCents: z.number().optional(),
+    acceptedPrivacy: z
+      .boolean()
+      .refine(v => v === true, {
+        message: 'You must accept the Privacy Policy to create an account',
+      }),
     recoveryEmail: z
       .string()
       .transform(s => s.trim())
@@ -132,7 +137,7 @@ type RegisterFormData = z.infer<typeof registerSchema>
 const STEP_FIELDS: Record<number, Array<keyof RegisterFormData>> = {
   1: ['businessName', 'businessType'],
   2: ['ownerName', 'phone', 'loginUsername', 'recoveryEmail', 'password', 'confirmPassword'],
-  3: ['currency'],
+  3: ['currency', 'acceptedPrivacy'],
 }
 
 const BUSINESS_TYPES = [
@@ -274,6 +279,7 @@ export default function RegisterScreen() {
       confirmPassword: '',
       currency: '',
       monthlyProfitGoalCents: undefined,
+      acceptedPrivacy: false,
       recoveryEmail: '',
     },
     mode: 'onTouched',
@@ -709,6 +715,43 @@ export default function RegisterScreen() {
           />
         )}
       />
+
+      <Controller
+        control={control}
+        name="acceptedPrivacy"
+        render={({ field: { onChange, value } }) => (
+          <View>
+            <View style={styles.privacyRow}>
+              <TouchableOpacity
+                onPress={() => onChange(!value)}
+                style={styles.privacyCheckboxTouch}
+                disabled={isLoading}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: value }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons
+                  name={value ? 'checkbox' : 'square-outline'}
+                  size={22}
+                  color="#0047AB"
+                />
+              </TouchableOpacity>
+              <Text style={styles.privacyLabel}>
+                I have read and agree to the{' '}
+                <Text
+                  onPress={() => router.push('/(auth)/privacy-policy')}
+                  style={styles.privacyLink}
+                >
+                  Privacy Policy
+                </Text>
+              </Text>
+            </View>
+            {errors.acceptedPrivacy?.message != null && (
+              <Text style={styles.errorText}>{errors.acceptedPrivacy.message}</Text>
+            )}
+          </View>
+        )}
+      />
     </>
   )
 
@@ -931,5 +974,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0047AB',
     fontWeight: '600',
+  },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  privacyCheckboxTouch: {
+    marginTop: 2,
+  },
+  privacyLabel: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#1A202C',
+  },
+  privacyLink: {
+    color: '#0047AB',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 })

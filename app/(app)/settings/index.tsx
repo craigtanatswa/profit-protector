@@ -1393,7 +1393,7 @@ export default function SettingsScreen() {
             iconColor="#5A6A8A"
             iconBackground="#F4F6FB"
             label="Privacy Policy"
-            onPress={() => Linking.openURL('https://profitprotector.app/privacy')}
+            onPress={() => router.push('/(app)/settings/privacy-policy')}
           />
           <SettingsRow
             icon="document-text-outline"
