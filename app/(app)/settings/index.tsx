@@ -592,7 +592,7 @@ function ReceiptSettingsModal({
             placeholder="RCP"
             value={prefix}
             onChangeText={(t) => setPrefix(t.slice(0, 6).toUpperCase())}
-            hint="Optional label only — receipt numbers are auto 6 characters (e.g. 0001AA)"
+            hint="Optional label only — receipt numbers are auto (e.g. RCP-0001AA)"
             editable={!saving}
             autoCapitalize="characters"
           />
