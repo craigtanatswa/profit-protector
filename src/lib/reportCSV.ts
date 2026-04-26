@@ -67,15 +67,26 @@ export async function exportReportCSV(params: ExportReportCSVParams): Promise<vo
     usdCentsToExportAmount(cents, displayCurrency, zigRate).toFixed(2)
 
   // 1. Fetch all sales in date range (ordered by date ascending)
-  const salesRaw = await database
-    .get<SaleModel>('sales')
-    .query(
-      Q.where('business_id', businessId),
-      Q.where('created_at', Q.gte(startMs)),
-      Q.where('created_at', Q.lte(endMs)),
-      Q.sortBy('created_at', Q.asc),
-    )
-    .fetch()
+  // startMs === 0 means “all time” (same as Reports screen)
+  const isAllTime = startMs === 0
+  const salesRaw = isAllTime
+    ? await database
+        .get<SaleModel>('sales')
+        .query(
+          Q.where('business_id', businessId),
+          Q.where('created_at', Q.lte(endMs)),
+          Q.sortBy('created_at', Q.asc),
+        )
+        .fetch()
+    : await database
+        .get<SaleModel>('sales')
+        .query(
+          Q.where('business_id', businessId),
+          Q.where('created_at', Q.gte(startMs)),
+          Q.where('created_at', Q.lte(endMs)),
+          Q.sortBy('created_at', Q.asc),
+        )
+        .fetch()
 
   // 2. Fetch all sale_items for those sales
   const saleIds = salesRaw.map(s => s.id)

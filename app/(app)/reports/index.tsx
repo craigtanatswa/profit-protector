@@ -32,6 +32,7 @@ type Period =
   | 'this_month'
   | 'last_month'
   | 'this_year'
+  | 'all'
   | 'custom'
 
 type TopProductSort = 'revenue' | 'quantity' | 'profit'
@@ -69,6 +70,8 @@ const PAYMENT_COLORS: Record<string, string> = {
   credit: '#C0152A',
 }
 
+const ALL_TIME_START_MS = 0
+
 const PERIODS: { key: Period; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'yesterday', label: 'Yesterday' },
@@ -76,6 +79,7 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: 'this_month', label: 'This Month' },
   { key: 'last_month', label: 'Last Month' },
   { key: 'this_year', label: 'This Year' },
+  { key: 'all', label: 'All' },
   { key: 'custom', label: 'Custom' },
 ]
 
@@ -146,6 +150,9 @@ function getDateRange(
     }
     case 'this_year':
       return { startMs: startOfYear(now), endMs: now.getTime() }
+    case 'all':
+      // Sentinel: useReports omits `created_at` lower bound; end is now
+      return { startMs: ALL_TIME_START_MS, endMs: now.getTime() }
     case 'custom':
       return { startMs: startOfDay(customStart), endMs: endOfDay(customEnd) }
   }
@@ -164,6 +171,7 @@ function getPeriodDisplayLabel(period: Period): string {
     this_month: 'This Month',
     last_month: 'Last Month',
     this_year: 'This Year',
+    all: 'All Time',
     custom: 'Custom Range',
   }
   return map[period]
@@ -181,6 +189,11 @@ function aggregateForChart(
   endMs: number,
 ): ChartPoint[] {
   if (dailyData.length === 0) return []
+
+  // useReports already outputs daily or monthly series for all-time / long ranges
+  if (startMs === ALL_TIME_START_MS) {
+    return dailyData.map(d => ({ label: d.label, totalCents: d.totalCents, date: d.date }))
+  }
 
   const rangeMs = endMs - startMs
   const isSingleDay = rangeMs <= ONE_DAY_MS
@@ -491,18 +504,15 @@ function BarChart({ data, selectedBar, onSelectBar, currency, zigRatePerUsd }: B
 interface ExportModalProps {
   visible: boolean
   onClose: () => void
-  period: string
-  startMs: number
-  endMs: number
+  /** One line, e.g. "This Month · 1 Jan 2025 to 28 Feb 2025" */
+  rangeDescription: string
   onExport: (type: ExportType) => Promise<void>
 }
 
 function ExportOptionsModal({
   visible,
   onClose,
-  period,
-  startMs,
-  endMs,
+  rangeDescription,
   onExport,
 }: ExportModalProps) {
   const [selectedType, setSelectedType] = useState<ExportType>('pdf')
@@ -537,9 +547,7 @@ function ExportOptionsModal({
           <View style={styles.modalHandle} />
 
           <Text style={styles.modalTitle}>Export Report</Text>
-          <Text style={styles.modalSubtitle}>
-            {period} · {formatDateDisplay(startMs)} to {formatDateDisplay(endMs)}
-          </Text>
+          <Text style={styles.modalSubtitle}>{rangeDescription}</Text>
 
           {/* PDF option */}
           <TouchableOpacity
@@ -635,6 +643,7 @@ export default function ReportsScreen() {
     paymentBreakdown,
     dailyData,
     topProducts,
+    earliestSaleMs,
     isLoading,
   } = useReports(businessId, startMs, endMs)
 
@@ -667,6 +676,11 @@ export default function ReportsScreen() {
   }, [chartData])
 
   const chartPeriodDesc = useMemo(() => {
+    if (period === 'all') {
+      return earliestSaleMs != null
+        ? `${formatDateDisplay(earliestSaleMs)} — ${formatDateDisplay(endMs)}`
+        : `Through ${formatDateDisplay(endMs)}`
+    }
     const rangeMs = endMs - startMs
     const numDays = Math.ceil(rangeMs / ONE_DAY_MS)
     if (rangeMs <= ONE_DAY_MS) {
@@ -674,7 +688,18 @@ export default function ReportsScreen() {
       return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()} · hourly`
     }
     return `${formatDateDisplay(startMs)} · ${numDays} day${numDays !== 1 ? 's' : ''}`
-  }, [startMs, endMs])
+  }, [period, startMs, endMs, earliestSaleMs])
+
+  const exportModalRangeDescription = useMemo(() => {
+    const label = getPeriodDisplayLabel(period)
+    if (period === 'all') {
+      if (earliestSaleMs != null) {
+        return `${label} · ${formatDateDisplay(earliestSaleMs)} to ${formatDateDisplay(endMs)}`
+      }
+      return `${label} · through ${formatDateDisplay(endMs)}`
+    }
+    return `${label} · ${formatDateDisplay(startMs)} to ${formatDateDisplay(endMs)}`
+  }, [period, startMs, endMs, earliestSaleMs])
 
   // ── Export handlers ──
   const handleExportPDF = useCallback(async () => {
@@ -689,7 +714,7 @@ export default function ReportsScreen() {
           zigRatePerUsd: business.zigRatePerUsd,
         },
         period: getPeriodDisplayLabel(period),
-        startDate: new Date(startMs),
+        startDate: new Date(period === 'all' ? (earliestSaleMs != null ? earliestSaleMs : endMs) : startMs),
         endDate: new Date(endMs),
         totalRevenueCents,
         totalProfitCents,
@@ -708,6 +733,7 @@ export default function ReportsScreen() {
   }, [
     business,
     period,
+    earliestSaleMs,
     startMs,
     endMs,
     totalRevenueCents,
@@ -718,6 +744,7 @@ export default function ReportsScreen() {
     totalQtySold,
     paymentBreakdown,
     topProducts,
+    earliestSaleMs,
   ])
 
   const handleExportCSV = useCallback(async () => {
@@ -826,7 +853,11 @@ export default function ReportsScreen() {
 
         {/* Date range display */}
         <Text style={styles.dateRangeText}>
-          {formatDateDisplay(startMs)} — {formatDateDisplay(endMs)}
+          {period === 'all'
+            ? earliestSaleMs != null
+              ? `All time · ${formatDateDisplay(earliestSaleMs)} — ${formatDateDisplay(endMs)}`
+              : `All time · through ${formatDateDisplay(endMs)}`
+            : `${formatDateDisplay(startMs)} — ${formatDateDisplay(endMs)}`}
         </Text>
 
         {/* Custom date pickers */}
@@ -934,7 +965,7 @@ export default function ReportsScreen() {
                       variant="primary"
                       size="sm"
                       fullWidth={false}
-                      onPress={() => setPeriod('this_year')}
+                      onPress={() => setPeriod('all')}
                     />
                   </View>
                 </View>
@@ -955,10 +986,10 @@ export default function ReportsScreen() {
               </>
             )}
 
-            {/* ── Section 3: Daily Sales Chart ── */}
+            {/* ── Section 3: Sales Analytics (chart) ── */}
             {hasData && (
               <>
-                <SectionLabel label="Daily Sales" />
+                <SectionLabel label="Sales Analytics" />
                 <Card padding="md" style={{ marginBottom: 12 }}>
                   {/* Chart title row */}
                   <View
@@ -969,9 +1000,21 @@ export default function ReportsScreen() {
                       marginBottom: 12,
                     }}
                   >
-                    <Text style={{ fontSize: 13, color: THEME.textSecondary, flex: 1 }}>
-                      {chartPeriodDesc}
-                    </Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={{ fontSize: 13, color: THEME.textSecondary }}>
+                        {chartPeriodDesc}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: THEME.textSecondary,
+                          marginTop: 4,
+                          fontWeight: '500',
+                        }}
+                      >
+                        {transactionCount} sale{transactionCount !== 1 ? 's' : ''}
+                      </Text>
+                    </View>
                     {chartPeakEntry != null && chartPeakEntry.totalCents > 0 && (
                       <Text
                         style={{
@@ -1076,9 +1119,7 @@ export default function ReportsScreen() {
       <ExportOptionsModal
         visible={showExportModal}
         onClose={() => setShowExportModal(false)}
-        period={getPeriodDisplayLabel(period)}
-        startMs={startMs}
-        endMs={endMs}
+        rangeDescription={exportModalRangeDescription}
         onExport={handleModalExport}
       />
     </View>

@@ -43,6 +43,8 @@ interface ReportsState {
   paymentBreakdown: PaymentBreakdownItem[]
   dailyData: DailyDataPoint[]
   topProducts: TopProduct[]
+  /** Earliest sale timestamp in the current query (for “all time” export labels) */
+  earliestSaleMs: number | null
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +63,7 @@ const EMPTY: ReportsState = {
   paymentBreakdown: [],
   dailyData: [],
   topProducts: [],
+  earliestSaleMs: null,
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +72,9 @@ const EMPTY: ReportsState = {
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const ONE_DAY_MS = 86_400_000
+/** Parent passes `startMs === 0` for all-time: no `created_at` lower bound. */
+const ALL_TIME_START_MS = 0
+const MAX_DAYS_DAILY_CHART = 60
 
 function startOfDayMs(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
@@ -84,6 +90,10 @@ function formatDayLabel(d: Date): string {
 
 function getCreatedAtMs(createdAt: Date | number): number {
   return createdAt instanceof Date ? createdAt.getTime() : (createdAt as number)
+}
+
+function monthKeyFromDate(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}`
 }
 
 // ---------------------------------------------------------------------------
@@ -114,15 +124,21 @@ export function useReports(businessId: string, startMs: number, endMs: number) {
 
     const fetchData = async () => {
       try {
-        // 1. Fetch all sales in date range
-        const salesRaw = await database!
-          .get<SaleModel>('sales')
-          .query(
-            Q.where('business_id', businessId),
-            Q.where('created_at', Q.gte(startMs)),
-            Q.where('created_at', Q.lte(endMs)),
-          )
-          .fetch()
+        // 1. Fetch all sales in date range (all-time: no lower bound on created_at)
+        const isAllTime = startMs === ALL_TIME_START_MS
+        const salesRaw = isAllTime
+          ? await database!
+              .get<SaleModel>('sales')
+              .query(Q.where('business_id', businessId), Q.where('created_at', Q.lte(endMs)))
+              .fetch()
+          : await database!
+              .get<SaleModel>('sales')
+              .query(
+                Q.where('business_id', businessId),
+                Q.where('created_at', Q.gte(startMs)),
+                Q.where('created_at', Q.lte(endMs)),
+              )
+              .fetch()
 
         if (cancelledRef.current) return
 
@@ -146,8 +162,8 @@ export function useReports(businessId: string, startMs: number, endMs: number) {
           itemsBySaleId.set(item.saleId, arr)
         }
 
-        // 4. Detect single-day (hourly) vs multi-day (daily)
-        const isSingleDay = endMs - startMs <= ONE_DAY_MS
+        // 4. Single-day hourly vs multi-day (all-time is never a single UI day)
+        const isSingleDay = !isAllTime && endMs - startMs <= ONE_DAY_MS
 
         // 5. Accumulators
         let totalRevenueCents = 0
@@ -228,19 +244,77 @@ export function useReports(businessId: string, startMs: number, endMs: number) {
             })
           }
         } else {
-          // Daily: fill every day in range with zeros where no sales
-          let cursor = startOfDayMs(new Date(startMs))
-          const endDay = startOfDayMs(new Date(endMs))
-          while (cursor <= endDay) {
-            const d = new Date(cursor)
-            const k = dayKey(d)
-            const entry = dailyMap.get(k)
-            dailyData.push({
-              label: formatDayLabel(d),
-              totalCents: entry?.totalCents ?? 0,
-              date: cursor,
-            })
-            cursor += ONE_DAY_MS
+          const endDayForSeries = startOfDayMs(new Date(endMs))
+
+          if (isAllTime && salesRaw.length === 0) {
+            // no-op: dailyData stays []
+          } else {
+            const seriesStartForRange =
+              isAllTime
+                ? startOfDayMs(
+                    new Date(
+                      Math.min(...salesRaw.map(s => getCreatedAtMs(s.createdAt))),
+                    ),
+                  )
+                : startOfDayMs(new Date(startMs))
+
+            const rangeDays =
+              Math.floor((endDayForSeries - seriesStartForRange) / ONE_DAY_MS) + 1
+            const useMonthBuckets = rangeDays > MAX_DAYS_DAILY_CHART
+
+            if (useMonthBuckets) {
+              const monthAgg = new Map<
+                string,
+                { totalCents: number; firstOfMonth: number }
+              >()
+              for (const { totalCents, date } of dailyMap.values()) {
+                const d = new Date(date)
+                const mk = monthKeyFromDate(d)
+                const firstOfMonth = new Date(d.getFullYear(), d.getMonth(), 1).getTime()
+                const prev = monthAgg.get(mk) ?? { totalCents: 0, firstOfMonth }
+                monthAgg.set(mk, {
+                  totalCents: prev.totalCents + totalCents,
+                  firstOfMonth: prev.firstOfMonth,
+                })
+              }
+              const startM = new Date(seriesStartForRange)
+              let mCursor = new Date(startM.getFullYear(), startM.getMonth(), 1)
+              const endD = new Date(endDayForSeries)
+              const endMonthDate = new Date(endD.getFullYear(), endD.getMonth(), 1)
+              while (mCursor <= endMonthDate) {
+                const mk = monthKeyFromDate(mCursor)
+                const ent = monthAgg.get(mk) ?? {
+                  totalCents: 0,
+                  firstOfMonth: mCursor.getTime(),
+                }
+                dailyData.push({
+                  label: `${MONTHS_SHORT[mCursor.getMonth()]} ${String(
+                    mCursor.getFullYear(),
+                  ).slice(-2)}`,
+                  totalCents: ent.totalCents,
+                  date: new Date(
+                    mCursor.getFullYear(),
+                    mCursor.getMonth(),
+                    1,
+                  ).getTime(),
+                })
+                mCursor = new Date(mCursor.getFullYear(), mCursor.getMonth() + 1, 1)
+              }
+            } else {
+              // Daily: fill every day in range with zeros where no sales
+              let cursor = seriesStartForRange
+              while (cursor <= endDayForSeries) {
+                const d = new Date(cursor)
+                const k = dayKey(d)
+                const entry = dailyMap.get(k)
+                dailyData.push({
+                  label: formatDayLabel(d),
+                  totalCents: entry?.totalCents ?? 0,
+                  date: cursor,
+                })
+                cursor += ONE_DAY_MS
+              }
+            }
           }
         }
 
@@ -285,6 +359,11 @@ export function useReports(businessId: string, startMs: number, endMs: number) {
         const avgProfitCents =
           transactionCount > 0 ? Math.round(totalProfitCents / transactionCount) : 0
 
+        const earliestSaleMs =
+          salesRaw.length > 0
+            ? Math.min(...salesRaw.map(s => getCreatedAtMs(s.createdAt)))
+            : null
+
         if (!cancelledRef.current) {
           setData({
             totalRevenueCents,
@@ -298,6 +377,7 @@ export function useReports(businessId: string, startMs: number, endMs: number) {
             paymentBreakdown,
             dailyData,
             topProducts,
+            earliestSaleMs,
           })
           setIsLoading(false)
         }
