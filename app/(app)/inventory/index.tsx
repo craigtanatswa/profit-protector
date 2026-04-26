@@ -10,6 +10,7 @@ import React, {
 import {
   Animated,
   FlatList,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -288,26 +289,28 @@ export default function InventoryScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.pillsScroll}
         contentContainerStyle={styles.pillsContainer}
         keyboardShouldPersistTaps="handled"
       >
-        {categories.map((cat) => (
-          <TouchableOpacity
-            key={cat}
-            style={[styles.pill, selectedCategory === cat && styles.pillSelected]}
-            onPress={() => setSelectedCategory(cat)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.pillText,
-                selectedCategory === cat && styles.pillTextSelected,
-              ]}
+        {categories.map((cat) => {
+          const isSelected = selectedCategory === cat
+          return (
+            <TouchableOpacity
+              key={cat}
+              style={[styles.pill, isSelected && styles.pillSelected]}
+              onPress={() => setSelectedCategory(cat)}
+              activeOpacity={0.7}
             >
-              {cat}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[styles.pillText, isSelected ? styles.pillTextSelected : styles.pillTextUnselected]}
+                {...(Platform.OS === 'android' ? { includeFontPadding: false } : {})}
+              >
+                {cat}
+              </Text>
+            </TouchableOpacity>
+          )
+        })}
       </ScrollView>
 
       {/* Summary row */}
@@ -468,35 +471,45 @@ const styles = StyleSheet.create({
   },
 
   // Category pills
+  pillsScroll: {
+    flexGrow: 0,
+    minHeight: 48,
+  },
   pillsContainer: {
     paddingHorizontal: 12,
     paddingTop: 12,
-    paddingBottom: 8,
+    paddingBottom: 10,
     flexDirection: 'row',
     flexWrap: 'nowrap',
     alignItems: 'center',
-    // gap + horizontal ScrollView: add spacing via margin on pills instead
   },
   pill: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#DDE3F0',
     borderRadius: 999,
-    paddingVertical: 6,
+    paddingVertical: Platform.OS === 'android' ? 8 : 7,
     paddingHorizontal: 16,
     marginRight: 8,
     flexGrow: 0,
     flexShrink: 0,
+    minHeight: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   pillSelected: {
     backgroundColor: '#0047AB',
     borderColor: '#0047AB',
   },
   pillText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#5A6A8A',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
     flexShrink: 0,
+    textAlign: 'center',
+  },
+  pillTextUnselected: {
+    color: '#0D1B3E',
   },
   pillTextSelected: {
     color: '#FFFFFF',
