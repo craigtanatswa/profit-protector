@@ -1,18 +1,9 @@
 /*
- * Run this SQL in Supabase SQL Editor:
- *
- * create table if not exists deletion_requests (
- *   id uuid primary key default gen_random_uuid(),
- *   user_id uuid references auth.users(id),
- *   requested_at timestamptz default now(),
- *   processed boolean default false
- * );
- *
- * alter table deletion_requests enable row level security;
- *
- * create policy "Users can insert own deletion request"
- * on deletion_requests for insert
- * with check (auth.uid() = user_id);
+ * Supabase setup (SQL Editor):
+ * - Account deletion + clear data: run `supabase/sql/account_lifecycle.sql`
+ * - Deploy the `delete-account` Edge Function (service role deletes auth user after RPC).
+ * Optional audit trail for delete requests:
+ *   create table if not exists deletion_requests (...); -- see git history or support docs
  *
  * -- ZiG per $1 USD (display conversion; ledger stays USD cents)
  * alter table businesses add column if not exists zig_rate_per_usd numeric default 1;
@@ -54,6 +45,7 @@ import { SettingsSection } from '../../../src/components/settings/SettingsSectio
 import { useAuthStore } from '../../../src/stores/authStore'
 import { database } from '../../../src/database'
 import { supabase } from '../../../src/lib/supabase'
+import { clearBusinessDataEverywhere, deleteAccountFully } from '../../../src/lib/accountLifecycle'
 import { exportReportCSV } from '../../../src/lib/reportCSV'
 import { syncAll } from '../../../src/lib/sync'
 import { formatDateTime, formatMonthYear, maskEmail } from '../../../src/lib/formatters'
@@ -739,9 +731,11 @@ const bl = StyleSheet.create({
 function DeleteConfirmModal({
   visible,
   onClose,
+  businessId,
 }: {
   visible: boolean
   onClose: () => void
+  businessId: string | null
 }) {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
@@ -758,21 +752,13 @@ function DeleteConfirmModal({
     if (inputValue !== 'DELETE' || !user) return
     setDeleting(true)
     try {
-      // Log deletion request
-      await supabase.from('deletion_requests').insert({
-        user_id: user.id,
-        requested_at: new Date().toISOString(),
-      })
-
-      // Clear local WatermelonDB
-      if (database) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (database as any).unsafeResetDatabase?.()
+      const result = await deleteAccountFully(businessId)
+      if (!result.ok) {
+        Alert.alert('Could not delete account', result.message)
+        setDeleting(false)
+        return
       }
-
-      // Sign out
-      await supabase.auth.signOut()
-      logout()
+      await logout()
       router.replace('/(auth)/login')
     } catch {
       Alert.alert('Error', 'Could not delete account. Please try again.')
@@ -877,6 +863,117 @@ const dc = StyleSheet.create({
   cancelBtnText: { color: '#5A6A8A', fontSize: 15 },
 })
 
+const cc = StyleSheet.create({
+  iconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#E6EEFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  title: { fontSize: 20, fontWeight: '700', color: '#0047AB', textAlign: 'center', marginBottom: 8 },
+  inputReady: { borderColor: '#0047AB' },
+  clearBtn: {
+    backgroundColor: '#0047AB',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  clearBtnDisabled: { backgroundColor: '#A0B0CC' },
+  clearBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+})
+
+function ClearDataConfirmModal({
+  visible,
+  onClose,
+  userId,
+  businessId,
+}: {
+  visible: boolean
+  onClose: () => void
+  userId: string
+  businessId: string
+}) {
+  const [inputValue, setInputValue] = useState('')
+  const [working, setWorking] = useState(false)
+
+  useEffect(() => {
+    if (!visible) setInputValue('')
+  }, [visible])
+
+  const handleClear = async () => {
+    if (inputValue !== 'CLEAR') return
+    setWorking(true)
+    try {
+      const result = await clearBusinessDataEverywhere(userId, businessId)
+      if (!result.ok) {
+        Alert.alert('Could not clear data', result.message)
+        setWorking(false)
+        return
+      }
+      Alert.alert('Data cleared', 'Your products, sales, stock history, and customers were removed.')
+      onClose()
+    } catch {
+      Alert.alert('Error', 'Something went wrong. Please try again.')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const canSubmit = inputValue === 'CLEAR'
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose} statusBarTranslucent>
+      <KeyboardAvoidingView style={ms.kav} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={ms.root}>
+          <TouchableOpacity style={ms.overlay} activeOpacity={1} onPress={onClose} />
+          <View style={dc.sheet}>
+            <View style={ms.handle} />
+            <View style={cc.iconWrap}>
+              <Ionicons name="layers-outline" size={32} color="#0047AB" />
+            </View>
+            <Text style={cc.title}>Clear All Business Data</Text>
+            <Text style={dc.body}>
+              This removes all products, sales, stock movements, and customers from this device and
+              from your cloud backup. Your sign-in and business profile (name, phone, currency) stay
+              the same.
+            </Text>
+            <Text style={dc.label}>Type CLEAR to confirm</Text>
+            <TextInput
+              style={[dc.input, canSubmit && cc.inputReady]}
+              value={inputValue}
+              onChangeText={setInputValue}
+              placeholder="CLEAR"
+              placeholderTextColor="#AABBCC"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!working}
+            />
+            <TouchableOpacity
+              style={[cc.clearBtn, !canSubmit && cc.clearBtnDisabled]}
+              onPress={handleClear}
+              disabled={!canSubmit || working}
+            >
+              {working ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={cc.clearBtnText}>Clear All Data</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={dc.cancelBtn} onPress={onClose} disabled={working}>
+              <Text style={dc.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Main Settings Screen
 // ---------------------------------------------------------------------------
@@ -900,6 +997,7 @@ export default function SettingsScreen() {
   const [changePassVisible, setChangePassVisible] = useState(false)
   const [addEmailVisible, setAddEmailVisible] = useState(false)
   const [deleteVisible, setDeleteVisible] = useState(false)
+  const [clearDataVisible, setClearDataVisible] = useState(false)
 
   const scrollRef = useRef<ScrollView>(null)
   const securitySectionY = useRef(0)
@@ -1069,7 +1167,7 @@ export default function SettingsScreen() {
   const handleDeleteAccount = useCallback(() => {
     Alert.alert(
       'Delete Account?',
-      'This will permanently delete your business, all products, sales history, and customer records. This cannot be undone.',
+      'This will permanently remove your login, business profile, and every record in the cloud and on this device. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1077,6 +1175,17 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: () => setDeleteVisible(true),
         },
+      ],
+    )
+  }, [])
+
+  const handleClearBusinessData = useCallback(() => {
+    Alert.alert(
+      'Clear all data?',
+      'This removes inventory, sales, and customers from the cloud and this phone. Your account and business settings stay.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Continue', onPress: () => setClearDataVisible(true) },
       ],
     )
   }, [])
@@ -1415,10 +1524,18 @@ export default function SettingsScreen() {
             onPress={handleSignOut}
           />
           <SettingsRow
+            icon="layers-outline"
+            iconColor="#0047AB"
+            iconBackground="#E6EEFF"
+            label="Clear All Business Data"
+            description="Remove inventory & sales; keep your account"
+            onPress={handleClearBusinessData}
+          />
+          <SettingsRow
             icon="trash-outline"
             destructive
             label="Delete Account"
-            description="Permanently delete all data"
+            description="Remove login and everything in the cloud"
             onPress={handleDeleteAccount}
           />
         </SettingsSection>
@@ -1451,7 +1568,19 @@ export default function SettingsScreen() {
           business={business}
         />
       ) : null}
-      <DeleteConfirmModal visible={deleteVisible} onClose={() => setDeleteVisible(false)} />
+      <DeleteConfirmModal
+        visible={deleteVisible}
+        onClose={() => setDeleteVisible(false)}
+        businessId={business?.id ?? null}
+      />
+      {user != null && business != null ? (
+        <ClearDataConfirmModal
+          visible={clearDataVisible}
+          onClose={() => setClearDataVisible(false)}
+          userId={user.id}
+          businessId={business.id}
+        />
+      ) : null}
     </SafeAreaView>
   )
 }

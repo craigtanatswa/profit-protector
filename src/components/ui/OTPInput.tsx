@@ -11,8 +11,7 @@ import {
 
 const SCREEN_WIDTH = Dimensions.get('window').width
 const H_PADDING = 48
-const GAP_TOTAL = 40
-const BOX_WIDTH = (SCREEN_WIDTH - H_PADDING - GAP_TOTAL) / 6
+const BOX_GAP = 8
 
 export interface OTPInputProps {
   length?: number
@@ -33,6 +32,9 @@ export function OTPInput({
 }: OTPInputProps) {
   const inputRef = useRef<TextInput>(null)
   const [focused, setFocused] = useState(false)
+
+  const gapTotal = Math.max(0, length - 1) * BOX_GAP
+  const boxWidth = (SCREEN_WIDTH - H_PADDING - gapTotal) / length
 
   const digits = value.replace(/\D/g, '').slice(0, length)
   const activeIndex = Math.min(digits.length, length - 1)
@@ -73,7 +75,7 @@ export function OTPInput({
         the native field (reliable after app resume). A 1x1 + Pressable focus
         bridge breaks with Modal + backgrounding on many devices.
       */}
-      <View style={styles.row} collapsable={false}>
+      <View style={[styles.row, { gap: BOX_GAP }]} collapsable={false}>
         {Array.from({ length }).map((_, i) => {
           const ch = digits[i] ?? ''
           const isActiveBox = focused && i === activeIndex && digits.length < length
@@ -90,7 +92,7 @@ export function OTPInput({
               key={i}
               style={[
                 styles.box,
-                { width: BOX_WIDTH, borderColor },
+                { width: boxWidth, borderColor },
               ]}
             >
               {ch !== '' ? (
@@ -134,7 +136,6 @@ const styles = StyleSheet.create({
   row: {
     position: 'relative',
     flexDirection: 'row',
-    gap: 8,
     justifyContent: 'center',
   },
   overlayInput: {

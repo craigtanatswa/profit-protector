@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { syncAll } from '../lib/sync'
+import { fetchBusinessRowForUser, businessInfoFromRemoteRow } from '../lib/businessRemote'
+import { ensureLocalWatermelonForSession, businessInfoFromLocalWatermelon } from '../lib/ensureLocalWatermelon'
 import type { SyncStatus } from '../lib/sync'
 
 export interface BusinessInfo {
@@ -77,7 +79,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isFirstLaunch }),
 
   logout: async () => {
-    await supabase.auth.signOut()
+    try {
+      await supabase.auth.signOut()
+    } catch {
+      /* session may already be invalid after server-side user deletion */
+    }
     set({
       user: null,
       business: null,
@@ -93,9 +99,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initializeAuth: async () => {
     set({ isLoading: true })
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (session?.user) {
         set({ user: session.user, isAuthenticated: true })
+        const { data: biz, error: bizErr } = await fetchBusinessRowForUser(session.user.id)
+        if (!bizErr && biz) {
+          set({ business: businessInfoFromRemoteRow(biz) })
+          await ensureLocalWatermelonForSession(session.user, biz)
+        } else {
+          const localBiz = await businessInfoFromLocalWatermelon(session.user.id)
+          set({ business: localBiz })
+        }
       } else {
         set({ user: null, business: null, isAuthenticated: false })
       }

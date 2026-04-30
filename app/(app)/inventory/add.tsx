@@ -46,12 +46,14 @@ import { Button, Card, Input, LoadingScreen } from '../../../src/components/ui'
 import { KeyboardAvoidingWrapper, ScreenHeader } from '../../../src/components/layout'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { database } from '../../../src/database'
+import { getPersonalisation, normalizeBusinessType } from '../../../src/lib/appPersonalisation'
+import { supabase } from '../../../src/lib/supabase'
 import type ProductModel from '../../../src/database/models/Product'
 import type StockMovementModel from '../../../src/database/models/StockMovement'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STANDARD_UNITS = ['Each', 'kg', 'g', 'litre', 'ml', 'box', 'dozen', 'pair'] as const
+const STANDARD_UNITS = ['Each', 'Plate', 'kg', 'g', 'litre', 'ml', 'box', 'dozen', 'pair'] as const
 const ALL_UNITS = [...STANDARD_UNITS, 'other'] as const
 
 // ─── Zod Schema ───────────────────────────────────────────────────────────────
@@ -186,6 +188,21 @@ export default function AddProductScreen() {
   const watchedCostPrice = useWatch({ control, name: 'costPrice' })
   const watchedSellingPrice = useWatch({ control, name: 'sellingPrice' })
   const watchedLowStockThreshold = useWatch({ control, name: 'lowStockThreshold' })
+
+  const personalisation = React.useMemo(
+    () => getPersonalisation(normalizeBusinessType(business?.businessType ?? 'other')),
+    [business?.businessType],
+  )
+  const categoryPills =
+    existingCategories.length > 0 ? existingCategories : personalisation.defaultCategories
+
+  // ── Default unit for new products by business type ─────────────────────────
+  useEffect(() => {
+    if (isEditMode || !business?.businessType) return
+    const raw = normalizeBusinessType(business.businessType)
+    const defaultUnit = raw === 'restaurant' ? 'Plate' : 'Each'
+    setValue('unit', defaultUnit)
+  }, [isEditMode, business?.businessType, setValue])
 
   // ── Load product in edit mode ──────────────────────────────────────────────
   useEffect(() => {
@@ -525,11 +542,11 @@ export default function AddProductScreen() {
                       maxLength={40}
                       error={errors.category?.message}
                     />
-                    {existingCategories.length > 0 && (
+                    {categoryPills.length > 0 && (
                       <View style={styles.suggestionsContainer}>
                         <Text style={styles.quickSelectLabel}>Quick select:</Text>
                         <View style={styles.pillsRow}>
-                          {existingCategories.map((cat) => (
+                          {categoryPills.map((cat) => (
                             <TouchableOpacity
                               key={cat}
                               onPress={() => onChange(cat)}

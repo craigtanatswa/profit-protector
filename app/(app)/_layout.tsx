@@ -6,6 +6,7 @@ import { Text } from 'react-native'
 import * as Notifications from 'expo-notifications'
 
 import { BrandLogo } from '../../src/components/layout'
+import { useAuthStore } from '../../src/stores/authStore'
 import { useAutoSync } from '../../src/hooks/useAutoSync'
 import { setupNotificationHandlers } from '../../src/lib/notifications'
 import { useNotificationBanner } from '../../src/hooks/useNotificationBanner'
@@ -125,6 +126,16 @@ const LISTENERS = {
 
 export default function AppLayout() {
   useAutoSync()
+
+  const isLoadingAuth = useAuthStore((s) => s.isLoading)
+  const user = useAuthStore((s) => s.user)
+  const business = useAuthStore((s) => s.business)
+
+  /** Accounts that verified phone but never finished `createBusinessProfile` (e.g. older builds). */
+  useEffect(() => {
+    if (isLoadingAuth || !user || business != null) return
+    router.replace('/(auth)/register?resume=1')
+  }, [isLoadingAuth, user, business])
 
   const { bannerProps, showBanner, hideBanner } = useNotificationBanner()
 

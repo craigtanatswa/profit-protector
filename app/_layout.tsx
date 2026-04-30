@@ -5,6 +5,7 @@ import { DatabaseProvider } from '@nozbe/watermelondb/react'
 import { database } from '../src/database'
 import { supabase } from '../src/lib/supabase'
 import { useAuthStore } from '../src/stores/authStore'
+import { useOnboardingStore } from '../src/stores/onboardingStore'
 import { LoadingScreen } from '../src/components/ui/LoadingScreen'
 import { requestNotificationPermissions } from '../src/lib/notifications'
 import "../global.css"
@@ -13,10 +14,26 @@ import "../global.css"
 // is shown by default — makes manual testing of login/register easy.
 const clearAuthOnColdStartDev = __DEV__
 
+/** Signed-in users stay on these (auth) screens until they navigate away — avoids kicking signup off Register after OTP before `createBusinessProfile`. */
+const AUTH_SCREENS_KEEP_WHEN_AUTHENTICATED = new Set([
+  'register',
+  'phone-verify',
+  'terms-of-service',
+  'privacy-policy',
+  'login',
+])
+
+/** Stay on convert while authenticated so signup finishes before entering the app. */
+const ONBOARDING_SCREENS_KEEP_WHEN_AUTHENTICATED = new Set(['convert'])
+
 function AuthGate() {
   const router = useRouter()
   const segments = useSegments()
   const { isAuthenticated, isLoading, setUser, initializeAuth } = useAuthStore()
+  const hydrated = useOnboardingStore((s) => s.hydrated)
+  const hasCompletedOnboarding = useOnboardingStore((s) => s.hasCompletedOnboarding)
+  const hydrateOnboarding = useOnboardingStore((s) => s.hydrateFromStorage)
+  const markCompletedSyncedWithAuth = useOnboardingStore((s) => s.markCompletedSyncedWithAuth)
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -27,31 +44,73 @@ function AuthGate() {
         setUser(null)
       }
       await initializeAuth()
+      await hydrateOnboarding()
     }
     void bootstrap()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setUser(session?.user ?? null)
-      }
+      },
     )
 
     return () => subscription.unsubscribe()
-  }, [initializeAuth, setUser])
+  }, [initializeAuth, setUser, hydrateOnboarding])
 
   useEffect(() => {
-    if (isLoading) return
+    if (isLoading || !hydrated) return
 
-    const inAuthGroup = segments[0] === '(auth)'
+    const first = segments[0]
+    const inOnboarding = first === '(onboarding)'
+    const inAuth = first === '(auth)'
+    const authLeaf =
+      typeof segments[1] === 'string' ? (segments[1] as string) : undefined
+    const keepAuthShell =
+      inAuth &&
+      authLeaf != null &&
+      AUTH_SCREENS_KEEP_WHEN_AUTHENTICATED.has(authLeaf)
 
-    if (!isAuthenticated && !inAuthGroup) {
-      router.replace('/(auth)/login')
-    } else if (isAuthenticated && inAuthGroup) {
-      router.replace('/(app)')
+    const onboardingLeaf =
+      typeof segments[1] === 'string' ? (segments[1] as string) : undefined
+    const keepOnboardingShell =
+      inOnboarding &&
+      onboardingLeaf != null &&
+      ONBOARDING_SCREENS_KEEP_WHEN_AUTHENTICATED.has(onboardingLeaf)
+
+    if (isAuthenticated) {
+      if (!hasCompletedOnboarding) {
+        void markCompletedSyncedWithAuth()
+      }
+      if (
+        (inAuth && !keepAuthShell) ||
+        (inOnboarding && !keepOnboardingShell)
+      ) {
+        router.replace('/(app)')
+      }
+      return
     }
-  }, [isAuthenticated, isLoading, segments, router])
 
-  if (isLoading) {
+    if (!hasCompletedOnboarding) {
+      if (!inOnboarding && !inAuth) {
+        router.replace('/(onboarding)/welcome')
+      }
+      return
+    }
+
+    if (!inAuth) {
+      router.replace('/(auth)/login')
+    }
+  }, [
+    isAuthenticated,
+    isLoading,
+    hydrated,
+    hasCompletedOnboarding,
+    segments,
+    router,
+    markCompletedSyncedWithAuth,
+  ])
+
+  if (isLoading || !hydrated) {
     return <LoadingScreen />
   }
 

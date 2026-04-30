@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Alert,
   StyleSheet,
@@ -7,46 +7,48 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import * as SecureStore from 'expo-secure-store'
 import { useRouter } from 'expo-router'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Ionicons } from '@expo/vector-icons'
 
-import { Button, Card, Divider, Input, LoadingScreen } from '../../src/components/ui'
+import { Button, Card, Divider, Input } from '../../src/components/ui'
 import { BrandLogo, KeyboardAvoidingWrapper } from '../../src/components/layout'
 import { resolveEmailForSignIn } from '../../src/lib/authLogin'
-import { fetchBusinessRowForUser } from '../../src/lib/businessRemote'
+import {
+  businessInfoFromRemoteRow,
+  fetchBusinessRowForUser,
+} from '../../src/lib/businessRemote'
+import { ensureLocalWatermelonForSession } from '../../src/lib/ensureLocalWatermelon'
 import { supabase } from '../../src/lib/supabase'
 import { useAuthStore } from '../../src/stores/authStore'
-import { database } from '../../src/database'
-import Business from '../../src/database/models/Business'
-
-// ---------------------------------------------------------------------------
-// Schema
-// ---------------------------------------------------------------------------
 
 const loginSchema = z.object({
-  phone: z
-    .string()
-    .length(10, 'Phone number must be 10 digits')
-    .regex(/^07/, 'Phone number must start with 07'),
-  password: z.string().min(1, 'Please enter your password'),
+  identifier: z.string().min(1, 'Enter your phone number or username'),
+  password: z.string().min(1, 'Enter your password'),
 })
 
 type LoginForm = z.infer<typeof loginSchema>
 
-// ---------------------------------------------------------------------------
-// Screen
-// ---------------------------------------------------------------------------
-
 export default function LoginScreen() {
   const router = useRouter()
-  const { setUser, setBusiness } = useAuthStore()
+  const { setUser, setBusiness, triggerSync } = useAuthStore()
+
+  // Session restored before this screen mounts (normal cold start): leave Login immediately.
+  // Mid-submit login does not hit this — user was null on first paint.
+  useEffect(() => {
+    const { user, business, isLoading } = useAuthStore.getState()
+    if (isLoading || !user) return
+    if (business) {
+      router.replace('/(app)')
+    } else {
+      router.replace('/(auth)/register?resume=1')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap-only routing from restored session
+  }, [])
 
   const [showPassword, setShowPassword] = useState(false)
-  const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const {
@@ -55,7 +57,7 @@ export default function LoginScreen() {
     formState: { errors },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { phone: '', password: '' },
+    defaultValues: { identifier: '', password: '' },
   })
 
   const handleForgotPassword = () => {
@@ -65,9 +67,9 @@ export default function LoginScreen() {
   const onSubmit = async (values: LoginForm) => {
     setLoading(true)
     try {
-      const idResult = await resolveEmailForSignIn(supabase, values.phone)
+      const idResult = await resolveEmailForSignIn(supabase, values.identifier)
       if (!idResult.ok) {
-        Alert.alert('Login Failed', idResult.message)
+        Alert.alert('Login failed', idResult.message)
         setLoading(false)
         return
       }
@@ -90,7 +92,7 @@ export default function LoginScreen() {
       if (error) {
         let msg = error.message
         if (/invalid login credentials|invalid email or password/i.test(msg)) {
-          msg = 'Incorrect phone number or password. Please try again.'
+          msg = 'Incorrect phone number/username or password. Please try again.'
         } else if (/email not confirmed/i.test(msg)) {
           msg = 'Please verify your account. Check your messages.'
         } else if (/too many requests/i.test(msg)) {
@@ -98,7 +100,7 @@ export default function LoginScreen() {
         } else if (/network|fetch/i.test(msg)) {
           msg = 'No internet connection. Please check your connection and try again.'
         }
-        Alert.alert('Login Failed', msg)
+        Alert.alert('Login failed', msg)
         setLoading(false)
         return
       }
@@ -106,271 +108,111 @@ export default function LoginScreen() {
       const user = data.user
       const session = data.session
       if (!user || !session) {
-        Alert.alert('Login Failed', 'No session returned. Please try again.')
+        Alert.alert('Login failed', 'Could not establish a session.')
+        setLoading(false)
+        return
+      }
+
+      const { data: au } = await supabase
+        .from('app_users')
+        .select('phone_verified')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (au != null && au.phone_verified !== true) {
+        await supabase.auth.signOut()
+        Alert.alert(
+          'Phone not verified',
+          'Your phone number must be verified before you can sign in. Complete signup verification or contact support.',
+        )
+        setLoading(false)
+        return
+      }
+
+      const { data: biz, error: bizErr } = await fetchBusinessRowForUser(user.id)
+      if (bizErr || !biz) {
+        setUser(user)
+        setBusiness(null)
+        router.replace('/(auth)/register?resume=1')
         setLoading(false)
         return
       }
 
       setUser(user)
-
-      const { data: biz, error: bizError } = await fetchBusinessRowForUser(user.id)
-
-      if (bizError || !biz) {
-        Alert.alert('Login Failed', bizError?.message ?? 'Could not load your business data.')
-        setLoading(false)
-        return
-      }
-
-      const zigRate =
-        typeof biz.zig_rate_per_usd === 'number' && biz.zig_rate_per_usd > 0
-          ? biz.zig_rate_per_usd
-          : 1
-
-      const recoveryEmailVerified = biz.recovery_email_verified === true
-      const recoveryEmail =
-        typeof biz.recovery_email === 'string' && biz.recovery_email.trim() !== ''
-          ? biz.recovery_email.trim()
-          : undefined
-
-      setBusiness({
-        id: biz.id,
-        name: biz.name,
-        ownerName: biz.owner_name,
-        phone: biz.phone,
-        businessType: biz.business_type,
-        currency: biz.currency,
-        zigRatePerUsd: zigRate,
-        loginUsername: biz.login_username ?? null,
-        recoveryEmail,
-        recoveryEmailVerified,
-      })
-
-      if (!recoveryEmailVerified) {
-        await SecureStore.setItemAsync('shown_email_prompt', 'false')
-      } else {
-        await SecureStore.setItemAsync('shown_email_prompt', 'true')
-      }
-
-      // WatermelonDB: restore business on new device if not already present locally
-      if (database) {
-        try {
-          const businessCollection = database.get<Business>('businesses')
-          const existing = await businessCollection.query().fetch()
-          const alreadyLocal = existing.some((r) => r.supabaseId === user.id)
-
-          if (!alreadyLocal) {
-            setLoading(false)
-            setRestoreMessage('Restoring your data...')
-
-            await database.write(async () => {
-              await businessCollection.create((record) => {
-                record.name = biz.name
-                record.ownerName = biz.owner_name
-                record.phone = biz.phone
-                record.businessType = biz.business_type
-                record.currency = biz.currency
-                record.zigRatePerUsd = zigRate
-                record.loginUsername = biz.login_username ?? null
-                record.supabaseId = user.id
-                record.recoveryEmail = recoveryEmail ?? null
-                record.recoveryEmailVerified = recoveryEmailVerified
-              })
-            })
-
-            // Step 1 — Restore products
-            setRestoreMessage('Restoring your products...')
-            try {
-              const { data: products } = await supabase
-                .from('products')
-                .select('*')
-                .eq('business_id', biz.id)
-              if (products?.length) {
-                await database.write(async () => {
-                  for (const p of products) {
-                    await database.get('products').create((record) => {
-                      record._raw.id = p.id
-                      record.businessId = p.business_id
-                      record.name = p.name
-                      record.category = p.category ?? ''
-                      record.unit = p.unit
-                      record.costPriceCents = p.cost_price_cents
-                      record.sellingPriceCents = p.selling_price_cents
-                      record.stockQty = p.stock_qty
-                      record.lowStockThreshold = p.low_stock_threshold
-                      record.isActive = p.is_active
-                      record.createdAt = new Date(p.created_at).getTime()
-                      record.updatedAt = new Date(p.updated_at).getTime()
-                    })
-                  }
-                })
-              }
-            } catch (err) {
-              console.warn('[login] product restore error:', err)
-            }
-
-            // Step 2 — Restore customers
-            setRestoreMessage('Restoring your customers...')
-            try {
-              const { data: customers } = await supabase
-                .from('customers')
-                .select('*')
-                .eq('business_id', biz.id)
-              if (customers?.length) {
-                await database.write(async () => {
-                  for (const c of customers) {
-                    await database.get('customers').create((record) => {
-                      record._raw.id = c.id
-                      record.businessId = c.business_id
-                      record.name = c.name
-                      record.phone = c.phone ?? ''
-                      record.outstandingBalanceCents = c.outstanding_balance_cents
-                      record.createdAt = new Date(c.created_at).getTime()
-                    })
-                  }
-                })
-              }
-            } catch (err) {
-              console.warn('[login] customer restore error:', err)
-            }
-
-            // Step 3 — Restore sales and sale_items
-            setRestoreMessage('Restoring your sales history...')
-            try {
-              const { data: sales } = await supabase
-                .from('sales')
-                .select('*, sale_items(*)')
-                .eq('business_id', biz.id)
-                .order('created_at', { ascending: true })
-              if (sales?.length) {
-                await database.write(async () => {
-                  for (const s of sales) {
-                    await database.get('sales').create((record) => {
-                      record._raw.id = s.id
-                      record.businessId = s.business_id
-                      record.totalCents = s.total_cents
-                      record.discountCents = s.discount_cents
-                      record.paymentMethod = s.payment_method
-                      record.receiptNumber = s.receipt_number
-                      record.note = s.note ?? ''
-                      record.createdAt = new Date(s.created_at).getTime()
-                    })
-                    for (const item of s.sale_items ?? []) {
-                      await database.get('sale_items').create((record) => {
-                        record._raw.id = item.id
-                        record.saleId = s.id
-                        record.productId = item.product_id
-                        record.productNameSnapshot = item.product_name_snapshot
-                        record.qty = item.qty
-                        record.unitPriceCents = item.unit_price_cents
-                        record.costPriceCents = item.cost_price_cents
-                      })
-                    }
-                  }
-                })
-              }
-            } catch (err) {
-              console.warn('[login] sales restore error:', err)
-            }
-
-            setRestoreMessage('Almost done...')
-          }
-        } catch (dbErr) {
-          console.warn('[login] WatermelonDB restore error:', dbErr)
-          setRestoreMessage(null)
-          Alert.alert('Restore Failed', 'Could not restore your data. Please try again.')
-          setLoading(false)
-          return
-        }
-      }
+      setBusiness(businessInfoFromRemoteRow(biz))
+      await ensureLocalWatermelonForSession(user, biz)
+      await triggerSync(biz.id)
 
       router.replace('/(app)')
     } catch (e: unknown) {
-      Alert.alert('Login Failed', (e as Error)?.message ?? 'Something went wrong.')
+      Alert.alert('Login failed', (e as Error)?.message ?? 'Something went wrong.')
+    } finally {
       setLoading(false)
     }
-  }
-
-  if (restoreMessage) {
-    return <LoadingScreen message={restoreMessage} />
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingWrapper>
         <View style={styles.content}>
-          {/* Logo area */}
           <View style={styles.logoArea}>
             <BrandLogo variant="full" width={120} height={120} />
             <Text style={styles.appName}>Profit Protector</Text>
             <Text style={styles.tagline}>Business in your pocket</Text>
           </View>
 
-          {/* Form card */}
           <Card padding="lg">
-            <Text style={styles.formTitle}>Welcome back</Text>
-            <Text style={styles.formSubtitle}>Enter your details to continue</Text>
+            <Text style={styles.formTitle}>Sign in</Text>
 
-            <View style={styles.fields}>
-              {/* Phone number */}
-              <Controller
-                control={control}
-                name="phone"
-                render={({ field: { onChange, value } }) => (
-                  <Input
-                    label="Phone Number"
-                    placeholder="e.g. 0771234567"
-                    value={value}
-                    onChangeText={onChange}
-                    keyboardType="phone-pad"
-                    autoCapitalize="none"
-                    error={errors.phone?.message}
-                    hint="The number you registered with"
-                    leftIcon={<Ionicons name="call-outline" size={18} color="#718096" />}
-                    editable={!loading}
-                  />
-                )}
-              />
+            <Controller
+              control={control}
+              name="identifier"
+              render={({ field: { onChange, value } }) => (
+                <Input
+                  label="Phone number or username"
+                  placeholder="0771234567 or your username"
+                  value={value}
+                  onChangeText={onChange}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  error={errors.identifier?.message}
+                  leftIcon={<Ionicons name="person-outline" size={18} color="#718096" />}
+                  editable={!loading}
+                />
+              )}
+            />
 
-              {/* Password */}
-              <Controller
-                control={control}
-                name="password"
-                render={({ field: { onChange, value } }) => (
-                  <Input
-                    label="Password"
-                    placeholder="Enter your password"
-                    value={value}
-                    onChangeText={onChange}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    error={errors.password?.message}
-                    leftIcon={<Ionicons name="lock-closed-outline" size={18} color="#718096" />}
-                    rightIcon={
-                      <TouchableOpacity onPress={() => setShowPassword((v) => !v)}>
-                        <Ionicons
-                          name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                          size={18}
-                          color="#718096"
-                        />
-                      </TouchableOpacity>
-                    }
-                    editable={!loading}
-                  />
-                )}
-              />
-            </View>
+            <Controller
+              control={control}
+              name="password"
+              render={({ field: { onChange, value } }) => (
+                <Input
+                  label="Password"
+                  placeholder="Your password"
+                  value={value}
+                  onChangeText={onChange}
+                  secureTextEntry={!showPassword}
+                  error={errors.password?.message}
+                  editable={!loading}
+                  rightIcon={
+                    <TouchableOpacity
+                      onPress={() => setShowPassword(!showPassword)}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    >
+                      <Ionicons
+                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={20}
+                        color="#718096"
+                      />
+                    </TouchableOpacity>
+                  }
+                />
+              )}
+            />
 
-            {/* Forgot password */}
-            <View style={styles.forgotRow}>
-              <TouchableOpacity onPress={handleForgotPassword}>
-                <Text style={styles.forgotText}>Forgot password?</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Login button */}
             <View style={styles.loginButtonWrapper}>
               <Button
-                label="Login"
+                label="Sign in"
                 onPress={handleSubmit(onSubmit)}
                 variant="primary"
                 size="lg"
@@ -380,14 +222,16 @@ export default function LoginScreen() {
               />
             </View>
 
-            {/* Divider */}
+            <TouchableOpacity style={styles.forgotRow} onPress={handleForgotPassword}>
+              <Text style={styles.forgotText}>Forgot password? (recovery email)</Text>
+            </TouchableOpacity>
+
             <Divider label="or" spacing={24} />
 
-            {/* Sign up row */}
             <View style={styles.signUpRow}>
-              <Text style={styles.signUpMuted}>Don't have an account?</Text>
+              <Text style={styles.signUpMuted}>New here?</Text>
               <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
-                <Text style={styles.signUpLink}> Sign up</Text>
+                <Text style={styles.signUpLink}> Create business profile</Text>
               </TouchableOpacity>
             </View>
           </Card>
@@ -426,32 +270,25 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: '#1A202C',
-    marginBottom: 4,
-  },
-  formSubtitle: {
-    fontSize: 14,
-    color: '#718096',
     marginBottom: 24,
   },
-  fields: {
-    gap: 16,
+  loginButtonWrapper: {
+    marginTop: 24,
   },
   forgotRow: {
-    alignItems: 'flex-end',
-    marginTop: 8,
+    alignItems: 'center',
+    marginTop: 16,
   },
   forgotText: {
     fontSize: 13,
     color: '#0047AB',
     fontWeight: '500',
   },
-  loginButtonWrapper: {
-    marginTop: 24,
-  },
   signUpRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 16,
   },
   signUpMuted: {
     fontSize: 14,

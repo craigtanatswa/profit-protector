@@ -1,5 +1,6 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 
+import type { BusinessInfo } from '../stores/authStore'
 import { supabase } from './supabase'
 
 /** Columns always present on `businesses` (before recovery-email migration). */
@@ -23,6 +24,29 @@ export type BusinessRowBase = {
 export type BusinessRowForAuth = BusinessRowBase & {
   recovery_email: string | null
   recovery_email_verified: boolean
+}
+
+export function businessInfoFromRemoteRow(biz: BusinessRowForAuth): BusinessInfo {
+  const zigRate =
+    typeof biz.zig_rate_per_usd === 'number' && biz.zig_rate_per_usd > 0 ? biz.zig_rate_per_usd : 1
+  const recoveryEmailVerified = biz.recovery_email_verified === true
+  const recoveryEmail =
+    typeof biz.recovery_email === 'string' && biz.recovery_email.trim() !== ''
+      ? biz.recovery_email.trim()
+      : undefined
+
+  return {
+    id: biz.id,
+    name: biz.name,
+    ownerName: biz.owner_name,
+    phone: biz.phone,
+    businessType: biz.business_type,
+    currency: biz.currency,
+    zigRatePerUsd: zigRate,
+    loginUsername: biz.login_username ?? null,
+    recoveryEmail,
+    recoveryEmailVerified,
+  }
 }
 
 export function isMissingRecoveryColumnsError(error: PostgrestError | null): boolean {

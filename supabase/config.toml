@@ -27,3 +27,21 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/complete-recovery-password/deno.json"
 entrypoint = "./functions/complete-recovery-password/index.ts"
+
+[functions.send-otp]
+enabled = true
+verify_jwt = false
+import_map = "./functions/send-otp/deno.json"
+entrypoint = "./functions/send-otp/index.ts"
+
+[functions.verify-otp]
+enabled = true
+verify_jwt = false
+import_map = "./functions/verify-otp/deno.json"
+entrypoint = "./functions/verify-otp/index.ts"
+
+[functions.delete-account]
+enabled = true
+verify_jwt = true
+import_map = "./functions/delete-account/deno.json"
+entrypoint = "./functions/delete-account/index.ts"

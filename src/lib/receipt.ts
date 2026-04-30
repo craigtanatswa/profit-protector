@@ -1,6 +1,8 @@
 import * as Print from 'expo-print'
 import * as Sharing from 'expo-sharing'
+import * as SecureStore from 'expo-secure-store'
 import type { Sale, SaleItem, Business, Customer } from '../types'
+import { getPersonalisation, normalizeBusinessType } from './appPersonalisation'
 import { getBusinessLogoDataUri } from './businessLogo'
 import { formatCurrency, formatDateTime, formatPaymentMethod } from './formatters'
 
@@ -11,6 +13,20 @@ interface ReceiptParams {
   customer?: Customer
 }
 
+async function getReceiptFooterMessage(business: Business): Promise<string> {
+  const raw = await SecureStore.getItemAsync('receipt_settings')
+  if (raw != null && raw.length > 0) {
+    try {
+      const parsed = JSON.parse(raw) as { footer?: string }
+      const f = parsed.footer?.trim()
+      if (f != null && f.length > 0) return f
+    } catch {
+      /* fall through */
+    }
+  }
+  return getPersonalisation(normalizeBusinessType(business.businessType ?? 'other')).receiptFooter
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -19,7 +35,11 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
-function buildReceiptHTML(params: ReceiptParams, logoDataUri: string | null): string {
+function buildReceiptHTML(
+  params: ReceiptParams,
+  logoDataUri: string | null,
+  footerMessage: string,
+): string {
   const { sale, saleItems, business, customer } = params
   const currency = business.currency || 'USD'
   const zigRate = business.zigRatePerUsd ?? 1
@@ -151,7 +171,7 @@ function buildReceiptHTML(params: ReceiptParams, logoDataUri: string | null): st
 
   <div class="divider"></div>
 
-  <div class="footer">Thank you for your business!</div>
+  <div class="footer">${escapeHtml(footerMessage)}</div>
   <div class="center" style="font-size:11px;color:#5A6A8A;margin-top:4px;">${escapeHtml(business.name)}</div>
   <div class="powered-by">Powered by Profit Protector</div>
 </body>
@@ -160,7 +180,8 @@ function buildReceiptHTML(params: ReceiptParams, logoDataUri: string | null): st
 
 export async function generateReceiptPDF(params: ReceiptParams): Promise<string> {
   const logoDataUri = await getBusinessLogoDataUri()
-  const html = buildReceiptHTML(params, logoDataUri)
+  const footerMessage = await getReceiptFooterMessage(params.business)
+  const html = buildReceiptHTML(params, logoDataUri, footerMessage)
   const { uri } = await Print.printToFileAsync({
     html,
     base64: false,
@@ -185,8 +206,9 @@ export async function shareReceipt(params: ReceiptParams): Promise<void> {
 export async function printReceiptBluetooth(params: ReceiptParams): Promise<void> {
   try {
     const logoDataUri = await getBusinessLogoDataUri()
+    const footerMessage = await getReceiptFooterMessage(params.business)
     await Print.printAsync({
-      html: buildReceiptHTML(params, logoDataUri),
+      html: buildReceiptHTML(params, logoDataUri, footerMessage),
       printerUrl: undefined,
     })
   } catch (error: unknown) {

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import * as SecureStore from 'expo-secure-store'
 import {
+  Alert,
   Animated,
   Dimensions,
   Easing,
@@ -24,6 +25,8 @@ import { useDashboard } from '../../src/hooks/useDashboard'
 import { useQuietOfflineRefreshOnFocus } from '../../src/hooks/useQuietOfflineRefreshOnFocus'
 import type { CashBreakdownItem, RecentSaleEntry } from '../../src/hooks/useDashboard'
 import { formatPaymentMethod } from '../../src/lib/formatters'
+import { insertSampleProductsForBusiness } from '../../src/lib/insertSampleProducts'
+import { normalizeBusinessType } from '../../src/lib/appPersonalisation'
 import { useMoneyFormat } from '../../src/hooks/useMoneyFormat'
 import type { Customer, PaymentMethod, Product } from '../../src/types'
 
@@ -51,6 +54,28 @@ function getGreeting(): string {
   if (hour < 12) return 'morning'
   if (hour < 17) return 'afternoon'
   return 'evening'
+}
+
+function greetingNameSuffix(businessTypeRaw: string): string {
+  const t = normalizeBusinessType(businessTypeRaw)
+  if (t === 'restaurant') return ' — ready for service?'
+  if (t === 'salon') return ' — ready for the day?'
+  return ''
+}
+
+function sampleOfferBusinessLabel(bt: string): string {
+  const t = normalizeBusinessType(bt)
+  const m: Record<string, string> = {
+    tuck_shop: 'tuck shop',
+    hardware: 'hardware store',
+    tech_shop: 'tech shop',
+    salon: 'salon',
+    clothing: 'clothing shop',
+    pharmacy: 'pharmacy',
+    restaurant: 'restaurant',
+    other: 'business',
+  }
+  return m[t] ?? 'business'
 }
 
 // ---------------------------------------------------------------------------
@@ -805,6 +830,49 @@ export default function DashboardScreen() {
     }
   }, [business?.recoveryEmailVerified])
 
+  useEffect(() => {
+    let cancelled = false
+
+    const run = async () => {
+      if (!business?.id || isLoading) return
+      if (totalProductCount !== 0) return
+      const offered = await SecureStore.getItemAsync('sample_products_offered')
+      if (offered === 'true' || cancelled) return
+
+      const label = sampleOfferBusinessLabel(business.businessType ?? 'other')
+      Alert.alert(
+        'Add sample products?',
+        `We have prepared some common products for a ${label}. Want to add them as a starting point? You can edit or remove them anytime.`,
+        [
+          {
+            text: 'Skip',
+            style: 'cancel',
+            onPress: () => {
+              void SecureStore.setItemAsync('sample_products_offered', 'true')
+            },
+          },
+          {
+            text: 'Add sample products',
+            onPress: async () => {
+              try {
+                await insertSampleProductsForBusiness(business.id)
+                await SecureStore.setItemAsync('sample_products_offered', 'true')
+                refetch()
+              } catch {
+                Alert.alert('Error', 'Could not add sample products.')
+              }
+            },
+          },
+        ],
+      )
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [business?.id, business?.businessType, totalProductCount, isLoading, refetch])
+
   const handleRefresh = async () => {
     setIsRefreshing(true)
     refetch()
@@ -855,7 +923,12 @@ export default function DashboardScreen() {
                 Good {getGreeting()},
               </Text>
               <View style={styles.nameRow}>
-                <Text style={styles.businessName}>{ownerName}</Text>
+                <Text style={styles.businessName}>
+                  {ownerName}
+                  {business?.businessType != null && business.businessType.length > 0
+                    ? greetingNameSuffix(business.businessType)
+                    : ''}
+                </Text>
                 <TouchableOpacity
                   onPress={() => {
                     router.push({ pathname: '/(app)/settings', params: { focus: 'security' } })

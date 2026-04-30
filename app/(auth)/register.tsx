@@ -46,7 +46,7 @@
  * where login_username is not null and trim(login_username) <> '';
  */
 
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   StyleSheet,
@@ -54,26 +54,26 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Ionicons } from '@expo/vector-icons'
-import * as Crypto from 'expo-crypto'
 
-import { Button, Input } from '../../src/components/ui'
+import { Button, Input, OTPInput } from '../../src/components/ui'
 import { EmailVerificationModal } from '../../src/components/auth/EmailVerificationModal'
 import { BrandLogo, KeyboardAvoidingWrapper, ScreenHeader } from '../../src/components/layout'
 import { database } from '../../src/database'
 import Business from '../../src/database/models/Business'
 import { supabase } from '../../src/lib/supabase'
-import { sendEmailOTP } from '../../src/lib/emailOTP'
-import { isMissingRecoveryColumnsError } from '../../src/lib/businessRemote'
+import { createBusinessProfile } from '../../src/lib/createAccount'
 import {
   buildSupabaseEmailFromPhone,
   isValidOptionalLoginUsername,
   normalizeOptionalLoginUsername,
 } from '../../src/lib/authIdentity'
+import { isMissingRecoveryColumnsError } from '../../src/lib/businessRemote'
+import { sendPhoneOtp, verifySignupOtp } from '../../src/lib/phoneOTP'
 import { useAuthStore } from '../../src/stores/authStore'
 
 // ---------------------------------------------------------------------------
@@ -130,23 +130,50 @@ const registerSchema = z
 
 type RegisterFormData = z.infer<typeof registerSchema>
 
+function parseOnboardingStepParam(
+  raw: string | string[] | undefined,
+): number | null {
+  if (raw === undefined) return null
+  const s = Array.isArray(raw) ? raw[0] : raw
+  if (s === '' || s == null) return null
+  const n = parseInt(String(s), 10)
+  if (!Number.isFinite(n) || n < 1 || n > 4) return null
+  return n
+}
+
+function parseResumeParam(raw: string | string[] | undefined): boolean {
+  if (raw === undefined) return false
+  const s = Array.isArray(raw) ? raw[0] : raw
+  return s === '1' || s === 'true'
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const STEP_FIELDS: Record<number, Array<keyof RegisterFormData>> = {
   1: ['businessName', 'businessType'],
-  2: ['ownerName', 'phone', 'loginUsername', 'recoveryEmail', 'password', 'confirmPassword'],
-  3: ['currency', 'agreedToLegal'],
+  2: [
+    'ownerName',
+    'phone',
+    'loginUsername',
+    'recoveryEmail',
+    'password',
+    'confirmPassword',
+  ],
+  3: [],
+  4: ['currency', 'agreedToLegal'],
 }
 
-const BUSINESS_TYPES = [
-  'Retail Shop',
-  'Hardware',
-  'Salon/Barber',
-  'Restaurant/Takeaway',
-  'Pharmacy',
-  'Other',
+const BUSINESS_TYPES: PillOption[] = [
+  { label: 'Tuck shop / Grocery', value: 'tuck_shop' },
+  { label: 'Hardware', value: 'hardware' },
+  { label: 'Tech shop / Gadgets', value: 'tech_shop' },
+  { label: 'Salon / Barber', value: 'salon' },
+  { label: 'Clothing / Boutique', value: 'clothing' },
+  { label: 'Pharmacy', value: 'pharmacy' },
+  { label: 'Restaurant / Takeaway', value: 'restaurant' },
+  { label: 'Other', value: 'other' },
 ]
 
 const CURRENCY_OPTIONS: { label: string; value: string }[] = [
@@ -157,8 +184,9 @@ const CURRENCY_OPTIONS: { label: string; value: string }[] = [
 
 const STEP_META = [
   { title: 'Your Business', subtitle: 'Tell us about your business', label: 'Business' },
-  { title: 'Your Details', subtitle: 'How do we reach you?', label: 'Owner' },
-  { title: 'Almost Done', subtitle: 'Set your preferences', label: 'Preferences' },
+  { title: 'Owner', subtitle: 'Contact details & login', label: 'Owner' },
+  { title: 'Verify Phone', subtitle: 'Enter the code sent by SMS', label: 'SMS' },
+  { title: 'Almost Done', subtitle: 'Preferences & legal', label: 'Done' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -213,7 +241,7 @@ function PillSelector({ options, selected, onSelect, error }: PillSelectorProps)
 function ProgressIndicator({ currentStep }: { currentStep: number }) {
   return (
     <View style={styles.progressRow}>
-      {([1, 2, 3] as const).map((step, index) => {
+      {([1, 2, 3, 4] as const).map((step, index) => {
         const completed = step < currentStep
         const active = step === currentStep
         const highlight = completed || active
@@ -238,7 +266,7 @@ function ProgressIndicator({ currentStep }: { currentStep: number }) {
                 {STEP_META[index].label}
               </Text>
             </View>
-            {index < 2 && <View style={styles.progressLine} />}
+            {index < 3 && <View style={styles.progressLine} />}
           </React.Fragment>
         )
       })}
@@ -252,20 +280,47 @@ function ProgressIndicator({ currentStep }: { currentStep: number }) {
 
 export default function RegisterScreen() {
   const router = useRouter()
+  const { step: stepParam, resume: resumeParam } = useLocalSearchParams<{
+    step?: string | string[]
+    resume?: string | string[]
+  }>()
+  const resumeRegistration = parseResumeParam(resumeParam)
   const { setBusiness, setUser } = useAuthStore()
 
-  const [currentStep, setCurrentStep] = useState(1)
+  const [currentStep, setCurrentStep] = useState(
+    () =>
+      resumeRegistration ? 1 : (parseOnboardingStepParam(stepParam) ?? 1),
+  )
+
+  useEffect(() => {
+    router.setParams({
+      step: String(currentStep),
+      ...(resumeRegistration ? { resume: '1' } : {}),
+    })
+  }, [currentStep, router, resumeRegistration])
+
+  useFocusEffect(
+    useCallback(() => {
+      if (resumeRegistration) return
+      const fromUrl = parseOnboardingStepParam(stepParam)
+      if (fromUrl != null) setCurrentStep(fromUrl)
+    }, [stepParam, resumeRegistration]),
+  )
   const [isLoading, setIsLoading] = useState(false)
   const [profitGoalText, setProfitGoalText] = useState('')
   const [pendingRecoveryVerify, setPendingRecoveryVerify] = useState<{
     businessId: string
     email: string
   } | null>(null)
+  /** OTP entry on step 3; successful verify signs in before preferences + createBusinessProfile (step 4). */
+  const [smsOtp, setSmsOtp] = useState('')
 
   const {
     control,
     handleSubmit,
     trigger,
+    getValues,
+    setValue,
     formState: { errors },
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
@@ -285,24 +340,178 @@ export default function RegisterScreen() {
     mode: 'onTouched',
   })
 
+  /** Phone-verified auth users finishing signup after login / app guard (skip OTP send). */
+  useEffect(() => {
+    if (!resumeRegistration) return
+    let cancelled = false
+    ;(async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const uid = session?.user?.id
+      if (!uid || cancelled) return
+      const { data: au } = await supabase
+        .from('app_users')
+        .select('phone')
+        .eq('id', uid)
+        .maybeSingle()
+      if (!cancelled && au?.phone) {
+        setValue('phone', au.phone)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [resumeRegistration, setValue])
+
   // -------------------------------------------------------------------------
   // Navigation
   // -------------------------------------------------------------------------
 
-  const goBack = () => {
+  const goBack = async () => {
     if (currentStep === 1) {
+      if (resumeRegistration) {
+        await supabase.auth.signOut()
+        router.replace('/(auth)/login')
+        return
+      }
       router.back()
-    } else {
-      setCurrentStep(prev => prev - 1)
+      return
+    }
+    if (currentStep === 4) {
+      setSmsOtp('')
+      if (!resumeRegistration) {
+        await supabase.auth.signOut()
+      }
+      setCurrentStep(3)
+      return
+    }
+    if (currentStep === 3) {
+      if (!resumeRegistration) {
+        await supabase.auth.signOut()
+      }
+      setSmsOtp('')
+      setCurrentStep(2)
+      return
+    }
+    if (currentStep === 2) {
+      setSmsOtp('')
+      setCurrentStep(1)
+      return
+    }
+    setCurrentStep(prev => prev - 1)
+  }
+
+  const handleResendSignupSms = async () => {
+    const ph = getValues('phone')
+    setIsLoading(true)
+    try {
+      const sent = await sendPhoneOtp(ph)
+      if (!sent.success) {
+        Alert.alert('Could not send code', sent.error ?? 'Please try again.')
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleVerifySmsStep = async () => {
+    const ph = getValues('phone')
+    const pwd = getValues('password')
+    const len = smsOtp.trim().length
+    if (len !== 4) {
+      Alert.alert('Enter code', 'Enter the 4-digit verification code from your SMS.')
+      return
+    }
+    setIsLoading(true)
+    try {
+      const result = await verifySignupOtp(ph, smsOtp.trim(), pwd)
+      if (!result.success) {
+        Alert.alert('Verification failed', result.error ?? 'Invalid or expired code.')
+        return
+      }
+
+      const email = buildSupabaseEmailFromPhone(ph.trim())
+      const { error: signErr } = await supabase.auth.signInWithPassword({
+        email,
+        password: pwd,
+      })
+
+      if (signErr) {
+        Alert.alert(
+          'Signed up but login failed',
+          signErr.message +
+            '\n\nTry signing in manually with the same phone and password.',
+        )
+        return
+      }
+
+      setCurrentStep(4)
+    } finally {
+      setIsLoading(false)
     }
   }
 
   const handleNext = async () => {
-    const valid = await trigger(STEP_FIELDS[currentStep])
-    if (!valid) return
-    if (currentStep < 3) {
-      setCurrentStep(prev => prev + 1)
-    } else {
+    const fields = STEP_FIELDS[currentStep] ?? []
+    if (fields.length > 0) {
+      const valid = await trigger(fields)
+      if (!valid) return
+    }
+    if (currentStep === 1) {
+      setCurrentStep(2)
+      return
+    }
+    if (currentStep === 2) {
+      const vals = getValues()
+      setIsLoading(true)
+      try {
+        if (resumeRegistration) {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession()
+          const uid = session?.user?.id
+          if (!uid) {
+            Alert.alert('Session expired', 'Please log in again to finish registering.')
+            return
+          }
+          const { data: au, error: auErr } = await supabase
+            .from('app_users')
+            .select('phone')
+            .eq('id', uid)
+            .maybeSingle()
+          if (auErr || !au?.phone) {
+            Alert.alert(
+              'Could not verify account',
+              auErr?.message ?? 'Try logging in again.',
+            )
+            return
+          }
+          if (au.phone.trim() !== vals.phone.trim()) {
+            Alert.alert(
+              'Phone mismatch',
+              'Use the same phone number verified on your account.',
+            )
+            return
+          }
+          setSmsOtp('')
+          setCurrentStep(3)
+          return
+        }
+
+        const sent = await sendPhoneOtp(vals.phone)
+        if (!sent.success) {
+          Alert.alert('Could not send code', sent.error ?? 'Please try again.')
+          return
+        }
+        setSmsOtp('')
+        setCurrentStep(3)
+      } finally {
+        setIsLoading(false)
+      }
+      return
+    }
+    if (currentStep === 4) {
       handleSubmit(onSubmit)()
     }
   }
@@ -316,141 +525,34 @@ export default function RegisterScreen() {
     try {
       const loginUsername = data.loginUsername
       const recoveryEmailTrimmed = data.recoveryEmail ?? ''
-      const email = buildSupabaseEmailFromPhone(data.phone)
 
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password: data.password,
-        options: {
-          data: {
-            phone: data.phone,
-            login_username: loginUsername || null,
-          },
-        },
-      })
-
-      if (signUpError) {
-        let msg = signUpError.message
-        if (msg.includes('User already registered')) {
-          msg =
-            'An account with this phone number already exists. Please login instead.'
-        } else if (
-          /invalid/i.test(msg) &&
-          (/email/i.test(msg) || /address/i.test(msg))
-        ) {
-          msg =
-            'Could not create this account. Check your phone number and try again.'
-        } else if (/network|fetch/i.test(msg)) {
-          msg = 'No internet connection. Please check your connection and try again.'
-        }
-        Alert.alert('Registration Failed', msg)
-        setIsLoading(false)
-        return
-      }
-
-      const user = authData?.user
-      if (!user) {
-        Alert.alert('Registration Failed', 'Unable to create account. Please try again.')
-        setIsLoading(false)
-        return
-      }
-
-      let businessId: string
-
-      if (database) {
-        const db = database
-        try {
-          const record = await db.write(async () =>
-            db.get<Business>('businesses').create(b => {
-              b.name = data.businessName
-              b.ownerName = data.ownerName
-              b.phone = data.phone
-              b.businessType = data.businessType
-              b.currency = data.currency
-              b.zigRatePerUsd = 1
-              b.loginUsername = loginUsername || null
-              b.supabaseId = user.id
-              b.recoveryEmail = recoveryEmailTrimmed || null
-              b.recoveryEmailVerified = false
-            }),
-          )
-          businessId = record.id
-        } catch (dbErr: unknown) {
-          Alert.alert(
-            'Registration Failed',
-            (dbErr as Error)?.message ?? 'Failed to save business locally.',
-          )
-          setIsLoading(false)
-          return
-        }
-      } else {
-        businessId = Crypto.randomUUID()
-      }
-
-      const insertBase = {
-        id: businessId,
-        name: data.businessName,
-        owner_name: data.ownerName,
-        phone: data.phone,
-        business_type: data.businessType,
-        currency: data.currency,
-        zig_rate_per_usd: 1,
-        login_username: loginUsername || null,
-        user_id: user.id,
-        created_at: new Date().toISOString(),
-      }
-
-      let insertError = (
-        await supabase.from('businesses').insert({
-          ...insertBase,
-          recovery_email: recoveryEmailTrimmed || null,
-          recovery_email_verified: false,
-        })
-      ).error
-
-      if (insertError && isMissingRecoveryColumnsError(insertError)) {
-        const retry = await supabase.from('businesses').insert(insertBase)
-        insertError = retry.error
-      }
-
-      if (insertError) {
-        let insMsg = insertError.message
-        if (/unique|duplicate|23505/i.test(insMsg) && loginUsername) {
-          insMsg = 'This username is already taken. Please choose another.'
-        }
-        Alert.alert('Registration Failed', insMsg)
-        setIsLoading(false)
-        return
-      }
-
-      setBusiness({
-        id: businessId,
-        name: data.businessName,
+      const result = await createBusinessProfile({
+        businessName: data.businessName,
         ownerName: data.ownerName,
         phone: data.phone,
         businessType: data.businessType,
         currency: data.currency,
-        zigRatePerUsd: 1,
-        loginUsername: loginUsername || null,
         recoveryEmail: recoveryEmailTrimmed || undefined,
-        recoveryEmailVerified: false,
+        loginUsername: loginUsername || undefined,
       })
-      setUser(user)
 
-      if (recoveryEmailTrimmed) {
-        const sent = await sendEmailOTP(recoveryEmailTrimmed, 'add_email')
-        if (!sent.success) {
-          Alert.alert(
-            'Email verification',
-            sent.error ??
-              'Could not send a verification code. You can verify your email later in Settings.',
-          )
-        }
+      if (!result.success) {
+        Alert.alert('Registration Failed', result.error)
         setIsLoading(false)
-        setPendingRecoveryVerify({ businessId, email: recoveryEmailTrimmed })
         return
       }
 
+      setBusiness(result.business)
+      setUser(result.user)
+
+      if (result.pendingRecoveryEmailVerification) {
+        const { businessId, email } = result.pendingRecoveryEmailVerification
+        setIsLoading(false)
+        setPendingRecoveryVerify({ businessId, email })
+        return
+      }
+
+      setIsLoading(false)
       router.replace('/(app)')
     } catch (err: unknown) {
       Alert.alert(
@@ -529,7 +631,7 @@ export default function RegisterScreen() {
   // Step renders
   // -------------------------------------------------------------------------
 
-  const renderStep1 = () => (
+  const renderStep1Business = () => (
     <>
       <Controller
         control={control}
@@ -566,7 +668,7 @@ export default function RegisterScreen() {
     </>
   )
 
-  const renderStep2 = () => (
+  const renderStep2OwnerAndCredentials = () => (
     <>
       <Controller
         control={control}
@@ -595,7 +697,7 @@ export default function RegisterScreen() {
             value={value}
             onChangeText={onChange}
             error={errors.phone?.message}
-            hint="Required. Your sign-in email is always based on this number, not your username"
+            hint="Your login uses this number (with a secure email alias behind the scenes)"
             keyboardType="number-pad"
             autoCapitalize="none"
             editable={!isLoading}
@@ -677,7 +779,28 @@ export default function RegisterScreen() {
     </>
   )
 
-  const renderStep3 = () => (
+  const renderStep3Sms = () =>
+    resumeRegistration ? (
+      <>
+        <Text style={styles.smsLead}>
+          Your phone{' '}
+          <Text style={styles.smsPhone}>{getValues('phone') || 'your number'}</Text>
+          {' '}
+          is already verified on this account. Continue to choose preferences and create your business profile.
+        </Text>
+      </>
+    ) : (
+      <>
+        <Text style={styles.smsLead}>
+          We sent a verification code to{' '}
+          <Text style={styles.smsPhone}>{getValues('phone') || 'your number'}</Text>. Enter the 4-digit code below.
+        </Text>
+        <OTPInput value={smsOtp} onChange={setSmsOtp} disabled={isLoading} length={4} />
+        <Text style={styles.smsHint}>Did not receive it? Wait up to a minute or tap Resend.</Text>
+      </>
+    )
+
+  const renderStep4Preferences = () => (
     <>
       <View>
         <Text style={styles.fieldLabel}>Currency</Text>
@@ -766,7 +889,14 @@ export default function RegisterScreen() {
   // Render
   // -------------------------------------------------------------------------
 
-  const stepMeta = STEP_META[currentStep - 1]
+  const stepMeta =
+    resumeRegistration && currentStep === 3
+      ? {
+          title: 'Phone verified',
+          subtitle: 'Continue to preferences and create your business profile',
+          label: STEP_META[2].label,
+        }
+      : STEP_META[currentStep - 1] ?? STEP_META[0]
 
   return (
     <View style={styles.screen}>
@@ -791,27 +921,61 @@ export default function RegisterScreen() {
 
           {/* Fields */}
           <View style={styles.fields}>
-            {currentStep === 1 && renderStep1()}
-            {currentStep === 2 && renderStep2()}
-            {currentStep === 3 && renderStep3()}
+            {currentStep === 1 && renderStep1Business()}
+            {currentStep === 2 && renderStep2OwnerAndCredentials()}
+            {currentStep === 3 && renderStep3Sms()}
+            {currentStep === 4 && renderStep4Preferences()}
           </View>
 
           {/* Push button to bottom */}
           <View style={styles.spacer} />
 
           {/* Primary action */}
-          <Button
-            label={currentStep === 3 ? 'Create Account' : 'Next'}
-            onPress={handleNext}
-            loading={isLoading}
-            disabled={isLoading}
-            fullWidth
-          />
+          {currentStep === 3 ? (
+            resumeRegistration ? (
+              <Button
+                label="Continue"
+                onPress={() => setCurrentStep(4)}
+                loading={isLoading}
+                disabled={isLoading}
+                fullWidth
+              />
+            ) : (
+              <View style={styles.step3Actions}>
+                <Button
+                  label="Verify & continue"
+                  onPress={handleVerifySmsStep}
+                  loading={isLoading}
+                  disabled={
+                    isLoading ||
+                    smsOtp.trim().length !== 4
+                  }
+                  fullWidth
+                />
+                <Button
+                  label="Resend SMS code"
+                  variant="ghost"
+                  onPress={handleResendSignupSms}
+                  loading={isLoading}
+                  disabled={isLoading}
+                  fullWidth
+                />
+              </View>
+            )
+          ) : (
+            <Button
+              label={currentStep === 4 ? 'Create Account' : 'Next'}
+              onPress={handleNext}
+              loading={isLoading}
+              disabled={isLoading}
+              fullWidth
+            />
+          )}
 
           {/* Login link */}
           <View style={styles.loginRow}>
             <Text style={styles.loginText}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
+            <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
               <Text style={styles.loginLink}>Login</Text>
             </TouchableOpacity>
           </View>
@@ -909,6 +1073,24 @@ const styles = StyleSheet.create({
   // Fields
   fields: {
     gap: 16,
+  },
+  smsLead: {
+    fontSize: 15,
+    color: '#4A5568',
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  smsPhone: {
+    fontWeight: '600',
+    color: '#1A202C',
+  },
+  smsHint: {
+    fontSize: 13,
+    color: '#718096',
+    marginTop: 8,
+  },
+  step3Actions: {
+    gap: 12,
   },
   fieldLabel: {
     fontSize: 14,

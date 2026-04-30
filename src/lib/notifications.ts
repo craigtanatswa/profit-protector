@@ -26,6 +26,8 @@ import { Platform } from 'react-native'
 import { database } from '../database'
 import { Q } from '@nozbe/watermelondb'
 import type ProductModel from '../database/models/Product'
+import WMBusiness from '../database/models/Business'
+import { getPersonalisation, normalizeBusinessType } from './appPersonalisation'
 
 // ---------------------------------------------------------------------------
 // Android notification channels
@@ -80,6 +82,8 @@ export async function sendLowStockNotification(params: {
   currentStock: number
   threshold: number
   unit: string
+  /** Overrides generic intro copy when provided */
+  messagePrefix?: string
 }): Promise<void> {
   const enabled = await SecureStore.getItemAsync('setting_low_stock_alerts')
   if (enabled === 'false') return
@@ -88,13 +92,16 @@ export async function sendLowStockNotification(params: {
   if (status !== 'granted') return
 
   const isOutOfStock = params.currentStock === 0
+  const prefix =
+    params.messagePrefix ??
+    (isOutOfStock ? 'Out of stock' : 'Low stock')
 
   await Notifications.scheduleNotificationAsync({
     content: {
       title: isOutOfStock ? '🚨 Out of Stock!' : '⚠️ Low Stock Alert',
       body: isOutOfStock
-        ? `${params.productName} is out of stock. Tap to reorder now.`
-        : `${params.productName} has only ${params.currentStock} ${params.unit} left (threshold: ${params.threshold}). Time to reorder!`,
+        ? `${prefix} — ${params.productName} is out of stock. Tap to reorder now.`
+        : `${prefix} — ${params.productName} has only ${params.currentStock} ${params.unit} left (threshold: ${params.threshold}). Time to reorder!`,
       data: {
         productId: params.productId,
         type: isOutOfStock ? 'out_of_stock' : 'low_stock',
@@ -124,6 +131,14 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
 
   if (!database) return
 
+  let messagePrefix: string | undefined
+  try {
+    const biz = await database.get<WMBusiness>('businesses').find(businessId)
+    messagePrefix = getPersonalisation(normalizeBusinessType(biz.businessType)).lowStockMessage
+  } catch {
+    messagePrefix = undefined
+  }
+
   const allProducts = await database
     .get<ProductModel>('products')
     .query(
@@ -147,6 +162,7 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
       currentStock: product.stockQty,
       threshold: product.lowStockThreshold,
       unit: product.unit,
+      messagePrefix,
     })
   }
 
@@ -154,7 +170,10 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
     await Notifications.scheduleNotificationAsync({
       content: {
         title: '⚠️ Multiple Low Stock Items',
-        body: `${lowStock.length} products need restocking. Tap to view your inventory.`,
+        body:
+          messagePrefix != null
+            ? `${messagePrefix} — ${lowStock.length} products need restocking. Tap to view your inventory.`
+            : `${lowStock.length} products need restocking. Tap to view your inventory.`,
         data: {
           type: 'multi_low_stock',
           screen: 'inventory',

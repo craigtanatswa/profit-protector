@@ -1,6 +1,4 @@
-import { Redirect } from 'expo-router'
-
-/** Default entry: auth login (Expo Router otherwise prefers the (app) group first). */
+/** Root route — navigation is driven by `app/_layout.tsx` AuthGate after auth + onboarding hydrate. */
 export default function RootIndex() {
-  return <Redirect href="/(auth)/login" />
+  return null
 }

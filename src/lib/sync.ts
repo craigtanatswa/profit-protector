@@ -53,6 +53,15 @@ async function setLastSyncedAt(businessId: string, timestamp: number): Promise<v
   }
 }
 
+/** Clears the stored sync cursor so the next sync does a full pull. */
+export async function clearBusinessSyncCursor(businessId: string): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(`${SYNC_KEY_PREFIX}${businessId}`)
+  } catch {
+    // ignore
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -61,9 +70,22 @@ function toISO(ms: number): string {
   return new Date(ms === 0 ? 0 : ms).toISOString()
 }
 
-/** Epoch ISO used to pull everything on first sync (lastSyncedAt = 0). */
+/** Epoch ISO used for incremental pulls (lastSyncedAt > 0). */
 function pullThreshold(lastSyncedAt: number): string {
   return lastSyncedAt === 0 ? '1970-01-01T00:00:00.000Z' : toISO(lastSyncedAt)
+}
+
+/**
+ * First sync (lastSyncedAt === 0) must not filter by timestamp — rows with NULL
+ * `updated_at` / edge timestamps would be skipped; PostgREST `gt` excludes NULLs.
+ */
+function withPullTimeFilter<
+  T extends {
+    gt: (column: string, value: string) => T
+  },
+>(query: T, column: 'updated_at' | 'created_at', lastSyncedAt: number): T {
+  if (lastSyncedAt === 0) return query
+  return query.gt(column, pullThreshold(lastSyncedAt))
 }
 
 // ---------------------------------------------------------------------------
@@ -131,14 +153,25 @@ async function syncProducts(
     }
 
     // ---- PULL ----
-    const { data: remoteRecords, error: pullError } = await supabase
-      .from('products')
-      .select('*')
-      .eq('business_id', businessId)
-      .gt('updated_at', pullThreshold(lastSyncedAt))
-      .order('updated_at', { ascending: true })
+    const productsPull = withPullTimeFilter(
+      supabase.from('products').select('*').eq('business_id', businessId),
+      'updated_at',
+      lastSyncedAt,
+    )
+    const { data: remoteRecords, error: pullError } = await productsPull.order(
+      'updated_at',
+      { ascending: true },
+    )
 
-    if (!pullError && remoteRecords && remoteRecords.length > 0) {
+    if (pullError) {
+      return {
+        pushed,
+        pulled,
+        error: `products pull: ${pullError.message}`,
+      }
+    }
+
+    if (remoteRecords && remoteRecords.length > 0) {
       const ops: ReturnType<Product['prepareUpdate']>[] = []
 
       for (const remote of remoteRecords) {
@@ -263,14 +296,25 @@ async function syncCustomers(
     }
 
     // ---- PULL ----
-    const { data: remoteRecords, error: pullError } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('business_id', businessId)
-      .gt('updated_at', pullThreshold(lastSyncedAt))
-      .order('updated_at', { ascending: true })
+    const customersPull = withPullTimeFilter(
+      supabase.from('customers').select('*').eq('business_id', businessId),
+      'updated_at',
+      lastSyncedAt,
+    )
+    const { data: remoteRecords, error: pullError } = await customersPull.order(
+      'updated_at',
+      { ascending: true },
+    )
 
-    if (!pullError && remoteRecords && remoteRecords.length > 0) {
+    if (pullError) {
+      return {
+        pushed,
+        pulled,
+        error: `customers pull: ${pullError.message}`,
+      }
+    }
+
+    if (remoteRecords && remoteRecords.length > 0) {
       const ops: ReturnType<Customer['prepareUpdate']>[] = []
 
       for (const remote of remoteRecords) {
@@ -398,14 +442,24 @@ async function syncSales(
     }
 
     // ---- PULL new remote sales ----
-    const { data: remoteSales, error: pullError } = await supabase
-      .from('sales')
-      .select('*')
-      .eq('business_id', businessId)
-      .gt('created_at', pullThreshold(lastSyncedAt))
-      .order('created_at', { ascending: true })
+    const salesPull = withPullTimeFilter(
+      supabase.from('sales').select('*').eq('business_id', businessId),
+      'created_at',
+      lastSyncedAt,
+    )
+    const { data: remoteSales, error: pullError } = await salesPull.order('created_at', {
+      ascending: true,
+    })
 
-    if (!pullError && remoteSales && remoteSales.length > 0) {
+    if (pullError) {
+      return {
+        pushed,
+        pulled,
+        error: `sales pull: ${pullError.message}`,
+      }
+    }
+
+    if (remoteSales && remoteSales.length > 0) {
       for (const remoteSale of remoteSales) {
         try {
           await database.get<Sale>('sales').find(remoteSale.id)
@@ -506,14 +560,25 @@ async function syncStockMovements(
     }
 
     // ---- PULL new remote movements ----
-    const { data: remoteMovements, error: pullError } = await supabase
-      .from('stock_movements')
-      .select('*')
-      .eq('business_id', businessId)
-      .gt('created_at', pullThreshold(lastSyncedAt))
-      .order('created_at', { ascending: true })
+    const movementsPull = withPullTimeFilter(
+      supabase.from('stock_movements').select('*').eq('business_id', businessId),
+      'created_at',
+      lastSyncedAt,
+    )
+    const { data: remoteMovements, error: pullError } = await movementsPull.order(
+      'created_at',
+      { ascending: true },
+    )
 
-    if (!pullError && remoteMovements && remoteMovements.length > 0) {
+    if (pullError) {
+      return {
+        pushed,
+        pulled,
+        error: `stock_movements pull: ${pullError.message}`,
+      }
+    }
+
+    if (remoteMovements && remoteMovements.length > 0) {
       const ops: ReturnType<StockMovement['prepareUpdate']>[] = []
 
       for (const remote of remoteMovements) {
@@ -631,14 +696,25 @@ async function syncCreditSales(
 
     // ---- PULL ----
     // Pull by sale_ids that belong to this business (credit_sales have no business_id)
-    const { data: remoteCreditSales, error: pullError } = await supabase
-      .from('credit_sales')
-      .select('*')
-      .in('sale_id', businessSaleIds)
-      .gt('updated_at', pullThreshold(lastSyncedAt))
-      .order('updated_at', { ascending: true })
+    const creditPull = withPullTimeFilter(
+      supabase.from('credit_sales').select('*').in('sale_id', businessSaleIds),
+      'updated_at',
+      lastSyncedAt,
+    )
+    const { data: remoteCreditSales, error: pullError } = await creditPull.order(
+      'updated_at',
+      { ascending: true },
+    )
 
-    if (!pullError && remoteCreditSales && remoteCreditSales.length > 0) {
+    if (pullError) {
+      return {
+        pushed,
+        pulled,
+        error: `credit_sales pull: ${pullError.message}`,
+      }
+    }
+
+    if (remoteCreditSales && remoteCreditSales.length > 0) {
       const ops: ReturnType<CreditSale['prepareUpdate']>[] = []
 
       for (const remote of remoteCreditSales) {
@@ -765,14 +841,24 @@ async function syncPaymentRecords(
 
     // ---- PULL ----
     // Pull any payment records created on another device since last sync.
-    const { data: remoteRecords, error: pullError } = await supabase
-      .from('payment_records')
-      .select('*')
-      .in('customer_id', customerIds)
-      .gt('created_at', pullThreshold(lastSyncedAt))
-      .order('created_at', { ascending: true })
+    const paymentsPull = withPullTimeFilter(
+      supabase.from('payment_records').select('*').in('customer_id', customerIds),
+      'created_at',
+      lastSyncedAt,
+    )
+    const { data: remoteRecords, error: pullError } = await paymentsPull.order('created_at', {
+      ascending: true,
+    })
 
-    if (!pullError && remoteRecords && remoteRecords.length > 0) {
+    if (pullError) {
+      return {
+        pushed,
+        pulled,
+        error: `payment_records pull: ${pullError.message}`,
+      }
+    }
+
+    if (remoteRecords && remoteRecords.length > 0) {
       const ops: ReturnType<PaymentRecord['prepareUpdate']>[] = []
 
       for (const remote of remoteRecords) {
@@ -834,24 +920,26 @@ export async function syncAll(businessId: string): Promise<SyncResult> {
   let totalPushed = 0
   let totalPulled = 0
 
-  const results = await Promise.allSettled([
-    syncProducts(businessId, lastSyncedAt),
-    syncCustomers(businessId, lastSyncedAt),
-    syncSales(businessId, lastSyncedAt),
-    syncStockMovements(businessId, lastSyncedAt),
-    syncCreditSales(businessId, lastSyncedAt),
-    syncPaymentRecords(businessId, lastSyncedAt),
-  ])
+  // Order matters: credit_sales and payment_records pull from local sales/customers.
+  // When these ran in parallel with products/customers/sales, they often saw empty
+  // local tables and skipped remote pulls entirely.
+  const steps: Array<() => Promise<TableResult>> = [
+    () => syncProducts(businessId, lastSyncedAt),
+    () => syncCustomers(businessId, lastSyncedAt),
+    () => syncSales(businessId, lastSyncedAt),
+    () => syncStockMovements(businessId, lastSyncedAt),
+    () => syncCreditSales(businessId, lastSyncedAt),
+    () => syncPaymentRecords(businessId, lastSyncedAt),
+  ]
 
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      totalPushed += result.value.pushed
-      totalPulled += result.value.pulled
-      if (result.value.error) {
-        errors.push(result.value.error)
-      }
-    } else {
-      errors.push(result.reason instanceof Error ? result.reason.message : String(result.reason))
+  for (const step of steps) {
+    try {
+      const result = await step()
+      totalPushed += result.pushed
+      totalPulled += result.pulled
+      if (result.error) errors.push(result.error)
+    } catch (reason) {
+      errors.push(reason instanceof Error ? reason.message : String(reason))
     }
   }
 
