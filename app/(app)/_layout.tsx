@@ -1,16 +1,20 @@
 import { useCallback, useEffect } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { Alert, StyleSheet, View } from 'react-native'
 import { Tabs, router, type Href } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { Text } from 'react-native'
 import * as Notifications from 'expo-notifications'
 
 import { BrandLogo } from '../../src/components/layout'
+import { StaffModeBanner } from '../../src/components/layout/StaffModeBanner'
 import { useAuthStore } from '../../src/stores/authStore'
 import { useAutoSync } from '../../src/hooks/useAutoSync'
+import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
 import { setupNotificationHandlers } from '../../src/lib/notifications'
 import { useNotificationBanner } from '../../src/hooks/useNotificationBanner'
 import { NotificationBanner } from '../../src/components/ui/NotificationBanner'
+import { clearShopkeeperSession as clearStoredShopkeeperSession } from '../../src/lib/shopkeeperAuth'
+import { logActivity } from '../../src/lib/activityLogger'
 
 const ACTIVE_COLOR = '#0047AB'
 const INACTIVE_COLOR = '#718096'
@@ -36,9 +40,24 @@ const ReportsIcon = ({ focused, color, size }: TabIconProps) => (
 const CustomersIcon = ({ focused, color, size }: TabIconProps) => (
   <Ionicons name={focused ? 'people' : 'people-outline'} size={size} color={color} />
 )
-const SettingsIcon = ({ focused, color, size }: TabIconProps) => (
-  <Ionicons name={focused ? 'settings' : 'settings-outline'} size={size} color={color} />
+const SettingsIcon = ({ focused, color, size, badgeCount = 0 }: TabIconProps & { badgeCount?: number }) => (
+  <View>
+    <Ionicons name={focused ? 'settings' : 'settings-outline'} size={size} color={color} />
+    {badgeCount > 0 ? <View style={tabBadgeStyles.dot} /> : null}
+  </View>
 )
+
+const tabBadgeStyles = StyleSheet.create({
+  dot: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#C0152A',
+  },
+})
 
 // ─── Stable header title for Dashboard ───────────────────────────────────────
 const DashboardHeaderTitle = () => (
@@ -98,12 +117,6 @@ const CUSTOMERS_OPTIONS = {
   tabBarIcon: CustomersIcon,
 } as const
 
-const SETTINGS_OPTIONS = {
-  title: 'Settings',
-  headerShown: false,
-  tabBarIcon: SettingsIcon,
-} as const
-
 // ─── Tab-press listener: always navigate to the root of the tab ──────────────
 function tabToRoot(href: Href) {
   return {
@@ -130,12 +143,19 @@ export default function AppLayout() {
   const isLoadingAuth = useAuthStore((s) => s.isLoading)
   const user = useAuthStore((s) => s.user)
   const business = useAuthStore((s) => s.business)
+  const activeRole = useAuthStore((s) => s.activeRole)
+  const shopkeeperSession = useAuthStore((s) => s.shopkeeperSession)
+  const clearShopkeeperSession = useAuthStore((s) => s.clearShopkeeperSession)
+  const isShopkeeper = activeRole === 'shopkeeper'
+  const { pendingRequests } = usePendingApprovals(
+    activeRole === 'owner' ? business?.id ?? '' : '',
+  )
 
   /** Accounts that verified phone but never finished `createBusinessProfile` (e.g. older builds). */
   useEffect(() => {
-    if (isLoadingAuth || !user || business != null) return
+    if (isShopkeeper || isLoadingAuth || !user || business != null) return
     router.replace('/(auth)/register?resume=1')
-  }, [isLoadingAuth, user, business])
+  }, [business, isLoadingAuth, isShopkeeper, user])
 
   const { bannerProps, showBanner, hideBanner } = useNotificationBanner()
 
@@ -169,8 +189,39 @@ export default function AppLayout() {
     }
   }, [hideBanner, bannerProps.productId])
 
+  const handleShopkeeperSignOut = useCallback(() => {
+    Alert.alert('Sign out?', 'Return to the login screen?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          await logActivity({ action: 'account_logout', entityType: 'account' })
+          await clearStoredShopkeeperSession()
+          clearShopkeeperSession()
+          router.replace('/(auth)/login')
+        },
+      },
+    ])
+  }, [clearShopkeeperSession])
+
+  const settingsOptions = {
+    title: 'Settings',
+    headerShown: false,
+    tabBarIcon: (props: TabIconProps) => (
+      <SettingsIcon {...props} badgeCount={pendingRequests.length} />
+    ),
+  } as const
+
   return (
     <View style={rootStyle}>
+      {isShopkeeper ? (
+        <StaffModeBanner
+          shopkeeperName={shopkeeperSession?.shopkeeper.fullName ?? ''}
+          onSignOut={handleShopkeeperSignOut}
+        />
+      ) : null}
+
       <NotificationBanner
         {...bannerProps}
         onPress={handleBannerPress}
@@ -193,11 +244,13 @@ export default function AppLayout() {
           listeners={LISTENERS.inventory}
           options={INVENTORY_OPTIONS}
         />
-        <Tabs.Screen
-          name="reports"
-          listeners={LISTENERS.reports}
-          options={REPORTS_OPTIONS}
-        />
+        {!isShopkeeper ? (
+          <Tabs.Screen
+            name="reports"
+            listeners={LISTENERS.reports}
+            options={REPORTS_OPTIONS}
+          />
+        ) : null}
         <Tabs.Screen
           name="customers"
           listeners={LISTENERS.customers}
@@ -206,7 +259,7 @@ export default function AppLayout() {
         <Tabs.Screen
           name="settings"
           listeners={LISTENERS.settings}
-          options={SETTINGS_OPTIONS}
+          options={settingsOptions}
         />
       </Tabs>
     </View>

@@ -12,6 +12,7 @@ interface InputProps {
   placeholder?: string
   value: string
   onChangeText: (text: string) => void
+  onBlur?: () => void
   error?: string
   hint?: string
   secureTextEntry?: boolean
@@ -31,6 +32,7 @@ export function Input({
   placeholder,
   value,
   onChangeText,
+  onBlur,
   error,
   hint,
   secureTextEntry,
@@ -43,8 +45,7 @@ export function Input({
   multiline = false,
   numberOfLines,
   maxLength,
-}: InputProps) {
-  const [isFocused, setIsFocused] = useState(false)
+}: InputProps) {  const [isFocused, setIsFocused] = useState(false)
 
   const borderColor = error
     ? '#E53E3E'
@@ -77,7 +78,7 @@ export function Input({
           numberOfLines={numberOfLines}
           maxLength={maxLength}
           onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          onBlur={() => { setIsFocused(false); onBlur?.() }}
           style={[
             styles.input,
             leftIcon != null && styles.inputWithLeftIcon,

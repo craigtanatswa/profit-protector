@@ -5,6 +5,7 @@ export interface Business {
   phone: string
   businessType: string
   currency: string
+  publicId?: string
   /** ZiG per $1 USD; amounts in DB are USD cents */
   zigRatePerUsd?: number
   supabaseId?: string
@@ -95,6 +96,89 @@ export type PaymentMethod = 'cash_usd' | 'cash_zig' | 'ecocash' | 'bank_transfer
 export type StockAction = 'sale' | 'purchase' | 'adjustment'
 
 export type AdjustmentReason = 'damaged' | 'theft' | 'expired' | 'correction'
+
+export type UserRole = 'owner' | 'shopkeeper'
+
+export interface Shopkeeper {
+  id: string
+  businessId: string
+  supabaseId: string
+  username: string
+  fullName: string
+  phone?: string
+  isActive: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ShopkeeperSession {
+  shopkeeper: Shopkeeper
+  businessId: string
+  businessName: string
+  deviceId: string
+  isApproved: boolean
+  sessionToken: string
+}
+
+export type ActivityAction =
+  | 'sale_completed'
+  | 'sale_voided'
+  | 'product_added'
+  | 'product_edited'
+  | 'product_deactivated'
+  | 'stock_received'
+  | 'stock_adjusted'
+  | 'customer_added'
+  | 'customer_edited'
+  | 'payment_recorded'
+  | 'shopkeeper_added'
+  | 'shopkeeper_deactivated'
+  | 'shopkeeper_password_changed'
+  | 'device_approved'
+  | 'device_denied'
+  | 'business_profile_updated'
+  | 'password_changed'
+  | 'data_exported'
+  | 'data_synced'
+  | 'account_login_owner'
+  | 'account_login_shopkeeper'
+  | 'account_logout'
+
+export type EntityType =
+  | 'sale'
+  | 'product'
+  | 'customer'
+  | 'shopkeeper'
+  | 'business'
+  | 'report'
+  | 'account'
+  | 'stock_movement'
+  | 'device'
+
+export interface ActivityLog {
+  id: string
+  businessId: string
+  actorId: string
+  actorName: string
+  actorRole: UserRole
+  action: ActivityAction
+  entityType: EntityType
+  entityId?: string
+  entityName?: string
+  details?: Record<string, unknown>
+  createdAt: number
+}
+
+export interface DeviceApprovalRequest {
+  id: string
+  shopkeeperId: string
+  businessId: string
+  shopkeeperName: string
+  deviceId: string
+  deviceName: string
+  status: 'pending' | 'approved' | 'denied'
+  requestedAt: string
+}
 
 export interface CartItem {
   productId: string

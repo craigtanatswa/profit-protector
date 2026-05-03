@@ -4,7 +4,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { router, Stack, useLocalSearchParams } from 'expo-router'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import {
   ActivityIndicator,
@@ -29,31 +29,44 @@ import { useAuthStore } from '../../../src/stores/authStore'
 import { getProductById } from '../../../src/hooks/useProducts'
 import { sendLowStockNotification } from '../../../src/lib/notifications'
 import type { AdjustmentReason, Product } from '../../../src/types'
+import { supabase } from '../../../src/lib/supabase'
+import { logActivity } from '../../../src/lib/activityLogger'
+import { wmRaw } from '../../../src/lib/watermelonRaw'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type AdjustmentDirection = 'remove' | 'add'
 
-// ─── Schema ───────────────────────────────────────────────────────────────────
+function buildAdjustmentSchema(isShopkeeper: boolean) {
+  return z
+    .object({
+      productId: z.string().min(1, 'Please select a product'),
+      reason: z.enum(['damaged', 'theft', 'expired', 'correction'], {
+        message: 'Please select a reason',
+      }),
+      direction: z.enum(['remove', 'add']),
+      qty: z
+        .string()
+        .min(1, 'Quantity is required')
+        .refine(
+          (v) => !isNaN(parseInt(v, 10)) && parseInt(v, 10) > 0,
+          'Quantity must be greater than 0',
+        ),
+      description: z.string().max(150).optional(),
+      adjustmentDate: z.number(),
+    })
+    .superRefine((data, ctx) => {
+      if (isShopkeeper && data.reason === 'correction') {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Correction adjustments are only available to the business owner.',
+          path: ['reason'],
+        })
+      }
+    })
+}
 
-const adjustmentSchema = z.object({
-  productId: z.string().min(1, 'Please select a product'),
-  reason: z.enum(['damaged', 'theft', 'expired', 'correction'], {
-    required_error: 'Please select a reason',
-  }),
-  direction: z.enum(['remove', 'add']).default('remove'),
-  qty: z
-    .string()
-    .min(1, 'Quantity is required')
-    .refine(
-      (v) => !isNaN(parseInt(v, 10)) && parseInt(v, 10) > 0,
-      'Quantity must be greater than 0',
-    ),
-  description: z.string().max(150).optional(),
-  adjustmentDate: z.number(),
-})
-
-type AdjustmentFormValues = z.infer<typeof adjustmentSchema>
+type AdjustmentFormValues = z.infer<ReturnType<typeof buildAdjustmentSchema>>
 
 // ─── Reason config ────────────────────────────────────────────────────────────
 
@@ -141,6 +154,14 @@ export default function AdjustStockScreen() {
   }>()
 
   const business = useAuthStore((s) => s.business)
+  const activeRole = useAuthStore((s) => s.activeRole)
+  const isShopkeeper = activeRole === 'shopkeeper'
+
+  const adjustmentSchema = useMemo(() => buildAdjustmentSchema(isShopkeeper), [isShopkeeper])
+  const reasonChoices = useMemo(
+    () => (isShopkeeper ? REASONS.filter((r) => r !== 'correction') : REASONS),
+    [isShopkeeper],
+  )
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showProductPicker, setShowProductPicker] = useState(false)
@@ -179,15 +200,23 @@ export default function AdjustStockScreen() {
       .catch(() => {})
   }, [routeProductId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Pre-select reason from route param
+  // Pre-select reason from route param (shopkeepers cannot use correction)
   useEffect(() => {
-    const valid: AdjustmentReason[] = ['damaged', 'theft', 'expired', 'correction']
+    const validAll: AdjustmentReason[] = ['damaged', 'theft', 'expired', 'correction']
+    const valid = isShopkeeper ? validAll.filter((r) => r !== 'correction') : validAll
     if (routeReason && valid.includes(routeReason as AdjustmentReason)) {
       const r = routeReason as AdjustmentReason
       setSelectedReason(r)
       setValue('reason', r)
     }
-  }, [routeReason]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routeReason, isShopkeeper, setValue])
+
+  // Owner-only correction — clear invalid selection if session role changes
+  useEffect(() => {
+    if (!isShopkeeper || selectedReason !== 'correction') return
+    setSelectedReason(null)
+    setValue('reason', 'damaged')
+  }, [isShopkeeper, selectedReason, setValue])
 
   // ── Derived values ──────────────────────────────────────────────────────────
 
@@ -278,7 +307,7 @@ export default function AdjustStockScreen() {
       await database.write(async () => {
         await productRecord.update((p) => {
           p.stockQty = newStockQty
-          p._raw.updated_at = Date.now()
+          wmRaw(p).updated_at = Date.now()
         })
 
         await database!
@@ -291,37 +320,46 @@ export default function AdjustStockScreen() {
             m.qtyChange = qtyChange
             m.reason = reasonString
             m.supplier = ''
-            m._raw.created_at = values.adjustmentDate || Date.now()
+            wmRaw(m).created_at = values.adjustmentDate || Date.now()
           })
       })
 
-      // Fire-and-forget Supabase sync
-      supabase
-        .from('products')
-        .update({
-          stock_qty: newStockQty,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', values.productId)
-        .then(({ error }) => {
-          if (error) console.warn('Product sync failed:', error.message)
-        })
+      await logActivity({
+        action: 'stock_adjusted',
+        entityType: 'stock_movement',
+        entityId: selectedProduct.id,
+        entityName: selectedProduct.name,
+        details: { qtyChange, reason: reasonString },
+      })
 
-      supabase
-        .from('stock_movements')
-        .insert({
-          business_id: business.id,
-          product_id: selectedProduct.id,
-          product_name_snapshot: selectedProduct.name,
-          action: 'adjustment',
-          qty_change: qtyChange,
-          reason: reasonString,
-          supplier: '',
-          created_at: new Date(values.adjustmentDate || Date.now()).toISOString(),
-        })
-        .then(({ error }) => {
-          if (error) console.warn('Stock movement sync failed:', error.message)
-        })
+      if (activeRole === 'owner') {
+        supabase
+          .from('products')
+          .update({
+            stock_qty: newStockQty,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', values.productId)
+          .then(({ error }) => {
+            if (error) console.warn('Product sync failed:', error.message)
+          })
+
+        supabase
+          .from('stock_movements')
+          .insert({
+            business_id: business.id,
+            product_id: selectedProduct.id,
+            product_name_snapshot: selectedProduct.name,
+            action: 'adjustment',
+            qty_change: qtyChange,
+            reason: reasonString,
+            supplier: '',
+            created_at: new Date(values.adjustmentDate || Date.now()).toISOString(),
+          })
+          .then(({ error }) => {
+            if (error) console.warn('Stock movement sync failed:', error.message)
+          })
+      }
 
       // Fire-and-forget low stock notification for removals
       if (isRemoving && newStockQty <= selectedProduct.lowStockThreshold) {
@@ -336,7 +374,8 @@ export default function AdjustStockScreen() {
 
       const unit = selectedProduct.unit
       const productName = selectedProduct.name
-      const reasonLabel = REASON_CONFIG[values.reason]?.label ?? values.reason
+      const reasonLabel =
+        REASON_CONFIG[values.reason as AdjustmentReason]?.label ?? values.reason
 
       const successMessage = isRemoving
         ? `${qty} ${unit} of ${productName} removed.\nReason: ${reasonLabel}\nNew stock: ${newStockQty} ${unit}`
@@ -420,7 +459,7 @@ export default function AdjustStockScreen() {
             {/* ── Reason Selector ─────────────────────────────────────── */}
             <Text style={styles.sectionLabel}>Reason for Adjustment</Text>
             <View style={styles.reasonGrid}>
-              {REASONS.map((reasonKey) => {
+              {reasonChoices.map((reasonKey) => {
                 const config = REASON_CONFIG[reasonKey]
                 const isSelected = selectedReason === reasonKey
                 return (

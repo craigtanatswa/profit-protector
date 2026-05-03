@@ -34,7 +34,7 @@ export default function WelcomeScreen() {
   }, [anim])
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.scrollInner}>
         <OnboardingProgress total={9} current={0} />
 
@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 40,
+    paddingBottom: 16,
   },
   header: {
     alignItems: 'center',

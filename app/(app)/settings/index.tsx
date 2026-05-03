@@ -34,6 +34,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import * as SecureStore from 'expo-secure-store'
+import * as Clipboard from 'expo-clipboard'
 import { Q } from '@nozbe/watermelondb'
 
 import { Badge, Button, Input, LoadingScreen } from '../../../src/components/ui'
@@ -48,6 +49,8 @@ import { supabase } from '../../../src/lib/supabase'
 import { clearBusinessDataEverywhere, deleteAccountFully } from '../../../src/lib/accountLifecycle'
 import { exportReportCSV } from '../../../src/lib/reportCSV'
 import { syncAll } from '../../../src/lib/sync'
+import { clearShopkeeperSession as clearStoredShopkeeperSession } from '../../../src/lib/shopkeeperAuth'
+import { logActivity } from '../../../src/lib/activityLogger'
 import { formatDateTime, formatMonthYear, maskEmail } from '../../../src/lib/formatters'
 import {
   getBusinessLogoDisplayUri,
@@ -256,6 +259,12 @@ function EditBusinessModal({
 
       // Update store
       setBusiness({ ...business, name: name.trim(), ownerName: ownerName.trim(), businessType })
+      await logActivity({
+        action: 'business_profile_updated',
+        entityType: 'business',
+        entityId: business.id,
+        entityName: name.trim(),
+      })
       onClose()
     } catch (err) {
       Alert.alert('Error', 'Could not save changes. Please try again.')
@@ -544,10 +553,15 @@ function ReceiptSettingsModal({
   const handleSave = async () => {
     setSaving(true)
     try {
-      await SecureStore.setItemAsync(
-        'receipt_settings',
-        JSON.stringify({ businessName: bizName, footer, prefix }),
-      )
+      const payload = JSON.stringify({ businessName: bizName, footer, prefix })
+      if (__DEV__) {
+        const n = new TextEncoder().encode(payload).length
+        console.log(`[SecureStore] receipt_settings ${n} bytes`)
+        if (n > 2000) {
+          console.warn('[SecureStore] receipt_settings exceeds 2KB; split storage if this is expected')
+        }
+      }
+      await SecureStore.setItemAsync('receipt_settings', payload)
       Alert.alert('Saved', 'Receipt settings have been updated.')
       onClose()
     } catch {
@@ -975,14 +989,82 @@ function ClearDataConfirmModal({
 }
 
 // ---------------------------------------------------------------------------
+// Shopkeeper Settings View
+// ---------------------------------------------------------------------------
+
+function ShopkeeperSettingsView() {
+  const router = useRouter()
+  const shopkeeperSession = useAuthStore((s) => s.shopkeeperSession)
+  const clearShopkeeperSession = useAuthStore((s) => s.clearShopkeeperSession)
+
+  const handleSignOut = useCallback(() => {
+    Alert.alert('Sign Out?', 'Return to the login screen?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          await logActivity({ action: 'account_logout', entityType: 'account' })
+          await clearStoredShopkeeperSession()
+          clearShopkeeperSession()
+          router.replace('/(auth)/login')
+        },
+      },
+    ])
+  }, [clearShopkeeperSession, router])
+
+  return (
+    <SafeAreaView style={s.safe} edges={['top']}>
+      <ScreenHeader title="Settings" showBorder />
+      <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
+        <SettingsSection title="My Account">
+          <SettingsRow
+            icon="person-outline"
+            label="Signed in as"
+            value={shopkeeperSession?.shopkeeper.fullName ?? 'Staff'}
+            description={`@${shopkeeperSession?.shopkeeper.username ?? ''}`}
+            showChevron={false}
+          />
+          <SettingsRow
+            icon="business-outline"
+            label="Business"
+            value={shopkeeperSession?.businessName ?? ''}
+            showChevron={false}
+          />
+          <SettingsRow
+            icon="log-out-outline"
+            iconColor="#B45309"
+            iconBackground="#FFF8F0"
+            label="Sign Out"
+            description="Return to the login screen"
+            onPress={handleSignOut}
+          />
+        </SettingsSection>
+        <SettingsSection title="App">
+          <SettingsRow
+            icon="information-circle-outline"
+            iconColor="#5A6A8A"
+            iconBackground="#F4F6FB"
+            label="App Version"
+            value="1.0.0"
+            showChevron={false}
+          />
+        </SettingsSection>
+      </ScrollView>
+    </SafeAreaView>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main Settings Screen
 // ---------------------------------------------------------------------------
 
-export default function SettingsScreen() {
+function SettingsScreen() {
   const router = useRouter()
   const { focus: focusParam } = useLocalSearchParams<{ focus?: string }>()
   const business = useAuthStore((s) => s.business)
   const user = useAuthStore((s) => s.user)
+  const activeRole = useAuthStore((s) => s.activeRole)
   const setBusiness = useAuthStore((s) => s.setBusiness)
   const logout = useAuthStore((s) => s.logout)
   const syncStatus = useAuthStore((s) => s.syncStatus)
@@ -998,6 +1080,7 @@ export default function SettingsScreen() {
   const [addEmailVisible, setAddEmailVisible] = useState(false)
   const [deleteVisible, setDeleteVisible] = useState(false)
   const [clearDataVisible, setClearDataVisible] = useState(false)
+  const [businessIdCopied, setBusinessIdCopied] = useState(false)
 
   const scrollRef = useRef<ScrollView>(null)
   const securitySectionY = useRef(0)
@@ -1140,6 +1223,7 @@ export default function SettingsScreen() {
         endMs: Date.now(),
         businessId: business.id,
       })
+      await logActivity({ action: 'data_exported', entityType: 'report', entityName: 'All data CSV' })
     } catch (err) {
       Alert.alert('Export Failed', (err as Error)?.message ?? 'Could not export data.')
     }
@@ -1155,6 +1239,7 @@ export default function SettingsScreen() {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
+            await logActivity({ action: 'account_logout', entityType: 'account' })
             await supabase.auth.signOut()
             logout()
             router.replace('/(auth)/login')
@@ -1191,6 +1276,18 @@ export default function SettingsScreen() {
   }, [])
 
   const businessInitial = business?.name?.charAt(0)?.toUpperCase() ?? '?'
+  const publicId = business?.publicId ?? (business?.id ? `pp-${business.id.slice(0, 8).toLowerCase()}` : '')
+
+  const copyBusinessId = useCallback(async () => {
+    if (!publicId) return
+    await Clipboard.setStringAsync(publicId)
+    setBusinessIdCopied(true)
+    setTimeout(() => setBusinessIdCopied(false), 2000)
+  }, [publicId])
+
+  if (activeRole === 'shopkeeper') {
+    return <ShopkeeperSettingsView />
+  }
 
   if (isRestoring) {
     return <LoadingScreen message={restoreMessage} />
@@ -1220,6 +1317,14 @@ export default function SettingsScreen() {
           <Text style={s.heroOwner}>{business?.ownerName ?? ''}</Text>
           {business?.phone ? (
             <Text style={s.heroPhone}>{business.phone}</Text>
+          ) : null}
+          {publicId ? (
+            <TouchableOpacity onPress={copyBusinessId} style={s.heroBusinessIdTouch}>
+              <Text style={s.heroBusinessId}>Business ID: {publicId}</Text>
+              <Text style={s.heroBusinessIdHint}>
+                {businessIdCopied ? 'Copied!' : 'Tap to copy'}
+              </Text>
+            </TouchableOpacity>
           ) : null}
           <TouchableOpacity style={s.heroEditBtn} onPress={() => setEditBizVisible(true)}>
             <Text style={s.heroEditBtnText}>Edit Profile</Text>
@@ -1255,6 +1360,21 @@ export default function SettingsScreen() {
             onPress={() => setEditBizVisible(true)}
           />
           <SettingsRow
+            icon="key-outline"
+            iconColor="#0047AB"
+            iconBackground="#E6EEFF"
+            label="Business ID"
+            showChevron={false}
+            rightElement={
+              <View style={s.businessIdRight}>
+                <Text style={s.businessIdText}>{publicId || '—'}</Text>
+                <TouchableOpacity style={s.copyBtn} onPress={copyBusinessId}>
+                  <Text style={s.copyBtnText}>{businessIdCopied ? 'Copied!' : 'Copy'}</Text>
+                </TouchableOpacity>
+              </View>
+            }
+          />
+          <SettingsRow
             icon="cash-outline"
             iconColor="#0A7A4B"
             iconBackground="#EAF3DE"
@@ -1281,7 +1401,28 @@ export default function SettingsScreen() {
           />
         </SettingsSection>
 
-        {/* ── Section 2: Sync & Backup ── */}
+        {/* ── Section 2: Staff & Security ── */}
+        <SettingsSection title="Staff & Security">
+          <SettingsRow
+            icon="people-outline"
+            iconColor="#0047AB"
+            iconBackground="#E6EEFF"
+            label="Manage Staff"
+            description="Add or remove staff accounts"
+            value="Manage"
+            onPress={() => router.push('/(app)/settings/manage-staff')}
+          />
+          <SettingsRow
+            icon="list-outline"
+            iconColor="#5A6A8A"
+            iconBackground="#F4F6FB"
+            label="Activity Log"
+            description="Every action recorded here"
+            onPress={() => router.push('/(app)/settings/activity-log')}
+          />
+        </SettingsSection>
+
+        {/* ── Section 3: Sync & Backup ── */}
         <SettingsSection title="Sync & Backup">
           <SettingsRow
             icon="sync-outline"
@@ -1641,6 +1782,20 @@ const s = StyleSheet.create({
     textAlign: 'center',
     marginTop: 2,
   },
+  heroBusinessIdTouch: {
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  heroBusinessId: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    fontFamily: 'monospace',
+  },
+  heroBusinessIdHint: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 1,
+  },
   heroEditBtn: {
     backgroundColor: 'rgba(255,255,255,0.15)',
     borderWidth: 1,
@@ -1668,5 +1823,30 @@ const s = StyleSheet.create({
   statLabel: { fontSize: 11, color: '#5A6A8A', marginTop: 2, textAlign: 'center' },
   statDivider: { width: 1, height: 36, backgroundColor: '#DDE3F0' },
 
+  businessIdRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  businessIdText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#0047AB',
+    fontFamily: 'monospace',
+  },
+  copyBtn: {
+    backgroundColor: '#E6EEFF',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  copyBtnText: {
+    color: '#0047AB',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
   bottomPad: { height: 20 },
 })
+
+export default SettingsScreen

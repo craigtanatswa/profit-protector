@@ -17,6 +17,7 @@ import { useProductDetail } from '../../../src/hooks/useProductDetail'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { StockMovement } from '../../../src/types'
+import { useAuthStore } from '../../../src/stores/authStore'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -141,6 +142,8 @@ export default function ProductDetailScreen() {
   const { formatMoney } = useMoneyFormat()
   const { id } = useLocalSearchParams<{ id: string }>()
   const productId = Array.isArray(id) ? id[0] : (id ?? '')
+  const activeRole = useAuthStore((s) => s.activeRole)
+  const isShopkeeper = activeRole === 'shopkeeper'
 
   const { product, movements, isLoading, error, refreshFromLocal } =
     useProductDetail(productId)
@@ -324,7 +327,7 @@ export default function ProductDetailScreen() {
       <ScreenHeader
         title={truncateName(name)}
         leftAction={{ icon: 'arrow-back', onPress: () => router.back() }}
-        rightAction={{ icon: 'create-outline', onPress: goToEdit }}
+        rightAction={isShopkeeper ? undefined : { icon: 'create-outline', onPress: goToEdit }}
         showBorder
       />
 
@@ -482,20 +485,21 @@ export default function ProductDetailScreen() {
             </Text>
           </TouchableOpacity>
 
-          {/* Edit Details */}
-          <TouchableOpacity
-            style={[
-              styles.actionCard,
-              { backgroundColor: '#F4F6FB', borderColor: '#DDE3F0' },
-            ]}
-            onPress={goToEdit}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="create" size={24} color="#5A6A8A" />
-            <Text style={[styles.actionCardLabel, { color: '#5A6A8A' }]}>
-              Edit Details
-            </Text>
-          </TouchableOpacity>
+          {!isShopkeeper ? (
+            <TouchableOpacity
+              style={[
+                styles.actionCard,
+                { backgroundColor: '#F4F6FB', borderColor: '#DDE3F0' },
+              ]}
+              onPress={goToEdit}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="create" size={24} color="#5A6A8A" />
+              <Text style={[styles.actionCardLabel, { color: '#5A6A8A' }]}>
+                Edit Details
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {/* ── SECTION 3: Pricing & Margins ─────────────────────────────── */}

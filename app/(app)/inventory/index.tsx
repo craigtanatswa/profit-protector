@@ -29,6 +29,7 @@ import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflin
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
+import { pullShopkeeperProductsIntoLocalDb } from '../../../src/lib/shopkeeperAuth'
 
 // Stable separator — module-level avoids creating a new component every render
 const ItemSeparator = () => <View style={styles.itemSep} />
@@ -47,8 +48,10 @@ function SkeletonCard({ opacity }: { opacity: Animated.Value }) {
 
 export default function InventoryScreen() {
   const { formatMoney } = useMoneyFormat()
-  const { business } = useAuthStore()
+  const { activeRole, business } = useAuthStore()
+  const shopkeeperSession = useAuthStore((s) => s.shopkeeperSession)
   const businessId = business?.id ?? ''
+  const isShopkeeper = activeRole === 'shopkeeper'
 
   const { products, isLoading, refetch } = useProducts(businessId)
 
@@ -149,15 +152,23 @@ export default function InventoryScreen() {
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setIsRefreshing(true)
+    try {
+      if (isShopkeeper && shopkeeperSession?.sessionToken) {
+        await pullShopkeeperProductsIntoLocalDb(shopkeeperSession.sessionToken)
+      }
+    } catch {
+      /* pull logs internally */
+    }
     refetch()
     setTimeout(() => setIsRefreshing(false), 600)
-  }, [refetch])
+  }, [refetch, isShopkeeper, shopkeeperSession?.sessionToken])
 
   const navigateToAdd = useCallback(() => {
+    if (isShopkeeper) return
     router.push('/inventory/add' as never)
-  }, [])
+  }, [isShopkeeper])
 
   const navigateToPurchase = useCallback(() => {
     router.push('/inventory/purchase' as never)
@@ -201,11 +212,11 @@ export default function InventoryScreen() {
         icon="cube-outline"
         title="No products yet"
         subtitle="Add your first product to start tracking stock and recording sales"
-        actionLabel="Add Product"
-        onAction={navigateToAdd}
+        actionLabel={isShopkeeper ? undefined : 'Add Product'}
+        onAction={isShopkeeper ? undefined : navigateToAdd}
       />
     )
-  }, [searchText, selectedCategory, navigateToAdd])
+  }, [isShopkeeper, searchText, selectedCategory, navigateToAdd])
 
   // ---------------------------------------------------------------------------
   // Render
@@ -358,14 +369,15 @@ export default function InventoryScreen() {
         />
       )}
 
-      {/* Floating Action Button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={navigateToAdd}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="add" size={28} color="#FFFFFF" />
-      </TouchableOpacity>
+      {!isShopkeeper ? (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={navigateToAdd}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add" size={28} color="#FFFFFF" />
+        </TouchableOpacity>
+      ) : null}
 
       {/* Sort Modal */}
       <SortModal

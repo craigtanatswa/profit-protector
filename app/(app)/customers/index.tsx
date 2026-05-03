@@ -39,6 +39,7 @@ import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import { database } from '../../../src/database'
 import type { Customer } from '../../../src/types'
 import type CustomerModel from '../../../src/database/models/Customer'
+import { logActivity } from '../../../src/lib/activityLogger'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -171,8 +172,15 @@ function AddCustomerModal({
       })
 
       // Fire and forget sync
-      const { triggerSync, business } = useAuthStore.getState()
-      if (business) {
+      await logActivity({
+        action: 'customer_added',
+        entityType: 'customer',
+        entityId: record.id,
+        entityName: name.trim(),
+      })
+
+      const { triggerSync, business, activeRole } = useAuthStore.getState()
+      if (business && activeRole === 'owner') {
         triggerSync(business.id).catch(() => {})
       }
 
@@ -287,6 +295,8 @@ export default function CustomersScreen() {
   const insets = useSafeAreaInsets()
   const { formatMoney } = useMoneyFormat()
   const business = useAuthStore((s) => s.business)
+  const activeRole = useAuthStore((s) => s.activeRole)
+  const isShopkeeper = activeRole === 'shopkeeper'
   const {
     customers,
     isLoading,
@@ -373,8 +383,8 @@ export default function CustomersScreen() {
     // 2) Apply balances to React state (after spinner stops)
     commitLocalMerge()
     // 3) Cloud sync in background (never blocks the refresh control)
-    const { triggerSync, business: biz } = useAuthStore.getState()
-    if (biz) void triggerSync(biz.id).catch(() => {})
+    const { triggerSync, business: biz, activeRole: role } = useAuthStore.getState()
+    if (biz && role === 'owner') void triggerSync(biz.id).catch(() => {})
   }, [refreshLocalFetchOnly, commitLocalMerge])
 
   const handleAddSuccess = useCallback((newId: string) => {
@@ -400,8 +410,8 @@ export default function CustomersScreen() {
             icon="people-outline"
             title="No customers yet"
             subtitle="Add customers to track credit sales and outstanding balances"
-            actionLabel="Add First Customer"
-            onAction={() => setShowAddModal(true)}
+            actionLabel={isShopkeeper ? undefined : 'Add First Customer'}
+            onAction={isShopkeeper ? undefined : () => setShowAddModal(true)}
           />
         </View>
       )
@@ -444,7 +454,7 @@ export default function CustomersScreen() {
     }
 
     return null
-  }, [customers.length, searchText, activeTab, setShowAddModal])
+  }, [activeTab, customers.length, isShopkeeper, searchText, setShowAddModal])
 
   const renderCustomer = useCallback(
     ({ item }: { item: Customer }) => (
@@ -561,14 +571,15 @@ export default function CustomersScreen() {
         windowSize={5}
       />
 
-      {/* FAB */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 24 }]}
-        onPress={() => setShowAddModal(true)}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="person-add" size={24} color="#FFFFFF" />
-      </TouchableOpacity>
+      {!isShopkeeper ? (
+        <TouchableOpacity
+          style={[styles.fab, { bottom: insets.bottom + 24 }]}
+          onPress={() => setShowAddModal(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="person-add" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+      ) : null}
 
       {/* Add Customer Modal */}
       {business && (

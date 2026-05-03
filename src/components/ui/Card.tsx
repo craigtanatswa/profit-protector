@@ -1,11 +1,17 @@
 import React from 'react'
-import { StyleSheet, TouchableOpacity, View, ViewStyle } from 'react-native'
+import {
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native'
 
 type Padding = 'none' | 'sm' | 'md' | 'lg'
 
 interface CardProps {
   children: React.ReactNode
-  style?: ViewStyle
+  style?: StyleProp<ViewStyle>
   onPress?: () => void
   padding?: Padding
 }

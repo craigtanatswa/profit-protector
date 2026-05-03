@@ -8,6 +8,10 @@ import { useAuthStore } from '../src/stores/authStore'
 import { useOnboardingStore } from '../src/stores/onboardingStore'
 import { LoadingScreen } from '../src/components/ui/LoadingScreen'
 import { requestNotificationPermissions } from '../src/lib/notifications'
+import {
+  clearShopkeeperSession as clearStoredShopkeeperSession,
+  getStoredShopkeeperSession,
+} from '../src/lib/shopkeeperAuth'
 import "../global.css"
 
 // Always clear the stored session on cold start in dev so the login screen
@@ -29,7 +33,16 @@ const ONBOARDING_SCREENS_KEEP_WHEN_AUTHENTICATED = new Set(['convert'])
 function AuthGate() {
   const router = useRouter()
   const segments = useSegments()
-  const { isAuthenticated, isLoading, setUser, initializeAuth } = useAuthStore()
+  const {
+    activeRole,
+    isAuthenticated,
+    isLoading,
+    setActiveRole,
+    setBusiness,
+    setShopkeeperSession,
+    setUser,
+    initializeAuth,
+  } = useAuthStore()
   const hydrated = useOnboardingStore((s) => s.hydrated)
   const hasCompletedOnboarding = useOnboardingStore((s) => s.hasCompletedOnboarding)
   const hydrateOnboarding = useOnboardingStore((s) => s.hydrateFromStorage)
@@ -39,11 +52,33 @@ function AuthGate() {
     const bootstrap = async () => {
       if (clearAuthOnColdStartDev) {
         await supabase.auth.signOut()
-        const { setBusiness } = useAuthStore.getState()
         setBusiness(null)
         setUser(null)
       }
       await initializeAuth()
+      const { isAuthenticated: ownerAuthenticated } = useAuthStore.getState()
+      if (ownerAuthenticated) {
+        await clearStoredShopkeeperSession()
+        setActiveRole('owner')
+        setShopkeeperSession(null)
+      } else {
+        const staffSession = await getStoredShopkeeperSession()
+        if (staffSession) {
+          setUser(null)
+          setBusiness({
+            id: staffSession.businessId,
+            name: staffSession.businessName,
+            ownerName: staffSession.shopkeeper.fullName,
+            phone: '',
+            businessType: '',
+            currency: 'USD',
+            zigRatePerUsd: 1,
+            recoveryEmailVerified: false,
+          })
+          setActiveRole('shopkeeper')
+          setShopkeeperSession(staffSession)
+        }
+      }
       await hydrateOnboarding()
     }
     void bootstrap()
@@ -55,27 +90,41 @@ function AuthGate() {
     )
 
     return () => subscription.unsubscribe()
-  }, [initializeAuth, setUser, hydrateOnboarding])
+  }, [
+    hydrateOnboarding,
+    initializeAuth,
+    setActiveRole,
+    setBusiness,
+    setShopkeeperSession,
+    setUser,
+  ])
 
   useEffect(() => {
     if (isLoading || !hydrated) return
 
-    const first = segments[0]
+    const segmentList = segments as readonly string[]
+    const first = segmentList[0]
     const inOnboarding = first === '(onboarding)'
     const inAuth = first === '(auth)'
     const authLeaf =
-      typeof segments[1] === 'string' ? (segments[1] as string) : undefined
+      typeof segmentList[1] === 'string' ? segmentList[1] : undefined
     const keepAuthShell =
       inAuth &&
       authLeaf != null &&
       AUTH_SCREENS_KEEP_WHEN_AUTHENTICATED.has(authLeaf)
 
     const onboardingLeaf =
-      typeof segments[1] === 'string' ? (segments[1] as string) : undefined
+      typeof segmentList[1] === 'string' ? segmentList[1] : undefined
     const keepOnboardingShell =
       inOnboarding &&
       onboardingLeaf != null &&
       ONBOARDING_SCREENS_KEEP_WHEN_AUTHENTICATED.has(onboardingLeaf)
+
+    if (activeRole === 'shopkeeper') {
+      if (!inOnboarding && !inAuth) return
+      router.replace('/(app)')
+      return
+    }
 
     if (isAuthenticated) {
       if (!hasCompletedOnboarding) {
@@ -102,6 +151,7 @@ function AuthGate() {
     }
   }, [
     isAuthenticated,
+    activeRole,
     isLoading,
     hydrated,
     hasCompletedOnboarding,

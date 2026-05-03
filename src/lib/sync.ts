@@ -9,6 +9,8 @@ import type SaleItem from '../database/models/SaleItem'
 import type StockMovement from '../database/models/StockMovement'
 import type CreditSale from '../database/models/CreditSale'
 import type PaymentRecord from '../database/models/PaymentRecord'
+import type ActivityLog from '../database/models/ActivityLog'
+import { wmRaw } from './watermelonRaw'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,6 +72,85 @@ function toISO(ms: number): string {
   return new Date(ms === 0 ? 0 : ms).toISOString()
 }
 
+/** Row shape from Supabase `products` (owner sync pull + shopkeeper edge pull). */
+export type SupabaseProductRow = {
+  id: string
+  business_id: string
+  name: string
+  category: string | null
+  unit: string
+  cost_price_cents: number
+  selling_price_cents: number
+  stock_qty: number
+  low_stock_threshold: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Merge remote product rows into WatermelonDB (create/update by id).
+ * Used by owner incremental sync and shopkeeper `pull_products`.
+ */
+export async function mergeRemoteProductsIntoWatermelon(
+  remoteRecords: SupabaseProductRow[],
+): Promise<number> {
+  if (!database || remoteRecords.length === 0) return 0
+
+  const ops: ReturnType<Product['prepareUpdate']>[] = []
+
+  for (const remote of remoteRecords) {
+    const remoteMs = new Date(remote.updated_at).getTime()
+
+    try {
+      const existing = await database.get<Product>('products').find(remote.id)
+      const localMs = wmRaw(existing).updated_at as number
+
+      if (remoteMs > localMs) {
+        ops.push(
+          existing.prepareUpdate((r) => {
+            r.name = remote.name
+            r.category = remote.category
+            r.unit = remote.unit
+            r.costPriceCents = remote.cost_price_cents
+            r.sellingPriceCents = remote.selling_price_cents
+            r.stockQty = remote.stock_qty
+            r.lowStockThreshold = remote.low_stock_threshold
+            r.isActive = remote.is_active
+            r.supabaseId = remote.id
+            wmRaw(r).updated_at = remoteMs
+          }),
+        )
+      }
+    } catch {
+      ops.push(
+        database.get<Product>('products').prepareCreate((r) => {
+          r._raw.id = remote.id
+          r.businessId = remote.business_id
+          r.name = remote.name
+          r.category = remote.category
+          r.unit = remote.unit
+          r.costPriceCents = remote.cost_price_cents
+          r.sellingPriceCents = remote.selling_price_cents
+          r.stockQty = remote.stock_qty
+          r.lowStockThreshold = remote.low_stock_threshold
+          r.isActive = remote.is_active
+          r.supabaseId = remote.id
+          wmRaw(r).created_at = new Date(remote.created_at).getTime()
+          wmRaw(r).updated_at = remoteMs
+        }) as ReturnType<Product['prepareUpdate']>,
+      )
+    }
+  }
+
+  if (ops.length === 0) return 0
+
+  await database.write(async () => {
+    await database!.batch(...ops)
+  })
+  return ops.length
+}
+
 /** Epoch ISO used for incremental pulls (lastSyncedAt > 0). */
 function pullThreshold(lastSyncedAt: number): string {
   return lastSyncedAt === 0 ? '1970-01-01T00:00:00.000Z' : toISO(lastSyncedAt)
@@ -126,8 +207,8 @@ async function syncProducts(
         stock_qty: r.stockQty,
         low_stock_threshold: r.lowStockThreshold,
         is_active: r.isActive,
-        created_at: toISO(r._raw.created_at as number),
-        updated_at: toISO(r._raw.updated_at as number),
+        created_at: toISO(wmRaw(r).created_at as number),
+        updated_at: toISO(wmRaw(r).updated_at as number),
       }))
 
       const { error: pushError } = await supabase
@@ -172,59 +253,9 @@ async function syncProducts(
     }
 
     if (remoteRecords && remoteRecords.length > 0) {
-      const ops: ReturnType<Product['prepareUpdate']>[] = []
-
-      for (const remote of remoteRecords) {
-        const remoteMs = new Date(remote.updated_at).getTime()
-
-        try {
-          const existing = await database.get<Product>('products').find(remote.id)
-          const localMs = existing._raw.updated_at as number
-
-          if (remoteMs > localMs) {
-            ops.push(
-              existing.prepareUpdate((r) => {
-                r.name = remote.name
-                r.category = remote.category
-                r.unit = remote.unit
-                r.costPriceCents = remote.cost_price_cents
-                r.sellingPriceCents = remote.selling_price_cents
-                r.stockQty = remote.stock_qty
-                r.lowStockThreshold = remote.low_stock_threshold
-                r.isActive = remote.is_active
-                r.supabaseId = remote.id
-                r._raw.updated_at = remoteMs
-              }),
-            )
-          }
-        } catch {
-          // Record not found locally — create it
-          ops.push(
-            database.get<Product>('products').prepareCreate((r) => {
-              r._raw.id = remote.id
-              r.businessId = remote.business_id
-              r.name = remote.name
-              r.category = remote.category
-              r.unit = remote.unit
-              r.costPriceCents = remote.cost_price_cents
-              r.sellingPriceCents = remote.selling_price_cents
-              r.stockQty = remote.stock_qty
-              r.lowStockThreshold = remote.low_stock_threshold
-              r.isActive = remote.is_active
-              r.supabaseId = remote.id
-              r._raw.created_at = new Date(remote.created_at).getTime()
-              r._raw.updated_at = remoteMs
-            }) as ReturnType<Product['prepareUpdate']>,
-          )
-        }
-      }
-
-      if (ops.length > 0) {
-        await database.write(async () => {
-          await database!.batch(...ops)
-        })
-        pulled = ops.length
-      }
+      pulled = await mergeRemoteProductsIntoWatermelon(
+        remoteRecords as SupabaseProductRow[],
+      )
     }
   } catch (e) {
     return {
@@ -270,8 +301,8 @@ async function syncCustomers(
         name: r.name,
         phone: r.phone,
         outstanding_balance_cents: r.outstandingBalanceCents,
-        created_at: toISO(r._raw.created_at as number),
-        updated_at: toISO(r._raw.updated_at as number),
+        created_at: toISO(wmRaw(r).created_at as number),
+        updated_at: toISO(wmRaw(r).updated_at as number),
       }))
 
       const { error: pushError } = await supabase
@@ -324,7 +355,7 @@ async function syncCustomers(
 
         try {
           const existing = await database.get<Customer>('customers').find(remote.id)
-          const localMs = (existing._raw.updated_at as number) || (existing._raw.created_at as number)
+          const localMs = (wmRaw(existing).updated_at as number) || (wmRaw(existing).created_at as number)
 
           if (remoteMs > localMs) {
             ops.push(
@@ -333,7 +364,7 @@ async function syncCustomers(
                 r.phone = remote.phone
                 r.outstandingBalanceCents = remote.outstanding_balance_cents
                 r.supabaseId = remote.id
-                r._raw.updated_at = remoteMs
+                wmRaw(r).updated_at = remoteMs
               }),
             )
           }
@@ -346,8 +377,8 @@ async function syncCustomers(
               r.phone = remote.phone
               r.outstandingBalanceCents = remote.outstanding_balance_cents
               r.supabaseId = remote.id
-              r._raw.created_at = new Date(remote.created_at).getTime()
-              r._raw.updated_at = remoteMs
+              wmRaw(r).created_at = new Date(remote.created_at).getTime()
+              wmRaw(r).updated_at = remoteMs
             }) as ReturnType<Customer['prepareUpdate']>,
           )
         }
@@ -405,7 +436,7 @@ async function syncSales(
         payment_method: sale.paymentMethod,
         receipt_number: sale.receiptNumber,
         note: sale.note,
-        created_at: toISO(sale._raw.created_at as number),
+        created_at: toISO(wmRaw(sale).created_at as number),
       }
 
       const { error: saleError } = await supabase
@@ -481,7 +512,7 @@ async function syncSales(
               s.receiptNumber = remoteSale.receipt_number
               s.note = remoteSale.note
               s.supabaseId = remoteSale.id
-              s._raw.created_at = new Date(remoteSale.created_at).getTime()
+              wmRaw(s).created_at = new Date(remoteSale.created_at).getTime()
             })
 
             const itemOps = (remoteItems || []).map((remoteItem) =>
@@ -547,7 +578,7 @@ async function syncStockMovements(
         qty_change: m.qtyChange,
         reason: m.reason,
         supplier: m.supplier,
-        created_at: toISO(m._raw.created_at as number),
+        created_at: toISO(wmRaw(m).created_at as number),
       }))
 
       const { error: pushError } = await supabase
@@ -598,7 +629,7 @@ async function syncStockMovements(
                 m.qtyChange = remote.qty_change
                 m.reason = remote.reason
                 m.supplier = remote.supplier
-                m._raw.created_at = new Date(remote.created_at).getTime()
+                wmRaw(m).created_at = new Date(remote.created_at).getTime()
               }) as ReturnType<StockMovement['prepareUpdate']>,
           )
         }
@@ -669,8 +700,8 @@ async function syncCreditSales(
         amount_cents: cs.amountCents,
         amount_paid_cents: cs.amountPaidCents,
         is_settled: cs.isSettled,
-        created_at: toISO(cs._raw.created_at as number),
-        updated_at: toISO(cs._raw.updated_at as number),
+        created_at: toISO(wmRaw(cs).created_at as number),
+        updated_at: toISO(wmRaw(cs).updated_at as number),
       }))
 
       const { error: pushError } = await supabase
@@ -725,8 +756,8 @@ async function syncCreditSales(
         try {
           const existing = await database.get<CreditSale>('credit_sales').find(remote.id)
           const localMs =
-            (existing._raw.updated_at as number) ||
-            (existing._raw.created_at as number)
+            (wmRaw(existing).updated_at as number) ||
+            (wmRaw(existing).created_at as number)
 
           if (remoteMs > localMs) {
             ops.push(
@@ -734,7 +765,7 @@ async function syncCreditSales(
                 cs.amountPaidCents = remote.amount_paid_cents
                 cs.isSettled = remote.is_settled
                 cs.supabaseId = remote.id
-                cs._raw.updated_at = remoteMs
+                wmRaw(cs).updated_at = remoteMs
               }),
             )
           }
@@ -748,8 +779,8 @@ async function syncCreditSales(
               cs.amountPaidCents = remote.amount_paid_cents
               cs.isSettled = remote.is_settled
               cs.supabaseId = remote.id
-              cs._raw.created_at = new Date(remote.created_at).getTime()
-              cs._raw.updated_at = remoteMs
+              wmRaw(cs).created_at = new Date(remote.created_at).getTime()
+              wmRaw(cs).updated_at = remoteMs
             }) as ReturnType<CreditSale['prepareUpdate']>,
           )
         }
@@ -818,7 +849,7 @@ async function syncPaymentRecords(
         amount_cents: r.amountCents,
         payment_method: r.paymentMethod,
         notes: r.notes,
-        created_at: toISO(r._raw.created_at as number),
+        created_at: toISO(wmRaw(r).created_at as number),
       }))
 
       const { error: pushError } = await supabase
@@ -876,7 +907,7 @@ async function syncPaymentRecords(
                 r.paymentMethod = remote.payment_method
                 r.notes = remote.notes ?? null
                 r.supabaseId = remote.id
-                r._raw.created_at = new Date(remote.created_at).getTime()
+                wmRaw(r).created_at = new Date(remote.created_at).getTime()
               }) as ReturnType<PaymentRecord['prepareUpdate']>,
           )
         }
@@ -894,6 +925,94 @@ async function syncPaymentRecords(
       pushed,
       pulled,
       error: `payment_records: ${e instanceof Error ? e.message : String(e)}`,
+    }
+  }
+
+  return { pushed, pulled }
+}
+
+// ---------------------------------------------------------------------------
+// Activity Logs sync (immutable)
+// ---------------------------------------------------------------------------
+
+async function syncActivityLogs(
+  businessId: string,
+  lastSyncedAt: number,
+): Promise<TableResult> {
+  if (!database) return { pushed: 0, pulled: 0 }
+  let pushed = 0
+  let pulled = 0
+
+  try {
+    const localRecords = await database
+      .get<ActivityLog>('activity_logs')
+      .query(Q.where('business_id', businessId), Q.where('created_at', Q.gt(lastSyncedAt)))
+      .fetch()
+
+    if (localRecords.length > 0) {
+      const payload = localRecords.map((r) => ({
+        id: r.id,
+        business_id: r.businessId,
+        actor_id: r.actorId,
+        actor_name: r.actorName,
+        actor_role: r.actorRole,
+        action: r.action,
+        entity_type: r.entityType,
+        entity_id: r.entityId || null,
+        entity_name: r.entityName || null,
+        details: r.details ? JSON.parse(r.details) : null,
+        created_at: toISO(wmRaw(r).created_at as number),
+      }))
+
+      const { error } = await supabase.from('activity_logs').upsert(payload, { onConflict: 'id' })
+      if (!error) pushed = localRecords.length
+    }
+
+    const logsPull = withPullTimeFilter(
+      supabase.from('activity_logs').select('*').eq('business_id', businessId),
+      'created_at',
+      lastSyncedAt,
+    )
+    const { data: remoteRecords, error: pullError } = await logsPull.order('created_at', {
+      ascending: true,
+    })
+    if (pullError) return { pushed, pulled, error: `activity_logs pull: ${pullError.message}` }
+
+    if (remoteRecords && remoteRecords.length > 0) {
+      const ops: ReturnType<ActivityLog['prepareUpdate']>[] = []
+      for (const remote of remoteRecords) {
+        try {
+          await database.get<ActivityLog>('activity_logs').find(remote.id)
+        } catch {
+          ops.push(
+            database.get<ActivityLog>('activity_logs').prepareCreate((r) => {
+              r._raw.id = remote.id
+              r.businessId = remote.business_id
+              r.actorId = remote.actor_id
+              r.actorName = remote.actor_name
+              r.actorRole = remote.actor_role
+              r.action = remote.action
+              r.entityType = remote.entity_type
+              r.entityId = remote.entity_id ?? ''
+              r.entityName = remote.entity_name ?? ''
+              r.details = remote.details ? JSON.stringify(remote.details) : ''
+              wmRaw(r).created_at = new Date(remote.created_at).getTime()
+            }) as ReturnType<ActivityLog['prepareUpdate']>,
+          )
+        }
+      }
+      if (ops.length > 0) {
+        await database.write(async () => {
+          await database!.batch(...ops)
+        })
+        pulled = ops.length
+      }
+    }
+  } catch (e) {
+    return {
+      pushed,
+      pulled,
+      error: `activity_logs: ${e instanceof Error ? e.message : String(e)}`,
     }
   }
 
@@ -930,6 +1049,7 @@ export async function syncAll(businessId: string): Promise<SyncResult> {
     () => syncStockMovements(businessId, lastSyncedAt),
     () => syncCreditSales(businessId, lastSyncedAt),
     () => syncPaymentRecords(businessId, lastSyncedAt),
+    () => syncActivityLogs(businessId, lastSyncedAt),
   ]
 
   for (const step of steps) {
@@ -946,8 +1066,8 @@ export async function syncAll(businessId: string): Promise<SyncResult> {
   const now = Date.now()
   await setLastSyncedAt(businessId, now)
 
-  // Status is 'error' only if ALL tables failed (errors === 6 means all failed)
-  const allFailed = errors.length === 6
+  // Status is 'error' only if ALL tables failed.
+  const allFailed = errors.length === steps.length
   const status: SyncStatus = allFailed ? 'error' : 'success'
 
   return {

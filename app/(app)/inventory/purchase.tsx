@@ -28,6 +28,9 @@ import { formatDate } from '../../../src/lib/formatters'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
 import { getProductById } from '../../../src/hooks/useProducts'
+import { supabase } from '../../../src/lib/supabase'
+import { logActivity } from '../../../src/lib/activityLogger'
+import { wmRaw } from '../../../src/lib/watermelonRaw'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -51,7 +54,7 @@ const purchaseSchema = z.object({
   supplierName: z.string().max(80).optional(),
   referenceNo: z.string().max(40).optional(),
   notes: z.string().max(200).optional(),
-  updateCostPrice: z.boolean().default(false),
+  updateCostPrice: z.boolean(),
 })
 
 type PurchaseFormValues = z.infer<typeof purchaseSchema>
@@ -77,6 +80,7 @@ function formatDisplayDate(date: Date): string {
 export default function PurchaseScreen() {
   const { productId: routeProductId } = useLocalSearchParams<{ productId?: string }>()
   const business = useAuthStore((s) => s.business)
+  const activeRole = useAuthStore((s) => s.activeRole)
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -202,7 +206,7 @@ export default function PurchaseScreen() {
         // Update product stock
         await productRecord.update((p) => {
           p.stockQty = newQty
-          p._raw.updated_at = Date.now()
+          wmRaw(p).updated_at = Date.now()
           if (values.updateCostPrice && costCents !== null) {
             p.costPriceCents = costCents
           }
@@ -217,41 +221,50 @@ export default function PurchaseScreen() {
           m.qtyChange = qty
           m.reason = values.notes ?? ''
           m.supplier = values.supplierName ?? ''
-          m._raw.created_at = values.purchaseDate || Date.now()
+          wmRaw(m).created_at = values.purchaseDate || Date.now()
         })
       })
 
-      // Fire-and-forget Supabase sync
-      const updatePayload: Record<string, unknown> = {
-        stock_qty: newQty,
-        updated_at: new Date().toISOString(),
-      }
-      if (values.updateCostPrice && costCents !== null) {
-        updatePayload.cost_price_cents = costCents
-      }
-      supabase
-        .from('products')
-        .update(updatePayload)
-        .eq('id', values.productId)
-        .then(({ error }) => {
-          if (error) console.warn('Product sync failed:', error.message)
-        })
+      await logActivity({
+        action: 'stock_received',
+        entityType: 'stock_movement',
+        entityId: values.productId,
+        entityName: productRecord.name,
+        details: { qty },
+      })
 
-      supabase
-        .from('stock_movements')
-        .insert({
-          business_id: business.id,
-          product_id: values.productId,
-          product_name_snapshot: productRecord.name,
-          action: 'purchase',
-          qty_change: qty,
-          reason: values.notes ?? '',
-          supplier: values.supplierName ?? '',
-          created_at: new Date(values.purchaseDate || Date.now()).toISOString(),
-        })
-        .then(({ error }) => {
-          if (error) console.warn('Stock movement sync failed:', error.message)
-        })
+      if (activeRole === 'owner') {
+        const updatePayload: Record<string, unknown> = {
+          stock_qty: newQty,
+          updated_at: new Date().toISOString(),
+        }
+        if (values.updateCostPrice && costCents !== null) {
+          updatePayload.cost_price_cents = costCents
+        }
+        supabase
+          .from('products')
+          .update(updatePayload)
+          .eq('id', values.productId)
+          .then(({ error }) => {
+            if (error) console.warn('Product sync failed:', error.message)
+          })
+
+        supabase
+          .from('stock_movements')
+          .insert({
+            business_id: business.id,
+            product_id: values.productId,
+            product_name_snapshot: productRecord.name,
+            action: 'purchase',
+            qty_change: qty,
+            reason: values.notes ?? '',
+            supplier: values.supplierName ?? '',
+            created_at: new Date(values.purchaseDate || Date.now()).toISOString(),
+          })
+          .then(({ error }) => {
+            if (error) console.warn('Stock movement sync failed:', error.message)
+          })
+      }
 
       Alert.alert(
         'Stock Updated',

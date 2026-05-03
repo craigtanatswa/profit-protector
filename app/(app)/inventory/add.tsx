@@ -50,6 +50,7 @@ import { getPersonalisation, normalizeBusinessType } from '../../../src/lib/appP
 import { supabase } from '../../../src/lib/supabase'
 import type ProductModel from '../../../src/database/models/Product'
 import type StockMovementModel from '../../../src/database/models/StockMovement'
+import { wmRaw } from '../../../src/lib/watermelonRaw'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ async function createOpeningBalancePurchase(
     m.qtyChange = params.qty
     m.reason = 'opening'
     m.supplier = 'Opening balance'
-    m._raw.created_at = params.createdAtMs
+    wmRaw(m).created_at = params.createdAtMs
   })
 }
 

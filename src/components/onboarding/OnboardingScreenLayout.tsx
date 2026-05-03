@@ -37,14 +37,14 @@ export function OnboardingScreenLayout({
         { text: 'Continue tour', style: 'cancel' },
         {
           text: 'Skip to sign up',
-          onPress: () => router.replace('/(auth)/register'),
+          onPress: () => router.replace('/(auth)/register?fromOnboarding=1'),
         },
       ],
     )
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
       {showSkip && (
         <TouchableOpacity style={styles.skipBtn} onPress={onSkip} hitSlop={12}>
           <Text style={styles.skipText}>Skip</Text>
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 40,
+    paddingBottom: 16,
   },
   flex: {
     flex: 1,

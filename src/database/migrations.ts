@@ -70,5 +70,42 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      toVersion: 8,
+      steps: [
+        addColumns({
+          table: 'businesses',
+          columns: [{ name: 'public_id', type: 'string', isOptional: true }],
+        }),
+        createTable({
+          name: 'shopkeepers',
+          columns: [
+            { name: 'business_id', type: 'string', isIndexed: true },
+            { name: 'supabase_id', type: 'string' },
+            { name: 'username', type: 'string' },
+            { name: 'full_name', type: 'string' },
+            { name: 'phone', type: 'string', isOptional: true },
+            { name: 'is_active', type: 'boolean' },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'activity_logs',
+          columns: [
+            { name: 'business_id', type: 'string', isIndexed: true },
+            { name: 'actor_id', type: 'string' },
+            { name: 'actor_name', type: 'string' },
+            { name: 'actor_role', type: 'string' },
+            { name: 'action', type: 'string' },
+            { name: 'entity_type', type: 'string' },
+            { name: 'entity_id', type: 'string', isOptional: true },
+            { name: 'entity_name', type: 'string', isOptional: true },
+            { name: 'details', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
   ],
 })

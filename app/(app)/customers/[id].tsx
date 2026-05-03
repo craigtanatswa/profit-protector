@@ -35,6 +35,7 @@ import { database } from '../../../src/database'
 import type CustomerModel from '../../../src/database/models/Customer'
 import type CreditSaleModel from '../../../src/database/models/CreditSale'
 import type PaymentRecordModel from '../../../src/database/models/PaymentRecord'
+import { logActivity } from '../../../src/lib/activityLogger'
 
 // ---------------------------------------------------------------------------
 // Avatar color helper
@@ -254,9 +255,16 @@ function RecordPaymentModal({
           })
       })
 
-      // Fire-and-forget sync
-      const { triggerSync, business } = useAuthStore.getState()
-      if (business) triggerSync(business.id).catch(() => {})
+      await logActivity({
+        action: 'payment_recorded',
+        entityType: 'customer',
+        entityId: customerId,
+        entityName: customerName,
+        details: { amountCents: actualPaidCents, paymentMethod: payMethod },
+      })
+
+      const { triggerSync, business, activeRole } = useAuthStore.getState()
+      if (business && activeRole === 'owner') triggerSync(business.id).catch(() => {})
 
       onSuccess(actualPaidCents, newBalance)
     } catch {
@@ -545,6 +553,8 @@ export default function CustomerDetailScreen() {
   const insets = useSafeAreaInsets()
   const { formatMoney } = useMoneyFormat()
   const { id } = useLocalSearchParams<{ id: string }>()
+  const activeRole = useAuthStore((s) => s.activeRole)
+  const isShopkeeper = activeRole === 'shopkeeper'
 
   const {
     customer,
@@ -619,7 +629,7 @@ export default function CustomerDetailScreen() {
       <ScreenHeader
         title={customer.name}
         leftAction={{ icon: 'arrow-back', onPress: () => router.back() }}
-        rightAction={{ icon: 'create-outline', onPress: () => setShowEditModal(true) }}
+        rightAction={isShopkeeper ? undefined : { icon: 'create-outline', onPress: () => setShowEditModal(true) }}
         showBorder
       />
 
@@ -658,7 +668,7 @@ export default function CustomerDetailScreen() {
                 <Text style={styles.balanceAmount}>
                   {formatMoney(customer.outstandingBalanceCents)}
                 </Text>
-                <View style={styles.recordPayBtn}>
+                {!isShopkeeper ? <View style={styles.recordPayBtn}>
                   <Button
                     label="Record Payment"
                     onPress={() => setShowPaymentModal(true)}
@@ -667,7 +677,7 @@ export default function CustomerDetailScreen() {
                     fullWidth={false}
                     icon={<Ionicons name="cash-outline" size={16} color="#FFFFFF" />}
                   />
-                </View>
+                </View> : null}
               </>
             ) : (
               <View style={styles.settledState}>
@@ -828,7 +838,7 @@ export default function CustomerDetailScreen() {
       </ScrollView>
 
       {/* ── Fixed bottom bar ── */}
-      {isOwing && (
+      {isOwing && !isShopkeeper && (
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
           <View style={{ flex: 1 }}>
             <Button

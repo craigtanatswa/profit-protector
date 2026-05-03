@@ -5,6 +5,7 @@ import { syncAll } from '../lib/sync'
 import { fetchBusinessRowForUser, businessInfoFromRemoteRow } from '../lib/businessRemote'
 import { ensureLocalWatermelonForSession, businessInfoFromLocalWatermelon } from '../lib/ensureLocalWatermelon'
 import type { SyncStatus } from '../lib/sync'
+import type { DeviceApprovalRequest, ShopkeeperSession, UserRole } from '../types'
 
 export interface BusinessInfo {
   id: string
@@ -19,6 +20,7 @@ export interface BusinessInfo {
   loginUsername?: string | null
   recoveryEmail?: string
   recoveryEmailVerified: boolean
+  publicId?: string
 }
 
 interface AuthState {
@@ -27,6 +29,9 @@ interface AuthState {
   isLoading: boolean
   isAuthenticated: boolean
   isFirstLaunch: boolean
+  activeRole: UserRole
+  shopkeeperSession: ShopkeeperSession | null
+  pendingApprovalRequests: DeviceApprovalRequest[]
 
   // Sync state
   syncStatus: SyncStatus
@@ -40,6 +45,10 @@ interface AuthState {
   setBusiness: (business: BusinessInfo | null) => void
   setLoading: (loading: boolean) => void
   setFirstLaunch: (bool: boolean) => void
+  setActiveRole: (role: UserRole) => void
+  setShopkeeperSession: (session: ShopkeeperSession | null) => void
+  setPendingApprovalRequests: (requests: DeviceApprovalRequest[]) => void
+  clearShopkeeperSession: () => void
   logout: () => Promise<void>
   initializeAuth: () => Promise<void>
 
@@ -57,6 +66,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: true,
   isAuthenticated: false,
   isFirstLaunch: true,
+  activeRole: 'owner',
+  shopkeeperSession: null,
+  pendingApprovalRequests: [],
 
   syncStatus: 'idle',
   lastSyncedAt: null,
@@ -78,6 +90,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setFirstLaunch: (isFirstLaunch) =>
     set({ isFirstLaunch }),
 
+  setActiveRole: (activeRole) =>
+    set({ activeRole }),
+
+  setShopkeeperSession: (shopkeeperSession) =>
+    set({ shopkeeperSession, activeRole: shopkeeperSession ? 'shopkeeper' : 'owner' }),
+
+  setPendingApprovalRequests: (pendingApprovalRequests) =>
+    set({ pendingApprovalRequests }),
+
+  clearShopkeeperSession: () =>
+    set({ activeRole: 'owner', shopkeeperSession: null, pendingApprovalRequests: [] }),
+
   logout: async () => {
     try {
       await supabase.auth.signOut()
@@ -93,6 +117,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       syncError: null,
       recordsPushed: 0,
       recordsPulled: 0,
+      activeRole: 'owner',
+      shopkeeperSession: null,
+      pendingApprovalRequests: [],
     })
   },
 
@@ -106,11 +133,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ user: session.user, isAuthenticated: true })
         const { data: biz, error: bizErr } = await fetchBusinessRowForUser(session.user.id)
         if (!bizErr && biz) {
-          set({ business: businessInfoFromRemoteRow(biz) })
+          set({ business: businessInfoFromRemoteRow(biz), activeRole: 'owner', shopkeeperSession: null })
           await ensureLocalWatermelonForSession(session.user, biz)
         } else {
           const localBiz = await businessInfoFromLocalWatermelon(session.user.id)
-          set({ business: localBiz })
+          set({ business: localBiz, activeRole: 'owner', shopkeeperSession: null })
         }
       } else {
         set({ user: null, business: null, isAuthenticated: false })
@@ -137,6 +164,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ recordsPushed, recordsPulled }),
 
   triggerSync: async (businessId: string) => {
+    if (get().activeRole !== 'owner') return
     if (get().syncStatus === 'syncing') return
 
     set({ syncStatus: 'syncing', syncError: null })

@@ -123,6 +123,7 @@ import type SaleItemModel from '../../../src/database/models/SaleItem'
 import type StockMovementModel from '../../../src/database/models/StockMovement'
 import type CustomerModel from '../../../src/database/models/Customer'
 import type CreditSaleModel from '../../../src/database/models/CreditSale'
+import { logActivity } from '../../../src/lib/activityLogger'
 
 const COLORS = {
   primary: '#0047AB',
@@ -374,8 +375,16 @@ export default function NewSaleScreen() {
 
       // Fire-and-forget background sync — uses WatermelonDB record IDs so
       // there is no ID mismatch between local and remote records.
-      const { triggerSync } = useAuthStore.getState()
-      triggerSync(business.id).catch(() => {})
+      await logActivity({
+        action: 'sale_completed',
+        entityType: 'sale',
+        entityId: newSaleId,
+        entityName: `Sale ${newSaleId.slice(-6).toUpperCase()}`,
+        details: { totalCents, itemCount: items.length, paymentMethod },
+      })
+
+      const { triggerSync, activeRole } = useAuthStore.getState()
+      if (activeRole === 'owner') triggerSync(business.id).catch(() => {})
 
       // Fire-and-forget low stock notifications — must not block sale completion
       ;(async () => {

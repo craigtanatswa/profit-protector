@@ -11,6 +11,7 @@ export default class Business extends Model {
   @field('currency') currency!: string
   @field('zig_rate_per_usd') zigRatePerUsd!: number | null
   @field('login_username') loginUsername!: string | null
+  @field('public_id') publicId!: string | null
   @field('supabase_id') supabaseId!: string | null
   @field('recovery_email') recoveryEmail!: string | null
   @field('recovery_email_verified') recoveryEmailVerified!: boolean

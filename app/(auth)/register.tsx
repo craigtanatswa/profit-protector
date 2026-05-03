@@ -46,7 +46,7 @@
  * where login_username is not null and trim(login_username) <> '';
  */
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   StyleSheet,
@@ -139,6 +139,12 @@ function parseOnboardingStepParam(
   const n = parseInt(String(s), 10)
   if (!Number.isFinite(n) || n < 1 || n > 4) return null
   return n
+}
+
+function parseFromOnboardingParam(raw: string | string[] | undefined): boolean {
+  if (raw === undefined) return false
+  const s = Array.isArray(raw) ? raw[0] : raw
+  return s === '1' || s === 'true'
 }
 
 function parseResumeParam(raw: string | string[] | undefined): boolean {
@@ -280,11 +286,17 @@ function ProgressIndicator({ currentStep }: { currentStep: number }) {
 
 export default function RegisterScreen() {
   const router = useRouter()
-  const { step: stepParam, resume: resumeParam } = useLocalSearchParams<{
-    step?: string | string[]
-    resume?: string | string[]
-  }>()
+  const { step: stepParam, resume: resumeParam, fromOnboarding: fromOnboardingParam } =
+    useLocalSearchParams<{
+      step?: string | string[]
+      resume?: string | string[]
+      fromOnboarding?: string | string[]
+    }>()
   const resumeRegistration = parseResumeParam(resumeParam)
+  const fromOnboardingRef = useRef(false)
+  if (parseFromOnboardingParam(fromOnboardingParam)) {
+    fromOnboardingRef.current = true
+  }
   const { setBusiness, setUser } = useAuthStore()
 
   const [currentStep, setCurrentStep] = useState(
@@ -296,6 +308,7 @@ export default function RegisterScreen() {
     router.setParams({
       step: String(currentStep),
       ...(resumeRegistration ? { resume: '1' } : {}),
+      ...(fromOnboardingRef.current ? { fromOnboarding: '1' } : {}),
     })
   }, [currentStep, router, resumeRegistration])
 
@@ -373,6 +386,10 @@ export default function RegisterScreen() {
       if (resumeRegistration) {
         await supabase.auth.signOut()
         router.replace('/(auth)/login')
+        return
+      }
+      if (fromOnboardingRef.current) {
+        router.replace('/(onboarding)/welcome')
         return
       }
       router.back()

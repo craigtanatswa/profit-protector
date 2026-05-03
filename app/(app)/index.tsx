@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import type { ViewStyle } from 'react-native'
+import type { DimensionValue, TextStyle, ViewStyle } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
@@ -29,6 +29,10 @@ import { insertSampleProductsForBusiness } from '../../src/lib/insertSampleProdu
 import { normalizeBusinessType } from '../../src/lib/appPersonalisation'
 import { useMoneyFormat } from '../../src/hooks/useMoneyFormat'
 import type { Customer, PaymentMethod, Product } from '../../src/types'
+import { DeviceApprovalModal } from '../../src/components/modals/DeviceApprovalModal'
+import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
+import { clearShopkeeperSession as clearStoredShopkeeperSession } from '../../src/lib/shopkeeperAuth'
+import { logActivity } from '../../src/lib/activityLogger'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -121,7 +125,7 @@ function SkeletonBox({
   style,
   borderRadius = 8,
 }: {
-  width?: number | string
+  width?: DimensionValue
   height: number
   style?: ViewStyle
   borderRadius?: number
@@ -298,7 +302,7 @@ function DashboardSyncIndicator() {
 // Section label
 // ---------------------------------------------------------------------------
 
-function SectionLabel({ label, style }: { label: string; style?: ViewStyle }) {
+function SectionLabel({ label, style }: { label: string; style?: TextStyle }) {
   return (
     <Text style={[styles.sectionLabel, style]}>{label.toUpperCase()}</Text>
   )
@@ -317,6 +321,7 @@ interface MetricsSectionProps {
   totalProductCount: number
   outstandingCreditCents: number
   creditCustomerCount: number
+  isShopkeeper: boolean
 }
 
 function MetricsSection({
@@ -328,6 +333,7 @@ function MetricsSection({
   totalProductCount,
   outstandingCreditCents,
   creditCustomerCount,
+  isShopkeeper,
 }: MetricsSectionProps) {
   const { formatMoney } = useMoneyFormat()
   const salesVariant = todaysSalesCents > 0 ? 'success' : 'default'
@@ -362,22 +368,35 @@ function MetricsSection({
             onPress={() => router.push('/(app)/sales')}
           />
         </View>
-        <View style={{ width: CARD_WIDTH }}>
-          <MetricCard
-            label="Today's Profit"
-            value={formatMoney(todaysProfitCents)}
-            subValue={`${todaysMarginPercent}% margin`}
-            variant={profitVariant}
-            icon={
-              <Ionicons
-                name="analytics"
-                size={20}
-                color={iconColorFor(profitVariant)}
-              />
-            }
-            onPress={() => router.push('/(app)/reports' as never)}
-          />
-        </View>
+        {!isShopkeeper ? (
+          <View style={{ width: CARD_WIDTH }}>
+            <MetricCard
+              label="Today's Profit"
+              value={formatMoney(todaysProfitCents)}
+              subValue={`${todaysMarginPercent}% margin`}
+              variant={profitVariant}
+              icon={
+                <Ionicons
+                  name="analytics"
+                  size={20}
+                  color={iconColorFor(profitVariant)}
+                />
+              }
+              onPress={() => router.push('/(app)/reports' as never)}
+            />
+          </View>
+        ) : (
+          <View style={{ width: CARD_WIDTH }}>
+            <MetricCard
+              label="Items Sold Today"
+              value={`${todaysTransactionCount}`}
+              subValue="sales recorded"
+              variant="default"
+              icon={<Ionicons name="bag-check" size={20} color={iconColorFor('default')} />}
+              onPress={() => router.push('/(app)/sales')}
+            />
+          </View>
+        )}
         <View style={{ width: CARD_WIDTH }}>
           <MetricCard
             label="Stock Value"
@@ -388,22 +407,24 @@ function MetricsSection({
             onPress={() => router.push('/(app)/inventory')}
           />
         </View>
-        <View style={{ width: CARD_WIDTH }}>
-          <MetricCard
-            label="Credit Owed"
-            value={formatMoney(outstandingCreditCents)}
-            subValue={`${creditCustomerCount} customer${creditCustomerCount !== 1 ? 's' : ''}`}
-            variant={creditVariant}
-            icon={
-              <Ionicons
-                name="people"
-                size={20}
-                color={iconColorFor(creditVariant)}
-              />
-            }
-            onPress={() => router.push('/(app)/customers' as never)}
-          />
-        </View>
+        {!isShopkeeper ? (
+          <View style={{ width: CARD_WIDTH }}>
+            <MetricCard
+              label="Credit Owed"
+              value={formatMoney(outstandingCreditCents)}
+              subValue={`${creditCustomerCount} customer${creditCustomerCount !== 1 ? 's' : ''}`}
+              variant={creditVariant}
+              icon={
+                <Ionicons
+                  name="people"
+                  size={20}
+                  color={iconColorFor(creditVariant)}
+                />
+              }
+              onPress={() => router.push('/(app)/customers' as never)}
+            />
+          </View>
+        ) : null}
       </View>
     </>
   )
@@ -519,7 +540,7 @@ function QuickAction({
   )
 }
 
-function QuickActionsSection() {
+function QuickActionsSection({ isShopkeeper }: { isShopkeeper: boolean }) {
   return (
     <>
       <SectionLabel label="Quick Actions" style={styles.quickSectionLabel} />
@@ -548,14 +569,16 @@ function QuickActionsSection() {
           labelColor="#B45309"
           onPress={() => router.push('/(app)/inventory/adjust')}
         />
-        <QuickAction
-          backgroundColor="#F4F6FB"
-          iconName="bar-chart"
-          iconColor="#5A6A8A"
-          label="Reports"
-          labelColor="#5A6A8A"
-          onPress={() => router.push('/(app)/reports' as never)}
-        />
+        {!isShopkeeper ? (
+          <QuickAction
+            backgroundColor="#F4F6FB"
+            iconName="bar-chart"
+            iconColor="#5A6A8A"
+            label="Reports"
+            labelColor="#5A6A8A"
+            onPress={() => router.push('/(app)/reports' as never)}
+          />
+        ) : null}
       </View>
     </>
   )
@@ -778,10 +801,22 @@ export default function DashboardScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [emailSecurityBannerVisible, setEmailSecurityBannerVisible] = useState(false)
 
-  const { business, triggerSync } = useAuthStore()
+  const {
+    activeRole,
+    business,
+    clearShopkeeperSession,
+    shopkeeperSession,
+    triggerSync,
+  } = useAuthStore()
   const businessId = business?.id ?? ''
-  const ownerName = business?.ownerName ?? 'there'
+  const isShopkeeper = activeRole === 'shopkeeper'
+  const ownerName = isShopkeeper
+    ? shopkeeperSession?.shopkeeper.fullName ?? 'there'
+    : business?.ownerName ?? 'there'
   const recoveryVerified = business?.recoveryEmailVerified === true
+  const { pendingRequests, approveDevice, denyDevice } = usePendingApprovals(
+    activeRole === 'owner' ? businessId : '',
+  )
 
   const {
     todaysSalesCents,
@@ -809,7 +844,7 @@ export default function DashboardScreen() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      if (!business?.id) return
+      if (!business?.id || isShopkeeper) return
       if (business.recoveryEmailVerified) {
         if (!cancelled) setEmailSecurityBannerVisible(false)
         return
@@ -822,7 +857,7 @@ export default function DashboardScreen() {
     return () => {
       cancelled = true
     }
-  }, [business?.id, business?.recoveryEmailVerified])
+  }, [business?.id, business?.recoveryEmailVerified, isShopkeeper])
 
   useEffect(() => {
     if (business?.recoveryEmailVerified) {
@@ -834,7 +869,7 @@ export default function DashboardScreen() {
     let cancelled = false
 
     const run = async () => {
-      if (!business?.id || isLoading) return
+      if (!business?.id || isLoading || isShopkeeper) return
       if (totalProductCount !== 0) return
       const offered = await SecureStore.getItemAsync('sample_products_offered')
       if (offered === 'true' || cancelled) return
@@ -871,16 +906,32 @@ export default function DashboardScreen() {
     return () => {
       cancelled = true
     }
-  }, [business?.id, business?.businessType, totalProductCount, isLoading, refetch])
+  }, [business?.id, business?.businessType, totalProductCount, isLoading, isShopkeeper, refetch])
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
     refetch()
-    if (businessId) {
+    if (businessId && !isShopkeeper) {
       await triggerSync(businessId)
       checkAndNotifyLowStock(businessId).catch(() => {})
     }
     setIsRefreshing(false)
+  }
+
+  const handleShopkeeperSignOut = () => {
+    Alert.alert('Sign out?', 'Return to the login screen?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          await logActivity({ action: 'account_logout', entityType: 'account' })
+          await clearStoredShopkeeperSession()
+          clearShopkeeperSession()
+          router.replace('/(auth)/login')
+        },
+      },
+    ])
   }
 
   if (isLoading && !isRefreshing) {
@@ -898,7 +949,7 @@ export default function DashboardScreen() {
     <>
       <StatusBar style="light" />
       <NotificationBanner
-        visible={emailSecurityBannerVisible}
+        visible={emailSecurityBannerVisible && !isShopkeeper}
         title="Secure your account"
         message="Add a recovery email in Settings to protect your business data"
         type="warning"
@@ -950,13 +1001,21 @@ export default function DashboardScreen() {
               </View>
             </View>
             <View style={styles.headerRight}>
-              <DashboardSyncIndicator />
-              <Ionicons
-                name="notifications-outline"
-                size={24}
-                color="white"
-                style={styles.bellIcon}
-              />
+              {isShopkeeper ? (
+                <TouchableOpacity style={styles.staffSignOutBtn} onPress={handleShopkeeperSignOut}>
+                  <Text style={styles.staffSignOutText}>Sign out</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <DashboardSyncIndicator />
+                  <Ionicons
+                    name="notifications-outline"
+                    size={24}
+                    color="white"
+                    style={styles.bellIcon}
+                  />
+                </>
+              )}
             </View>
           </View>
         </View>
@@ -964,7 +1023,10 @@ export default function DashboardScreen() {
         {/* ── Date strip ── */}
         <View style={styles.dateStrip}>
           <Text style={styles.dateText}>{todayDate}</Text>
-          <TouchableOpacity onPress={() => router.push('/(app)/reports' as never)}>
+          <TouchableOpacity
+            disabled={isShopkeeper}
+            onPress={() => router.push('/(app)/reports' as never)}
+          >
             <Text style={styles.reportsLink}>View Reports →</Text>
           </TouchableOpacity>
         </View>
@@ -993,13 +1055,14 @@ export default function DashboardScreen() {
             totalProductCount={totalProductCount}
             outstandingCreditCents={outstandingCreditCents}
             creditCustomerCount={creditCustomerCount}
+            isShopkeeper={isShopkeeper}
           />
 
           {/* Cash breakdown */}
           <CashBreakdownCard cashBreakdown={cashBreakdown} />
 
           {/* Quick actions */}
-          <QuickActionsSection />
+          <QuickActionsSection isShopkeeper={isShopkeeper} />
 
           {/* Low stock */}
           <LowStockSection products={lowStockProducts} />
@@ -1008,10 +1071,17 @@ export default function DashboardScreen() {
           <RecentSalesSection recentSales={recentSales} />
 
           {/* Outstanding credit */}
-          <CreditSection customers={creditCustomers} />
+          {!isShopkeeper ? <CreditSection customers={creditCustomers} /> : null}
 
           <View style={styles.bottomPad} />
         </ScrollView>
+        {!isShopkeeper ? (
+          <DeviceApprovalModal
+            requests={pendingRequests}
+            onApprove={approveDevice}
+            onDeny={denyDevice}
+          />
+        ) : null}
       </View>
     </>
   )
@@ -1077,6 +1147,19 @@ const styles = StyleSheet.create({
   },
   bellIcon: {
     marginLeft: 12,
+  },
+  staffSignOutBtn: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  staffSignOutText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '500',
   },
 
   // ── Date strip ────────────────────────────────────────────────────────

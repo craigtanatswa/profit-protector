@@ -11,6 +11,14 @@ export default function SettingsLayout() {
     >
       <Stack.Screen name="index" options={{ title: 'Settings' }} />
       <Stack.Screen
+        name="manage-staff"
+        options={{ title: 'Manage Staff', headerShown: false }}
+      />
+      <Stack.Screen
+        name="activity-log"
+        options={{ title: 'Activity Log', headerShown: false }}
+      />
+      <Stack.Screen
         name="privacy-policy"
         options={{ title: 'Privacy Policy', headerShown: false }}
       />

@@ -87,6 +87,7 @@ export async function createBusinessProfile(
   }
 
   let businessId: string
+  let publicId: string
 
   if (database) {
     const db = database
@@ -106,6 +107,12 @@ export async function createBusinessProfile(
         }),
       )
       businessId = record.id
+      publicId = `pp-${businessId.slice(0, 8).toLowerCase()}`
+      await db.write(async () => {
+        await record.update((b) => {
+          b.publicId = publicId
+        })
+      })
     } catch (dbErr: unknown) {
       return {
         success: false,
@@ -114,6 +121,7 @@ export async function createBusinessProfile(
     }
   } else {
     businessId = Crypto.randomUUID()
+    publicId = `pp-${businessId.slice(0, 8).toLowerCase()}`
   }
 
   const insertBase = {
@@ -125,6 +133,7 @@ export async function createBusinessProfile(
     currency: params.currency,
     zig_rate_per_usd: 1,
     login_username: loginUsername || null,
+    public_id: publicId,
     user_id: user.id,
     created_at: new Date().toISOString(),
   }
@@ -138,7 +147,8 @@ export async function createBusinessProfile(
   ).error
 
   if (insertError && isMissingRecoveryColumnsError(insertError)) {
-    const retry = await supabase.from('businesses').insert(insertBase)
+    const { public_id: _publicId, ...legacyInsertBase } = insertBase
+    const retry = await supabase.from('businesses').insert(legacyInsertBase)
     insertError = retry.error
   }
 
@@ -159,6 +169,7 @@ export async function createBusinessProfile(
     currency: params.currency,
     zigRatePerUsd: 1,
     loginUsername: loginUsername || null,
+    publicId,
     recoveryEmail: recoveryEmailTrimmed || undefined,
     recoveryEmailVerified: false,
   }

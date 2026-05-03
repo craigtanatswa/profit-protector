@@ -29,6 +29,7 @@ export async function businessInfoFromLocalWatermelon(userId: string): Promise<B
     currency: row.currency,
     zigRatePerUsd: zig,
     loginUsername: row.loginUsername ?? null,
+    publicId: row.publicId ?? `pp-${row.id.slice(0, 8).toLowerCase()}`,
     recoveryEmail: row.recoveryEmail ?? undefined,
     recoveryEmailVerified: row.recoveryEmailVerified === true,
   }
