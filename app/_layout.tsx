@@ -121,7 +121,8 @@ function AuthGate() {
       ONBOARDING_SCREENS_KEEP_WHEN_AUTHENTICATED.has(onboardingLeaf)
 
     if (activeRole === 'shopkeeper') {
-      if (!inOnboarding && !inAuth) return
+      const inApp = first === '(app)'
+      if (inApp) return
       router.replace('/(app)')
       return
     }

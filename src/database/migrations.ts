@@ -107,5 +107,25 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      toVersion: 9,
+      steps: [
+        addColumns({
+          table: 'sales',
+          columns: [
+            { name: 'created_by_shopkeeper_id', type: 'string', isOptional: true },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 10,
+      steps: [
+        addColumns({
+          table: 'shopkeepers',
+          columns: [{ name: 'receipt_suffix', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
   ],
 })

@@ -37,6 +37,8 @@ export interface Sale {
   paymentMethod: PaymentMethod
   note?: string
   receiptNumber: string
+  /** Present when the sale was recorded by a shopkeeper staff login */
+  createdByShopkeeperId?: string | null
   createdAt: number
 }
 
@@ -106,6 +108,8 @@ export interface Shopkeeper {
   username: string
   fullName: string
   phone?: string
+  /** Unique per business; appended to auto receipt numbers for this staff member */
+  receiptSuffix: string
   isActive: boolean
   createdAt: number
   updatedAt: number

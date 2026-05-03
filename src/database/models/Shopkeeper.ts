@@ -8,6 +8,8 @@ export default class Shopkeeper extends Model {
   @field('supabase_id') supabaseId!: string
   @field('username') username!: string
   @field('full_name') fullName!: string
+  /** Uppercase receipt suffix; unique per business */
+  @field('receipt_suffix') receiptSuffix!: string | null
   @field('phone') phone!: string | null
   @field('is_active') isActive!: boolean
   @readonly @date('created_at') createdAt!: Date

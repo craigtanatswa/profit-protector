@@ -51,6 +51,16 @@ export default function SaleDetailScreen() {
 
     try {
       const saleRecord = await database!.get<SaleModel>('sales').find(id)
+      const { activeRole, shopkeeperSession } = useAuthStore.getState()
+      if (
+        activeRole === 'shopkeeper' &&
+        shopkeeperSession &&
+        saleRecord.createdByShopkeeperId !== shopkeeperSession.shopkeeper.id
+      ) {
+        setNotFound(true)
+        setIsLoading(false)
+        return
+      }
       setSale(mapSaleRecord(saleRecord))
 
       const itemRecords = await database!

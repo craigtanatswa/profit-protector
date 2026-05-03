@@ -12,8 +12,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { Button, Card } from '../../src/components/ui'
-import { checkApprovalStatus } from '../../src/lib/shopkeeperAuth'
+import { logActivity } from '../../src/lib/activityLogger'
+import { checkApprovalStatus, resumeShopkeeperAfterApproval } from '../../src/lib/shopkeeperAuth'
 import { getDeviceName } from '../../src/lib/deviceId'
+import type { BusinessInfo } from '../../src/stores/authStore'
+import { useAuthStore } from '../../src/stores/authStore'
 
 function Dot({ delay }: { delay: number }) {
   const opacity = useRef(new Animated.Value(0.3)).current
@@ -46,6 +49,10 @@ function Dot({ delay }: { delay: number }) {
 
 export default function ShopkeeperPendingScreen() {
   const router = useRouter()
+  const setUser = useAuthStore((s) => s.setUser)
+  const setBusiness = useAuthStore((s) => s.setBusiness)
+  const setShopkeeperSession = useAuthStore((s) => s.setShopkeeperSession)
+
   const { businessId, username, deviceId } = useLocalSearchParams<{
     businessId: string
     username: string
@@ -58,35 +65,96 @@ export default function ShopkeeperPendingScreen() {
     getDeviceName().then(setDeviceName).catch(() => {})
   }, [])
 
+  const completingRef = useRef(false)
+
   useEffect(() => {
-    const poll = setInterval(async () => {
+    let cancelled = false
+    let pollRef: ReturnType<typeof setInterval> | undefined
+
+    const runCheck = async () => {
+      const biz = String(businessId ?? '')
+      const user = String(username ?? '')
+      const dev = String(deviceId ?? '')
+      if (!biz || !user || !dev) return
+
       const status = await checkApprovalStatus({
-        businessId: String(businessId ?? ''),
-        username: String(username ?? ''),
-        deviceId: String(deviceId ?? ''),
+        businessId: biz,
+        username: user,
+        deviceId: dev,
       })
+      if (cancelled) return
 
       if (status === 'approved') {
-        clearInterval(poll)
-        Alert.alert(
-          'Access Approved!',
-          'The owner has approved your device. Please sign in again.',
-          [{ text: 'Sign In', onPress: () => router.replace('/(auth)/login') }],
-        )
+        if (completingRef.current) return
+        completingRef.current = true
+        try {
+          const result = await resumeShopkeeperAfterApproval({
+            businessId: biz,
+            username: user,
+            deviceId: dev,
+          })
+          if (cancelled) return
+
+          if (result.status === 'approved' && result.session) {
+            if (pollRef) clearInterval(pollRef)
+            const info: BusinessInfo = {
+              id: result.session.businessId,
+              name: result.session.businessName,
+              ownerName: result.session.shopkeeper.fullName,
+              phone: '',
+              businessType: '',
+              currency: 'USD',
+              zigRatePerUsd: 1,
+              recoveryEmailVerified: false,
+            }
+            setUser(null)
+            setBusiness(info)
+            setShopkeeperSession(result.session)
+            await logActivity({ action: 'account_login_shopkeeper', entityType: 'account' })
+            router.replace('/(app)')
+            return
+          }
+
+          Alert.alert(
+            'Almost there',
+            result.message ??
+              'Could not finish signing you in yet. We will keep checking, or go back and sign in again.',
+            [{ text: 'OK' }],
+          )
+        } finally {
+          completingRef.current = false
+        }
+        return
       }
 
       if (status === 'denied') {
-        clearInterval(poll)
+        if (pollRef) clearInterval(pollRef)
         Alert.alert(
           'Access Denied',
           'The business owner has denied this login request. Please contact them for assistance.',
           [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }],
         )
       }
+    }
+
+    void runCheck()
+    pollRef = setInterval(() => {
+      void runCheck()
     }, 10000)
 
-    return () => clearInterval(poll)
-  }, [businessId, deviceId, router, username])
+    return () => {
+      cancelled = true
+      if (pollRef) clearInterval(pollRef)
+    }
+  }, [
+    businessId,
+    deviceId,
+    router,
+    username,
+    setUser,
+    setBusiness,
+    setShopkeeperSession,
+  ])
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -96,8 +164,8 @@ export default function ShopkeeperPendingScreen() {
         </View>
         <Text style={styles.title}>Waiting for Approval</Text>
         <Text style={styles.subtitle}>
-          Your login request has been sent to the business owner. This page will update
-          automatically when they respond.
+          Your login request has been sent to the business owner. When they approve this device,
+          you will be signed in automatically.
         </Text>
 
         <View style={styles.dots}>

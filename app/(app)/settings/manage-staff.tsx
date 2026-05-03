@@ -28,12 +28,19 @@ import { supabase } from '../../../src/lib/supabase'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Shopkeeper } from '../../../src/types'
 
+const receiptSuffixFieldSchema = z
+  .string()
+  .min(1, 'Receipt suffix is required')
+  .max(12, 'Max 12 characters')
+  .regex(/^[A-Za-z0-9]+$/, 'Letters and numbers only')
+
 const addShopkeeperSchema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
   username: z.string()
     .min(3, 'Username must be at least 3 characters')
     .max(30)
     .regex(/^[a-z0-9._]+$/, 'Only lowercase letters, numbers, dots, and underscores'),
+  receiptSuffix: receiptSuffixFieldSchema,
   phone: z.string().optional(),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   confirmPassword: z.string(),
@@ -61,6 +68,7 @@ function mapLocal(record: ShopkeeperModel): Shopkeeper {
     supabaseId: record.supabaseId,
     username: record.username,
     fullName: record.fullName,
+    receiptSuffix: (record.receiptSuffix ?? '').trim().toUpperCase(),
     phone: record.phone ?? undefined,
     isActive: record.isActive,
     createdAt: record.createdAt.getTime(),
@@ -87,6 +95,7 @@ function StaffCard({
           <View>
             <Text style={styles.staffName}>{staff.fullName}</Text>
             <Text style={styles.username}>@{staff.username}</Text>
+            <Text style={styles.receiptSuffixLabel}>Receipt suffix · {staff.receiptSuffix || '—'}</Text>
           </View>
         </View>
         <Badge label={staff.isActive ? 'Active' : 'Inactive'} variant={staff.isActive ? 'success' : 'neutral'} size="sm" />
@@ -113,6 +122,7 @@ function AddShopkeeperModal({
   const [fullName, setFullName] = useState('')
   const [username, setUsername] = useState('')
   const [phone, setPhone] = useState('')
+  const [receiptSuffix, setReceiptSuffix] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -142,6 +152,7 @@ function AddShopkeeperModal({
     setFullName('')
     setUsername('')
     setPhone('')
+    setReceiptSuffix('')
     setPassword('')
     setConfirmPassword('')
     setErrors({})
@@ -154,6 +165,7 @@ function AddShopkeeperModal({
     const parsed = addShopkeeperSchema.safeParse({
       fullName,
       username,
+      receiptSuffix,
       phone,
       password,
       confirmPassword,
@@ -172,6 +184,18 @@ function AddShopkeeperModal({
       return
     }
 
+    const normalizedSuffix = receiptSuffix.trim().toUpperCase()
+    const { data: suffixClash } = await supabase
+      .from('shopkeepers')
+      .select('id')
+      .eq('business_id', business.id)
+      .eq('receipt_suffix', normalizedSuffix)
+      .maybeSingle()
+    if (suffixClash) {
+      setErrors({ receiptSuffix: 'This receipt suffix is already used by another staff member' })
+      return
+    }
+
     setSaving(true)
     try {
       const cleanUsername = username.toLowerCase().trim()
@@ -185,6 +209,7 @@ function AddShopkeeperModal({
           password_hash: passwordHash,
           full_name: cleanName,
           phone: phone.trim() || null,
+          receipt_suffix: normalizedSuffix,
           is_active: true,
           created_by: user?.id ?? null,
         })
@@ -204,6 +229,7 @@ function AddShopkeeperModal({
           record.supabaseId = data.id
           record.username = cleanUsername
           record.fullName = cleanName
+          record.receiptSuffix = normalizedSuffix
           record.phone = phone.trim() || null
           record.isActive = true
           ;(record._raw as Record<string, unknown>).created_at = now
@@ -260,6 +286,17 @@ function AddShopkeeperModal({
                   @{username.toLowerCase().trim()} {available === true ? '✓ available' : available === false ? '✕ taken' : ''}
                 </Text>
               ) : null}
+              <Input
+                label="Receipt suffix"
+                hint="Unique label on each receipt for this person (e.g. FRONT, TILL2). Letters and numbers only."
+                placeholder="e.g. FRONT"
+                value={receiptSuffix}
+                onChangeText={(t) => setReceiptSuffix(t.toUpperCase())}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                error={errors.receiptSuffix}
+                leftIcon={<Ionicons name="receipt-outline" size={18} color="#5A6A8A" />}
+              />
               <Input label="Phone Number (optional)" hint="For your records only" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
               <Input label="Password" hint="Minimum 8 characters" value={password} onChangeText={setPassword} secureTextEntry error={errors.password} leftIcon={<Ionicons name="lock-closed-outline" size={18} color="#5A6A8A" />} />
               <Input label="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry error={errors.confirmPassword} />
@@ -280,16 +317,21 @@ function DetailModal({
   visible,
   onClose,
   onChanged,
+  onStaffUpdated,
 }: {
   staff: Shopkeeper | null
   visible: boolean
   onClose: () => void
   onChanged: () => void
+  onStaffUpdated?: (next: Shopkeeper) => void
 }) {
   const [devices, setDevices] = useState<StaffDevice[]>([])
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [resetVisible, setResetVisible] = useState(false)
+  const [receiptSuffixDraft, setReceiptSuffixDraft] = useState('')
+  const [receiptSuffixErr, setReceiptSuffixErr] = useState('')
+  const [receiptSuffixSaving, setReceiptSuffixSaving] = useState(false)
 
   const loadDevices = useCallback(async () => {
     if (!staff) return
@@ -307,8 +349,67 @@ function DetailModal({
   }, [staff])
 
   useEffect(() => {
+    if (visible && staff) {
+      setReceiptSuffixDraft(staff.receiptSuffix)
+      setReceiptSuffixErr('')
+    }
+  }, [visible, staff?.id, staff?.receiptSuffix])
+
+  useEffect(() => {
     if (visible) void loadDevices()
   }, [loadDevices, visible])
+
+  const saveReceiptSuffix = async () => {
+    if (!staff) return
+    const parsed = receiptSuffixFieldSchema.safeParse(receiptSuffixDraft.trim())
+    if (!parsed.success) {
+      setReceiptSuffixErr(parsed.error.issues[0]?.message ?? 'Invalid suffix')
+      return
+    }
+    const normalized = parsed.data.toUpperCase()
+    const { data: clash } = await supabase
+      .from('shopkeepers')
+      .select('id')
+      .eq('business_id', staff.businessId)
+      .eq('receipt_suffix', normalized)
+      .neq('id', staff.supabaseId)
+      .maybeSingle()
+    if (clash) {
+      setReceiptSuffixErr('Another staff member already uses this suffix')
+      return
+    }
+    setReceiptSuffixSaving(true)
+    setReceiptSuffixErr('')
+    try {
+      const { error } = await supabase
+        .from('shopkeepers')
+        .update({ receipt_suffix: normalized })
+        .eq('id', staff.supabaseId)
+      if (error) {
+        Alert.alert('Could not update', error.message)
+        return
+      }
+      if (database) {
+        try {
+          const record = await database.get<ShopkeeperModel>('shopkeepers').find(staff.id)
+          await database.write(async () => {
+            await record.update((r) => {
+              r.receiptSuffix = normalized
+              ;(r._raw as Record<string, unknown>).updated_at = Date.now()
+            })
+          })
+        } catch {
+          /* no local mirror row */
+        }
+      }
+      const next: Shopkeeper = { ...staff, receiptSuffix: normalized, updatedAt: Date.now() }
+      onStaffUpdated?.(next)
+      onChanged()
+      Alert.alert('Saved', 'Receipt suffix updated. Staff may need to reopen the app to sell if already logged in.')
+    } finally {
+      setReceiptSuffixSaving(false)
+    }
+  }
 
   const deactivate = () => {
     if (!staff) return
@@ -365,6 +466,29 @@ function DetailModal({
             <SettingsRow icon="call-outline" label="Phone" value={staff?.phone || '—'} showChevron={false} />
             <SettingsRow icon="calendar-outline" label="Added" value={staff ? formatDate(staff.createdAt) : '—'} showChevron={false} />
             <SettingsRow icon="shield-checkmark-outline" label="Status" value={staff?.isActive ? 'Active' : 'Inactive'} showChevron={false} />
+
+            <Text style={styles.sectionMiniTitle}>Receipt numbers</Text>
+            <Text style={styles.muted}>
+              Shown on receipts as RCP-…-SUFFIX so each staff member has their own sequence.
+            </Text>
+            <Input
+              label="Receipt suffix"
+              hint="Letters and numbers only. Unique per staff member."
+              value={receiptSuffixDraft}
+              onChangeText={(t) => setReceiptSuffixDraft(t.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              error={receiptSuffixErr}
+              leftIcon={<Ionicons name="receipt-outline" size={18} color="#5A6A8A" />}
+            />
+            <Button
+              label="Save receipt suffix"
+              onPress={() => void saveReceiptSuffix()}
+              loading={receiptSuffixSaving}
+              disabled={receiptSuffixSaving}
+              variant="secondary"
+              size="sm"
+            />
 
             <Text style={styles.sectionMiniTitle}>Approved Devices</Text>
             {devices.length === 0 ? <Text style={styles.muted}>No approved devices yet.</Text> : devices.map((device) => (
@@ -435,6 +559,7 @@ function ManageStaffScreen() {
         supabaseId: row.id,
         username: row.username,
         fullName: row.full_name,
+        receiptSuffix: String(row.receipt_suffix ?? '').trim().toUpperCase(),
         phone: row.phone ?? undefined,
         isActive: row.is_active === true,
         createdAt: new Date(row.created_at).getTime(),
@@ -508,6 +633,7 @@ function ManageStaffScreen() {
         visible={selected != null}
         onClose={() => setSelected(null)}
         onChanged={loadStaff}
+        onStaffUpdated={(next) => setSelected(next)}
       />
     </SafeAreaView>
   )
@@ -527,6 +653,7 @@ const styles = StyleSheet.create({
   avatarText: { color: '#0047AB', fontWeight: '700' },
   staffName: { fontSize: 15, fontWeight: '500', color: '#0D1B3E' },
   username: { fontSize: 13, color: '#5A6A8A', marginTop: 2 },
+  receiptSuffixLabel: { fontSize: 12, color: '#5A6A8A', marginTop: 4 },
   devicesRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   devicesText: { marginLeft: 4, fontSize: 12, color: '#5A6A8A' },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },

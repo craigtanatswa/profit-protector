@@ -24,6 +24,7 @@ import { useSalesWithItems } from '../../../src/hooks/useSales'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { SaleWithItems } from '../../../src/hooks/useSales'
+import { pullShopkeeperSalesForCurrentMonth } from '../../../src/lib/shopkeeperAuth'
 
 // ─── Date helpers (no external dependency) ───────────────────────────────────
 
@@ -106,7 +107,15 @@ export default function SalesHistoryScreen() {
   const router = useRouter()
   const { formatMoney } = useMoneyFormat()
   const business = useAuthStore((s) => s.business)
-  const { salesWithItems, isLoading, refetch } = useSalesWithItems(business?.id ?? '')
+  const activeRole = useAuthStore((s) => s.activeRole)
+  const shopkeeperSession = useAuthStore((s) => s.shopkeeperSession)
+  const isShopkeeper = activeRole === 'shopkeeper'
+  const shopkeeperIdForQuery = isShopkeeper ? shopkeeperSession?.shopkeeper.id ?? null : null
+
+  const { salesWithItems, isLoading, refetch } = useSalesWithItems(
+    business?.id ?? '',
+    shopkeeperIdForQuery != null ? { shopkeeperId: shopkeeperIdForQuery } : undefined,
+  )
 
   useQuietOfflineRefreshOnFocus(
     useCallback(() => {
@@ -300,6 +309,13 @@ export default function SalesHistoryScreen() {
 
   async function handleRefresh() {
     setIsRefreshing(true)
+    try {
+      if (isShopkeeper && shopkeeperSession?.sessionToken) {
+        await pullShopkeeperSalesForCurrentMonth(shopkeeperSession.sessionToken)
+      }
+    } catch {
+      /* pull logs */
+    }
     refetch()
     // Give the subscription a moment to re-fire
     setTimeout(() => setIsRefreshing(false), 800)
@@ -318,6 +334,11 @@ export default function SalesHistoryScreen() {
         rightAction={{ icon: 'funnel-outline', onPress: () => setShowFilterPanel(true) }}
         showBorder
       />
+      {isShopkeeper ? (
+        <Text style={styles.scopeHint}>
+          Your sales this calendar month — the list clears when a new month starts.
+        </Text>
+      ) : null}
 
       {/* Summary strip */}
       <View style={styles.summaryStrip}>
@@ -461,6 +482,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F4F6FB',
+  },
+  scopeHint: {
+    fontSize: 13,
+    color: '#5A6A8A',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    paddingTop: 4,
+    lineHeight: 18,
   },
 
   // Summary strip

@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb'
 
 export const schema = appSchema({
-  version: 8,
+  version: 10,
   tables: [
     tableSchema({
       name: 'businesses',
@@ -46,6 +46,8 @@ export const schema = appSchema({
         { name: 'payment_method', type: 'string' },
         { name: 'note', type: 'string', isOptional: true },
         { name: 'receipt_number', type: 'string' },
+        /** When set, sale was recorded by this shopkeeper (UUID). Owner sales leave null. */
+        { name: 'created_by_shopkeeper_id', type: 'string', isOptional: true, isIndexed: true },
         { name: 'supabase_id', type: 'string', isOptional: true },
         { name: 'created_at', type: 'number' },
       ]
@@ -118,6 +120,7 @@ export const schema = appSchema({
         { name: 'supabase_id', type: 'string' },
         { name: 'username', type: 'string' },
         { name: 'full_name', type: 'string' },
+        { name: 'receipt_suffix', type: 'string', isOptional: true },
         { name: 'phone', type: 'string', isOptional: true },
         { name: 'is_active', type: 'boolean' },
         { name: 'created_at', type: 'number' },

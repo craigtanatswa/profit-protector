@@ -2,13 +2,13 @@ import { useEffect, useRef } from 'react'
 import { AppState, InteractionManager } from 'react-native'
 import { useAuthStore } from '../stores/authStore'
 import { checkAndNotifyLowStock } from '../lib/notifications'
-import { pullShopkeeperProductsIntoLocalDb } from '../lib/shopkeeperAuth'
+import { pullAllShopkeeperData } from '../lib/shopkeeperAuth'
 
 const SYNC_INTERVAL_MS = 30 * 60 * 1000 // 30 minutes
 
 /**
  * Activates automatic sync for owners (full sync + low-stock check) and a lightweight
- * product pull for shopkeepers (no Supabase JWT — uses edge `pull_products`).
+ * shopkeeper refresh via `pullAllShopkeeperData` (products + current-month sales; edge auth).
  */
 export function useAutoSync() {
   const business = useAuthStore((s) => s.business)
@@ -69,7 +69,7 @@ export function useAutoSync() {
 
     function pullInventory() {
       const tok = useAuthStore.getState().shopkeeperSession?.sessionToken
-      if (tok) void pullShopkeeperProductsIntoLocalDb(tok).catch(() => {})
+      if (tok) void pullAllShopkeeperData(tok).catch(() => {})
     }
 
     const task = InteractionManager.runAfterInteractions(() => {

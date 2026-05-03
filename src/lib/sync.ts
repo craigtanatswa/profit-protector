@@ -151,6 +151,90 @@ export async function mergeRemoteProductsIntoWatermelon(
   return ops.length
 }
 
+// ---------------------------------------------------------------------------
+// Sales merge (owner sync pull + shopkeeper edge pull)
+// ---------------------------------------------------------------------------
+
+export type SupabaseSaleRow = {
+  id: string
+  business_id: string
+  total_cents: number
+  discount_cents: number
+  payment_method: string
+  receipt_number: string
+  note: string | null
+  created_at: string
+  created_by_shopkeeper_id?: string | null
+}
+
+export type SupabaseSaleItemRow = {
+  id: string
+  sale_id: string
+  product_id: string
+  product_name_snapshot: string
+  qty: number
+  unit_price_cents: number
+  cost_price_cents: number
+}
+
+/** Insert remote sales + items when missing locally (sales are immutable). */
+export async function mergeRemoteSalesAndItemsIntoWatermelon(
+  remoteSales: SupabaseSaleRow[],
+  remoteItems: SupabaseSaleItemRow[],
+): Promise<number> {
+  if (!database || remoteSales.length === 0) return 0
+
+  const itemsBySale = remoteItems.reduce<Record<string, SupabaseSaleItemRow[]>>((acc, row) => {
+    const k = row.sale_id
+    acc[k] = [...(acc[k] ?? []), row]
+    return acc
+  }, {})
+
+  let merged = 0
+
+  for (const remoteSale of remoteSales) {
+    try {
+      await database.get<Sale>('sales').find(remoteSale.id)
+      // exists — skip
+    } catch {
+      const bundleItems = itemsBySale[remoteSale.id] ?? []
+
+      await database.write(async () => {
+        const saleOp = database!.get<Sale>('sales').prepareCreate((s) => {
+          s._raw.id = remoteSale.id
+          s.businessId = remoteSale.business_id
+          s.totalCents = remoteSale.total_cents
+          s.discountCents = remoteSale.discount_cents
+          s.paymentMethod = remoteSale.payment_method
+          s.receiptNumber = remoteSale.receipt_number
+          s.note = remoteSale.note
+          s.createdByShopkeeperId = remoteSale.created_by_shopkeeper_id ?? null
+          s.supabaseId = remoteSale.id
+          wmRaw(s).created_at = new Date(remoteSale.created_at).getTime()
+        })
+
+        const itemOps = bundleItems.map((remoteItem) =>
+          database!.get<SaleItem>('sale_items').prepareCreate((item) => {
+            item._raw.id = remoteItem.id
+            item.saleId = remoteItem.sale_id
+            item.productId = remoteItem.product_id
+            item.productNameSnapshot = remoteItem.product_name_snapshot
+            item.qty = remoteItem.qty
+            item.unitPriceCents = remoteItem.unit_price_cents
+            item.costPriceCents = remoteItem.cost_price_cents
+          }),
+        )
+
+        await database!.batch(saleOp, ...itemOps)
+      })
+
+      merged++
+    }
+  }
+
+  return merged
+}
+
 /** Epoch ISO used for incremental pulls (lastSyncedAt > 0). */
 function pullThreshold(lastSyncedAt: number): string {
   return lastSyncedAt === 0 ? '1970-01-01T00:00:00.000Z' : toISO(lastSyncedAt)
@@ -437,6 +521,7 @@ async function syncSales(
         receipt_number: sale.receiptNumber,
         note: sale.note,
         created_at: toISO(wmRaw(sale).created_at as number),
+        created_by_shopkeeper_id: sale.createdByShopkeeperId ?? null,
       }
 
       const { error: saleError } = await supabase
@@ -511,6 +596,7 @@ async function syncSales(
               s.paymentMethod = remoteSale.payment_method
               s.receiptNumber = remoteSale.receipt_number
               s.note = remoteSale.note
+              s.createdByShopkeeperId = remoteSale.created_by_shopkeeper_id ?? null
               s.supabaseId = remoteSale.id
               wmRaw(s).created_at = new Date(remoteSale.created_at).getTime()
             })

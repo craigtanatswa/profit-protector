@@ -16,6 +16,7 @@ export default class Sale extends Model {
   @field('payment_method') paymentMethod!: string
   @field('note') note!: string | null
   @field('receipt_number') receiptNumber!: string
+  @field('created_by_shopkeeper_id') createdByShopkeeperId!: string | null
   @field('supabase_id') supabaseId!: string | null
   @readonly @date('created_at') createdAt!: Date
 

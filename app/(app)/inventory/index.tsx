@@ -29,7 +29,7 @@ import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflin
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
-import { pullShopkeeperProductsIntoLocalDb } from '../../../src/lib/shopkeeperAuth'
+import { pullAllShopkeeperData } from '../../../src/lib/shopkeeperAuth'
 
 // Stable separator — module-level avoids creating a new component every render
 const ItemSeparator = () => <View style={styles.itemSep} />
@@ -156,7 +156,7 @@ export default function InventoryScreen() {
     setIsRefreshing(true)
     try {
       if (isShopkeeper && shopkeeperSession?.sessionToken) {
-        await pullShopkeeperProductsIntoLocalDb(shopkeeperSession.sessionToken)
+        await pullAllShopkeeperData(shopkeeperSession.sessionToken)
       }
     } catch {
       /* pull logs internally */

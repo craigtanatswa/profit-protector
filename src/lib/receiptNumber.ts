@@ -33,3 +33,12 @@ function formatOverflow6(): string {
   const u = Crypto.randomUUID().replace(/-/g, '').toUpperCase()
   return u.slice(0, 6)
 }
+
+/**
+ * Shopkeeper receipts append a distinct suffix (e.g. RCP-0042AA-FRONT) so counters stay unique per staff member.
+ */
+export function appendReceiptSuffix(baseReceipt: string, suffix: string): string {
+  const s = suffix.trim().toUpperCase()
+  if (!s) return baseReceipt
+  return `${baseReceipt}-${s}`
+}

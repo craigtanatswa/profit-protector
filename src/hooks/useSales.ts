@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AppState } from 'react-native'
 import { Q } from '@nozbe/watermelondb'
 import { database } from '../database'
 import type { Sale, SaleItem } from '../types'
 import type SaleModel from '../database/models/Sale'
 import type SaleItemModel from '../database/models/SaleItem'
+import { calendarMonthKey, getLocalCalendarMonthBoundsMs } from '../lib/calendarMonth'
 
 export interface SaleWithItems {
   sale: Sale
@@ -19,6 +21,7 @@ export function mapSaleRecord(record: SaleModel): Sale {
     paymentMethod: record.paymentMethod as Sale['paymentMethod'],
     note: record.note ?? undefined,
     receiptNumber: record.receiptNumber,
+    createdByShopkeeperId: record.createdByShopkeeperId ?? undefined,
     createdAt: record.createdAt instanceof Date ? record.createdAt.getTime() : Date.now(),
   }
 }
@@ -80,7 +83,37 @@ export function useSales(businessId: string) {
   return { sales, isLoading, totalSalesCount, refetch }
 }
 
-export function useSalesWithItems(businessId: string) {
+function useCalendarMonthKey(): string {
+  const [key, setKey] = useState(() => calendarMonthKey())
+  useEffect(() => {
+    const bump = () => {
+      const k = calendarMonthKey()
+      setKey((p) => (p !== k ? k : p))
+    }
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') bump()
+    })
+    const id = setInterval(bump, 60_000)
+    return () => {
+      sub.remove()
+      clearInterval(id)
+    }
+  }, [])
+  return key
+}
+
+export function useSalesWithItems(
+  businessId: string,
+  opts?: { shopkeeperId?: string | null },
+) {
+  const shopkeeperId = opts?.shopkeeperId ?? null
+  const calendarKey = useCalendarMonthKey()
+
+  const monthBounds = useMemo(
+    () => getLocalCalendarMonthBoundsMs(),
+    [calendarKey, shopkeeperId],
+  )
+
   const [salesWithItems, setSalesWithItems] = useState<SaleWithItems[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [totalCount, setTotalCount] = useState(0)
@@ -99,14 +132,20 @@ export function useSalesWithItems(businessId: string) {
     prevBusinessIdRef.current = businessId
     if (businessChanged) setIsLoading(true)
 
-    const subscription = database
-      .get<SaleModel>('sales')
-      .query(
-        Q.where('business_id', businessId),
-        Q.sortBy('created_at', Q.desc),
-      )
-      .observe()
-      .subscribe({
+    const saleQuery =
+      shopkeeperId != null
+        ? database.get<SaleModel>('sales').query(
+            Q.where('business_id', businessId),
+            Q.where('created_at', Q.gte(monthBounds.start)),
+            Q.where('created_at', Q.lte(monthBounds.end)),
+            Q.where('created_by_shopkeeper_id', shopkeeperId),
+            Q.sortBy('created_at', Q.desc),
+          )
+        : database
+            .get<SaleModel>('sales')
+            .query(Q.where('business_id', businessId), Q.sortBy('created_at', Q.desc))
+
+    const subscription = saleQuery.observe().subscribe({
         next: async (salesData) => {
           try {
             if (!database) return
@@ -152,7 +191,7 @@ export function useSalesWithItems(businessId: string) {
       })
 
     return () => subscription.unsubscribe()
-  }, [businessId, refreshToken])
+  }, [businessId, refreshToken, shopkeeperId, monthBounds.start, monthBounds.end])
 
   const refetch = useCallback(() => setRefreshToken((t) => t + 1), [])
 

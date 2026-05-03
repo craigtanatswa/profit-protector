@@ -105,8 +105,8 @@ export function usePendingApprovals(businessId: string) {
         action: 'device_approved',
         entityType: 'device',
         entityId: request.deviceId,
-        entityName: request.deviceName,
-        details: { shopkeeperName: request.shopkeeperName },
+        entityName: request.shopkeeperName,
+        details: { deviceName: request.deviceName },
       })
 
       const next = pendingRequests.filter((r) => r.id !== requestId)
@@ -134,8 +134,8 @@ export function usePendingApprovals(businessId: string) {
         action: 'device_denied',
         entityType: 'device',
         entityId: request.deviceId,
-        entityName: request.deviceName,
-        details: { shopkeeperName: request.shopkeeperName },
+        entityName: request.shopkeeperName,
+        details: { deviceName: request.deviceName },
       })
 
       const next = pendingRequests.filter((r) => r.id !== requestId)

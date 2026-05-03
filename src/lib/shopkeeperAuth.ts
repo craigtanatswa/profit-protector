@@ -6,8 +6,12 @@ import type { ShopkeeperSession } from '../types'
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from './supabase'
 import {
   mergeRemoteProductsIntoWatermelon,
+  mergeRemoteSalesAndItemsIntoWatermelon,
   type SupabaseProductRow,
+  type SupabaseSaleItemRow,
+  type SupabaseSaleRow,
 } from './sync'
+import { getLocalCalendarMonthBoundsIso } from './calendarMonth'
 
 const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/shopkeeper-auth`
 
@@ -29,7 +33,15 @@ const SK = {
   skIsActive: 'pp_sk_sess_sk_is_active',
   skCreatedAt: 'pp_sk_sess_sk_created_at',
   skUpdatedAt: 'pp_sk_sess_sk_updated_at',
+  skReceiptSuffix: 'pp_sk_sess_sk_receipt_suffix',
 } as const
+
+function receiptSuffixFromPayload(sk: Record<string, unknown>): string {
+  const raw = sk.receiptSuffix ?? sk.receipt_suffix
+  return String(raw ?? '')
+    .trim()
+    .toUpperCase()
+}
 
 const TOKEN_STORAGE_KEY = SK.token
 const SCALAR_SESSION_KEYS = Object.values(SK).filter((k) => k !== TOKEN_STORAGE_KEY)
@@ -84,6 +96,70 @@ export async function pullShopkeeperProductsIntoLocalDb(sessionToken: string): P
   return mergeRemoteProductsIntoWatermelon(data.products as SupabaseProductRow[])
 }
 
+/** Pull this shopkeeper's sales for the current local calendar month + line items. */
+export async function pullShopkeeperSalesForCurrentMonth(sessionToken: string): Promise<number> {
+  const { monthStartIso, monthEndIso } = getLocalCalendarMonthBoundsIso()
+  const data = await callShopkeeperAuth({
+    action: 'pull_sales_month',
+    sessionToken,
+    monthStartIso,
+    monthEndIso,
+  })
+  if (data.status === 'error') {
+    if (__DEV__) console.warn('[shopkeeper] pull_sales_month:', data.message)
+    return 0
+  }
+  if (data.status !== 'ok') return 0
+  const sales = Array.isArray(data.sales) ? data.sales : []
+  const sale_items = Array.isArray(data.sale_items) ? data.sale_items : []
+  return mergeRemoteSalesAndItemsIntoWatermelon(
+    sales as SupabaseSaleRow[],
+    sale_items as SupabaseSaleItemRow[],
+  )
+}
+
+/** Products + current-month sales (shopkeeper has no owner JWT sync). */
+export async function pullAllShopkeeperData(sessionToken: string): Promise<void> {
+  await pullShopkeeperProductsIntoLocalDb(sessionToken).catch(() => {})
+  await pullShopkeeperSalesForCurrentMonth(sessionToken).catch(() => {})
+}
+
+export type ShopkeeperSalePushPayload = {
+  sale: {
+    id: string
+    business_id: string
+    total_cents: number
+    discount_cents: number
+    payment_method: string
+    receipt_number: string
+    note: string | null
+    created_at: string
+  }
+  sale_items: Array<{
+    id: string
+    sale_id: string
+    product_id: string
+    product_name_snapshot: string
+    qty: number
+    unit_price_cents: number
+    cost_price_cents: number
+  }>
+}
+
+/** Persist a shopkeeper-recorded sale + items to Supabase (service role via edge). */
+export async function pushShopkeeperSaleRemote(
+  sessionToken: string,
+  payload: ShopkeeperSalePushPayload,
+): Promise<boolean> {
+  const data = await callShopkeeperAuth({
+    action: 'push_sale',
+    sessionToken,
+    sale: payload.sale,
+    sale_items: payload.sale_items,
+  })
+  return data.status === 'ok'
+}
+
 async function persistShopkeeperSession(session: ShopkeeperSession): Promise<void> {
   if (__DEV__) {
     const tokenBytes = new TextEncoder().encode(session.sessionToken).length
@@ -105,6 +181,7 @@ async function persistShopkeeperSession(session: ShopkeeperSession): Promise<voi
   await SecureStore.setItemAsync(SK.skIsActive, sk.isActive ? '1' : '0')
   await SecureStore.setItemAsync(SK.skCreatedAt, String(sk.createdAt))
   await SecureStore.setItemAsync(SK.skUpdatedAt, String(sk.updatedAt))
+  await SecureStore.setItemAsync(SK.skReceiptSuffix, sk.receiptSuffix ?? '')
   await SecureStore.deleteItemAsync(LEGACY_SESSION_KEY).catch(() => {})
 }
 
@@ -123,6 +200,7 @@ function assembleSession(parts: Record<string, string | null>): ShopkeeperSessio
   const skIsActiveRaw = parts[SK.skIsActive]
   const skCreatedAtRaw = parts[SK.skCreatedAt]
   const skUpdatedAtRaw = parts[SK.skUpdatedAt]
+  const skReceiptSuffixRaw = parts[SK.skReceiptSuffix]
 
   if (
     !token ||
@@ -157,6 +235,7 @@ function assembleSession(parts: Record<string, string | null>): ShopkeeperSessio
       username: skUsername,
       fullName: skFullName,
       phone: skPhone && skPhone.length > 0 ? skPhone : undefined,
+      receiptSuffix: (skReceiptSuffixRaw ?? '').trim().toUpperCase(),
       isActive: skIsActiveRaw === '1',
       createdAt,
       updatedAt,
@@ -178,6 +257,7 @@ async function readAndMigrateLegacyBlob(): Promise<ShopkeeperSession | null> {
   if (!legacy) return null
   try {
     const session = JSON.parse(legacy) as ShopkeeperSession
+    session.shopkeeper.receiptSuffix = session.shopkeeper.receiptSuffix ?? ''
     await persistShopkeeperSession(session)
     return session
   } catch {
@@ -221,6 +301,7 @@ export async function shopkeeperLogin(params: {
         username: String(rawShopkeeper.username),
         fullName: String(rawShopkeeper.fullName),
         phone: rawShopkeeper.phone ? String(rawShopkeeper.phone) : undefined,
+        receiptSuffix: receiptSuffixFromPayload(rawShopkeeper),
         isActive: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -233,7 +314,63 @@ export async function shopkeeperLogin(params: {
     }
 
     await persistShopkeeperSession(session)
-    await pullShopkeeperProductsIntoLocalDb(session.sessionToken).catch(() => {})
+    await pullAllShopkeeperData(session.sessionToken).catch(() => {})
+    return { status: 'approved', session }
+  }
+
+  return { status: 'error', message: 'Unexpected response from shopkeeper auth.' }
+}
+
+/** After the owner approves this device, establish a session without re-entering password. */
+export async function resumeShopkeeperAfterApproval(params: {
+  businessId: string
+  username: string
+  deviceId: string
+}): Promise<LoginResult> {
+  const data = await callShopkeeperAuth({
+    action: 'resume_after_approval',
+    businessId: params.businessId,
+    username: params.username,
+    deviceId: params.deviceId,
+  })
+
+  if (data.status === 'error') {
+    return { status: 'error', message: String(data.message ?? 'Could not complete sign-in') }
+  }
+
+  if (data.status === 'pending_approval') {
+    return {
+      status: 'pending_approval',
+      message: String(data.message ?? 'Still waiting for approval.'),
+    }
+  }
+
+  if (data.status === 'approved') {
+    const rawShopkeeper = data.shopkeeper as Record<string, unknown>
+    const canonicalBusinessId = String(data.businessId ?? '')
+    const deviceId = params.deviceId
+    const session: ShopkeeperSession = {
+      shopkeeper: {
+        id: String(rawShopkeeper.id),
+        businessId: String(rawShopkeeper.businessId ?? canonicalBusinessId),
+        supabaseId: String(rawShopkeeper.id),
+        username: String(rawShopkeeper.username),
+        fullName: String(rawShopkeeper.fullName),
+        phone: rawShopkeeper.phone ? String(rawShopkeeper.phone) : undefined,
+        receiptSuffix: receiptSuffixFromPayload(rawShopkeeper),
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      businessId: canonicalBusinessId,
+      businessName: String(data.businessName ?? ''),
+      deviceId,
+      isApproved: true,
+      sessionToken: String(data.sessionToken),
+    }
+
+    await persistShopkeeperSession(session)
+    await pullAllShopkeeperData(session.sessionToken).catch(() => {})
     return { status: 'approved', session }
   }
 
@@ -267,7 +404,19 @@ export async function getStoredShopkeeperSession(): Promise<ShopkeeperSession | 
       await SecureStore.setItemAsync(SK.businessId, canonicalBiz)
     }
 
-    await pullShopkeeperProductsIntoLocalDb(sessionOut.sessionToken).catch(() => {})
+    const rawSk = data.shopkeeper as Record<string, unknown> | undefined
+    if (rawSk && typeof rawSk.id === 'string') {
+      const nextSuffix = receiptSuffixFromPayload(rawSk)
+      if (nextSuffix !== sessionOut.shopkeeper.receiptSuffix) {
+        sessionOut = {
+          ...sessionOut,
+          shopkeeper: { ...sessionOut.shopkeeper, receiptSuffix: nextSuffix },
+        }
+        await SecureStore.setItemAsync(SK.skReceiptSuffix, nextSuffix)
+      }
+    }
+
+    await pullAllShopkeeperData(sessionOut.sessionToken).catch(() => {})
     return sessionOut
   } catch {
     return null

@@ -85,7 +85,7 @@
  *   );
  */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Animated,
@@ -114,7 +114,7 @@ import { useSales } from '../../../src/hooks/useSales'
 import { useCustomers } from '../../../src/hooks/useCustomers'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { database } from '../../../src/database'
-import { formatShortReceipt6 } from '../../../src/lib/receiptNumber'
+import { appendReceiptSuffix, formatShortReceipt6 } from '../../../src/lib/receiptNumber'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { Product, Customer } from '../../../src/types'
 import type ProductModel from '../../../src/database/models/Product'
@@ -124,6 +124,7 @@ import type StockMovementModel from '../../../src/database/models/StockMovement'
 import type CustomerModel from '../../../src/database/models/Customer'
 import type CreditSaleModel from '../../../src/database/models/CreditSale'
 import { logActivity } from '../../../src/lib/activityLogger'
+import { pushShopkeeperSaleRemote } from '../../../src/lib/shopkeeperAuth'
 
 const COLORS = {
   primary: '#0047AB',
@@ -157,7 +158,13 @@ export default function NewSaleScreen() {
   const router = useRouter()
   const { formatMoney } = useMoneyFormat()
   const business = useAuthStore((s) => s.business)
+  const activeRole = useAuthStore((s) => s.activeRole)
   const businessId = business?.id ?? ''
+
+  const paymentMethodOptions =
+    activeRole === 'shopkeeper'
+      ? PAYMENT_METHODS.filter((p) => p.key !== 'credit')
+      : PAYMENT_METHODS
 
   const {
     items,
@@ -172,6 +179,11 @@ export default function NewSaleScreen() {
     setCustomer,
     clearCart,
   } = useCartStore()
+
+  useEffect(() => {
+    if (activeRole !== 'shopkeeper') return
+    if (paymentMethod === 'credit') setPaymentMethod('cash_usd')
+  }, [activeRole, paymentMethod, setPaymentMethod])
 
   const subtotalCents = useCartStore((s) =>
     s.items.reduce((sum, i) => sum + i.qty * i.unitPriceCents, 0),
@@ -312,12 +324,57 @@ export default function NewSaleScreen() {
     Keyboard.dismiss()
 
     try {
+      const authSnapshot = useAuthStore.getState()
+      const activeRole = authSnapshot.activeRole
+
+      if (activeRole === 'shopkeeper') {
+        const suffix =
+          authSnapshot.shopkeeperSession?.shopkeeper.receiptSuffix?.trim().toUpperCase() ?? ''
+        if (!suffix) {
+          Alert.alert(
+            'Receipt suffix missing',
+            'Ask your business owner to set a receipt suffix for your account under Manage Staff.',
+          )
+          setIsProcessing(false)
+          return
+        }
+      }
+
       const newSaleId = await database.write(async () => {
-        const salesBefore = await database!
-          .get<SaleModel>('sales')
-          .query(Q.where('business_id', business.id))
-          .fetchCount()
-        const receiptNumber = formatShortReceipt6(salesBefore)
+        let receiptNumber: string
+        if (activeRole === 'shopkeeper') {
+          const skId = authSnapshot.shopkeeperSession?.shopkeeper.id ?? null
+          const suffix =
+            authSnapshot.shopkeeperSession?.shopkeeper.receiptSuffix?.trim().toUpperCase() ?? ''
+          if (!skId || !suffix) {
+            throw new Error('Staff session is incomplete. Please sign in again.')
+          }
+          const salesBeforeShopkeeper = await database!
+            .get<SaleModel>('sales')
+            .query(
+              Q.where('business_id', business.id),
+              Q.where('created_by_shopkeeper_id', skId),
+            )
+            .fetchCount()
+          receiptNumber = appendReceiptSuffix(
+            formatShortReceipt6(salesBeforeShopkeeper),
+            suffix,
+          )
+        } else {
+          const salesBeforeOwner = await database!
+            .get<SaleModel>('sales')
+            .query(
+              Q.where('business_id', business.id),
+              Q.where('created_by_shopkeeper_id', Q.eq(null)),
+            )
+            .fetchCount()
+          receiptNumber = formatShortReceipt6(salesBeforeOwner)
+        }
+
+        const shopkeeperCreatorId =
+          activeRole === 'shopkeeper'
+            ? authSnapshot.shopkeeperSession?.shopkeeper.id ?? null
+            : null
 
         const newSale = await database!.get<SaleModel>('sales').create((s) => {
           s.businessId = business.id
@@ -325,6 +382,7 @@ export default function NewSaleScreen() {
           s.discountCents = discountCents
           s.paymentMethod = paymentMethod
           s.receiptNumber = receiptNumber
+          if (shopkeeperCreatorId) s.createdByShopkeeperId = shopkeeperCreatorId
         })
 
         for (const item of items) {
@@ -373,6 +431,42 @@ export default function NewSaleScreen() {
         return newSale.id
       })
 
+      const skTok = useAuthStore.getState().shopkeeperSession?.sessionToken
+      if (useAuthStore.getState().activeRole === 'shopkeeper' && skTok && database) {
+        try {
+          const saleRow = await database.get<SaleModel>('sales').find(newSaleId)
+          const itemRows = await database
+            .get<SaleItemModel>('sale_items')
+            .query(Q.where('sale_id', newSaleId))
+            .fetch()
+          const createdMs =
+            saleRow.createdAt instanceof Date ? saleRow.createdAt.getTime() : Date.now()
+          void pushShopkeeperSaleRemote(skTok, {
+            sale: {
+              id: saleRow.id,
+              business_id: saleRow.businessId,
+              total_cents: saleRow.totalCents,
+              discount_cents: saleRow.discountCents,
+              payment_method: saleRow.paymentMethod,
+              receipt_number: saleRow.receiptNumber,
+              note: saleRow.note ?? null,
+              created_at: new Date(createdMs).toISOString(),
+            },
+            sale_items: itemRows.map((si) => ({
+              id: si.id,
+              sale_id: si.saleId,
+              product_id: si.productId,
+              product_name_snapshot: si.productNameSnapshot,
+              qty: si.qty,
+              unit_price_cents: si.unitPriceCents,
+              cost_price_cents: si.costPriceCents,
+            })),
+          }).catch((err) => console.warn('[shopkeeper] push_sale:', err))
+        } catch (e) {
+          console.warn('[shopkeeper] push_sale prepare failed:', e)
+        }
+      }
+
       // Fire-and-forget background sync — uses WatermelonDB record IDs so
       // there is no ID mismatch between local and remote records.
       await logActivity({
@@ -383,7 +477,7 @@ export default function NewSaleScreen() {
         details: { totalCents, itemCount: items.length, paymentMethod },
       })
 
-      const { triggerSync, activeRole } = useAuthStore.getState()
+      const { triggerSync } = useAuthStore.getState()
       if (activeRole === 'owner') triggerSync(business.id).catch(() => {})
 
       // Fire-and-forget low stock notifications — must not block sale completion
@@ -554,6 +648,7 @@ export default function NewSaleScreen() {
         discountInput={discountInput}
         discountExceedsTotal={discountExceedsTotal}
         paymentMethod={paymentMethod}
+        paymentMethods={paymentMethodOptions}
         selectedCustomer={selectedCustomer}
         formatMoney={formatMoney}
         onDiscountChange={handleDiscountChange}
@@ -656,6 +751,7 @@ interface CartPanelProps {
   discountInput: string
   discountExceedsTotal: boolean
   paymentMethod: PaymentMethod
+  paymentMethods: { key: PaymentMethod; label: string }[]
   selectedCustomer: Customer | null
   formatMoney: (usdCents: number) => string
   onDiscountChange: (text: string) => void
@@ -673,6 +769,7 @@ function CartPanel({
   discountInput,
   discountExceedsTotal,
   paymentMethod,
+  paymentMethods,
   selectedCustomer,
   formatMoney,
   onDiscountChange,
@@ -781,7 +878,7 @@ function CartPanel({
       <View style={cartStyles.paymentSection}>
         <Text style={cartStyles.paymentLabel}>Payment Method</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {PAYMENT_METHODS.map((pm) => {
+          {paymentMethods.map((pm) => {
             const isActive = paymentMethod === pm.key
             return (
               <TouchableOpacity

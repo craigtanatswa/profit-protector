@@ -1026,6 +1026,13 @@ function ShopkeeperSettingsView() {
             showChevron={false}
           />
           <SettingsRow
+            icon="receipt-outline"
+            label="Receipt suffix"
+            value={shopkeeperSession?.shopkeeper.receiptSuffix?.trim() || '—'}
+            description="Used on your receipts; owner can change it in Manage Staff"
+            showChevron={false}
+          />
+          <SettingsRow
             icon="business-outline"
             label="Business"
             value={shopkeeperSession?.businessName ?? ''}
