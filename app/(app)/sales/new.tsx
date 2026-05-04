@@ -566,7 +566,7 @@ export default function NewSaleScreen() {
   ])
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title="New Sale"
         leftAction={{ icon: 'close', onPress: handleClose }}

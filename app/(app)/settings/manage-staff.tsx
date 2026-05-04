@@ -589,7 +589,7 @@ function ManageStaffScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title="Manage Staff"
         leftAction={{ icon: 'arrow-back', onPress: () => router.back() }}

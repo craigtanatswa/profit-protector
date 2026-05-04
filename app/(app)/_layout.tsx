@@ -5,8 +5,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { Text } from 'react-native'
 import * as Notifications from 'expo-notifications'
 
-import { BrandLogo } from '../../src/components/layout'
-import { StaffModeBanner } from '../../src/components/layout/StaffModeBanner'
+import { BrandLogo, StaffModeBanner, STAFF_MODE_BANNER_ROW_HEIGHT } from '../../src/components/layout'
+import { AppChromeContext } from '../../src/context/AppChromeContext'
 import { useAuthStore } from '../../src/stores/authStore'
 import { useAutoSync } from '../../src/hooks/useAutoSync'
 import { useOwnerSalesRealtimeSync } from '../../src/hooks/useOwnerSalesRealtimeSync'
@@ -71,7 +71,7 @@ const DashboardHeaderTitle = () => (
 
 const headerTitleStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  text: { fontSize: 17, fontWeight: '600', color: '#1A202C' },
+  text: { fontSize: 17, fontWeight: '600', color: '#FFFFFF' },
 })
 
 // ─── Stable tab navigator screenOptions ──────────────────────────────────────
@@ -83,8 +83,9 @@ const TAB_SCREEN_OPTIONS = {
     borderTopWidth: 1,
     borderTopColor: '#E9ECEF',
   },
-  headerStyle: { backgroundColor: '#FFFFFF' },
-  headerTintColor: '#0047AB',
+  headerStyle: { backgroundColor: '#0047AB' },
+  headerTintColor: '#FFFFFF',
+  headerTitleStyle: { color: '#FFFFFF' },
   headerShadowVisible: false,
 } as const
 
@@ -225,56 +226,59 @@ export default function AppLayout() {
   } as const
 
   return (
-    <View style={rootStyle}>
-      {isShopkeeper ? (
-        <StaffModeBanner
-          shopkeeperName={shopkeeperSession?.shopkeeper.fullName ?? ''}
-          onSignOut={handleShopkeeperSignOut}
-        />
-      ) : null}
+    <AppChromeContext.Provider value={{ staffBannerConsumesTopSafeArea: isShopkeeper }}>
+      <View style={rootStyle}>
+        {isShopkeeper ? (
+          <StaffModeBanner
+            shopkeeperName={shopkeeperSession?.shopkeeper.fullName ?? ''}
+            onSignOut={handleShopkeeperSignOut}
+          />
+        ) : null}
 
-      <NotificationBanner
-        {...bannerProps}
-        onPress={handleBannerPress}
-        onDismiss={hideBanner}
-      />
+        <NotificationBanner
+          {...bannerProps}
+          topOffsetExtra={isShopkeeper ? STAFF_MODE_BANNER_ROW_HEIGHT : 0}
+          onPress={handleBannerPress}
+          onDismiss={hideBanner}
+        />
 
-      <Tabs screenOptions={TAB_SCREEN_OPTIONS}>
-        <Tabs.Screen
-          name="index"
-          listeners={LISTENERS.dashboard}
-          options={DASHBOARD_OPTIONS}
-        />
-        <Tabs.Screen
-          name="sales"
-          listeners={LISTENERS.sales}
-          options={SALES_OPTIONS}
-        />
-        <Tabs.Screen
-          name="inventory"
-          listeners={LISTENERS.inventory}
-          options={INVENTORY_OPTIONS}
-        />
-        <Tabs.Screen
-          name="reports"
-          listeners={isShopkeeper ? undefined : LISTENERS.reports}
-          options={{
-            ...REPORTS_OPTIONS,
-            ...(isShopkeeper ? { href: null } : {}),
-          }}
-        />
-        <Tabs.Screen
-          name="customers"
-          listeners={LISTENERS.customers}
-          options={CUSTOMERS_OPTIONS}
-        />
-        <Tabs.Screen
-          name="settings"
-          listeners={LISTENERS.settings}
-          options={settingsOptions}
-        />
-      </Tabs>
-    </View>
+        <Tabs screenOptions={TAB_SCREEN_OPTIONS}>
+          <Tabs.Screen
+            name="index"
+            listeners={LISTENERS.dashboard}
+            options={DASHBOARD_OPTIONS}
+          />
+          <Tabs.Screen
+            name="sales"
+            listeners={LISTENERS.sales}
+            options={SALES_OPTIONS}
+          />
+          <Tabs.Screen
+            name="inventory"
+            listeners={LISTENERS.inventory}
+            options={INVENTORY_OPTIONS}
+          />
+          <Tabs.Screen
+            name="reports"
+            listeners={isShopkeeper ? undefined : LISTENERS.reports}
+            options={{
+              ...REPORTS_OPTIONS,
+              ...(isShopkeeper ? { href: null } : {}),
+            }}
+          />
+          <Tabs.Screen
+            name="customers"
+            listeners={LISTENERS.customers}
+            options={CUSTOMERS_OPTIONS}
+          />
+          <Tabs.Screen
+            name="settings"
+            listeners={LISTENERS.settings}
+            options={settingsOptions}
+          />
+        </Tabs>
+      </View>
+    </AppChromeContext.Provider>
   )
 }
 

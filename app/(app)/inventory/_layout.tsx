@@ -4,8 +4,9 @@ export default function InventoryLayout() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: '#FFFFFF' },
-        headerTintColor: '#0047AB',
+        headerStyle: { backgroundColor: '#0047AB' },
+        headerTintColor: '#FFFFFF',
+        headerTitleStyle: { color: '#FFFFFF' },
         headerShadowVisible: false,
       }}
     >

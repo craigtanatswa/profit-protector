@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Slot, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { DatabaseProvider } from '@nozbe/watermelondb/react'
 import { database } from '../src/database'
 import { supabase } from '../src/lib/supabase'
@@ -178,10 +179,10 @@ export default function RootLayout() {
   }, [])
 
   const shell = (
-    <>
+    <SafeAreaProvider>
       <StatusBar style="dark" />
       <AuthGate />
-    </>
+    </SafeAreaProvider>
   )
   if (database) {
     return <DatabaseProvider database={database}>{shell}</DatabaseProvider>

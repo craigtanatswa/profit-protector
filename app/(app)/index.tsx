@@ -18,6 +18,7 @@ import { router, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 
+import { useAppChrome } from '../../src/context/AppChromeContext'
 import { Button, Card, Badge, MetricCard, NotificationBanner } from '../../src/components/ui'
 import { useAuthStore } from '../../src/stores/authStore'
 import { useDashboard } from '../../src/hooks/useDashboard'
@@ -175,7 +176,7 @@ function DashboardSkeleton({ topInset }: { topInset: number }) {
   return (
     <View style={styles.skeletonRoot}>
       {/* Header skeleton */}
-      <View style={[styles.skeletonHeader, { paddingTop: topInset + 16 }]}>
+      <View style={[styles.skeletonHeader, { paddingTop: topInset + 22 }]}>
         <SkeletonBox width={160} height={14} style={styles.skeletonMb6} />
         <SkeletonBox width={220} height={22} />
       </View>
@@ -800,6 +801,8 @@ function CreditSection({ customers }: { customers: Customer[] }) {
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets()
+  const { staffBannerConsumesTopSafeArea } = useAppChrome()
+  const headerTopInset = staffBannerConsumesTopSafeArea ? 0 : insets.top
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [emailSecurityBannerVisible, setEmailSecurityBannerVisible] = useState(false)
 
@@ -973,7 +976,7 @@ export default function DashboardScreen() {
     return (
       <>
         <StatusBar style="light" />
-        <DashboardSkeleton topInset={insets.top} />
+        <DashboardSkeleton topInset={headerTopInset} />
       </>
     )
   }
@@ -1002,7 +1005,7 @@ export default function DashboardScreen() {
       />
       <View style={styles.root}>
         {/* ── Custom cobalt header ── */}
-        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+        <View style={[styles.header, { paddingTop: headerTopInset + 22 }]}>
           <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
               <Text style={styles.greetingText}>

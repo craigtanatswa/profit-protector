@@ -95,7 +95,7 @@ export default function PhoneVerifyScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title="Phone verification"
         leftAction={{ icon: 'arrow-back', onPress: goBack }}

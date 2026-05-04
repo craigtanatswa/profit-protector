@@ -1014,7 +1014,7 @@ function ShopkeeperSettingsView() {
   }, [clearShopkeeperSession, router])
 
   return (
-    <SafeAreaView style={s.safe} edges={['top']}>
+    <SafeAreaView style={s.safe} edges={['left', 'right', 'bottom']}>
       <ScreenHeader title="Settings" showBorder />
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
         <SettingsSection title="My Account">
@@ -1301,7 +1301,7 @@ function SettingsScreen() {
   }
 
   return (
-    <SafeAreaView style={s.safe} edges={['top']}>
+    <SafeAreaView style={s.safe} edges={['left', 'right', 'bottom']}>
       <ScreenHeader title="Settings" showBorder />
 
       <ScrollView

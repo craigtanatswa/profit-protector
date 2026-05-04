@@ -49,7 +49,7 @@ export default function ActivityLogScreen() {
   if (activeRole !== 'owner') return null
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title="Activity Log"
         leftAction={{ icon: 'arrow-back', onPress: () => router.back() }}

@@ -16,7 +16,7 @@ type TermsOfServiceViewProps = {
 
 export function TermsOfServiceView({ onBack }: TermsOfServiceViewProps) {
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title="Terms of Service"
         leftAction={{ icon: 'arrow-back', onPress: onBack }}

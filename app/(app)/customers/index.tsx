@@ -475,7 +475,7 @@ export default function CustomersScreen() {
   const TABS: FilterTab[] = ['All', 'Owing', 'Settled']
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title="Customers"
         rightAction={{

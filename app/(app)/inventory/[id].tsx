@@ -214,7 +214,7 @@ export default function ProductDetailScreen() {
   // ── Loading skeleton ──────────────────────────────────────────────────────
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
         <Stack.Screen options={{ headerShown: false }} />
         <ScreenHeader
           title="Product Detail"
@@ -250,7 +250,7 @@ export default function ProductDetailScreen() {
   // ── Error / not found ─────────────────────────────────────────────────────
   if (error || !product) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
         <Stack.Screen options={{ headerShown: false }} />
         <ScreenHeader
           title="Product Detail"
@@ -321,7 +321,7 @@ export default function ProductDetailScreen() {
   const FILTERS: MovementFilter[] = ['All', 'Sales', 'Purchases', 'Adjustments']
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScreenHeader

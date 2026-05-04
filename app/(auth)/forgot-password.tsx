@@ -194,7 +194,7 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title="Recover Account"
         leftAction={{ icon: 'arrow-back', onPress: () => router.back() }}

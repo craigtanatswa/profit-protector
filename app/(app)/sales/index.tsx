@@ -353,7 +353,7 @@ export default function SalesHistoryScreen() {
   const noResultsFromFilter = !isLoading && salesWithItems.length > 0 && filtered.length === 0
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title="Sales History"
         rightAction={{ icon: 'funnel-outline', onPress: () => setShowFilterPanel(true) }}

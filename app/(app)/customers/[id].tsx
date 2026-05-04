@@ -608,7 +608,7 @@ export default function CustomerDetailScreen() {
 
   if (error || !customer) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <ScreenHeader
           title="Customer"
           leftAction={{ icon: 'arrow-back', onPress: () => router.back() }}
@@ -625,7 +625,7 @@ export default function CustomerDetailScreen() {
   const initials = customer.name.slice(0, 2).toUpperCase()
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title={customer.name}
         leftAction={{ icon: 'arrow-back', onPress: () => router.back() }}

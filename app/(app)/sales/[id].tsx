@@ -166,7 +166,7 @@ export default function SaleDetailScreen() {
 
   if (notFound || !sale) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <ScreenHeader
           title="Sale Details"
           leftAction={{ icon: 'arrow-back', onPress: () => router.back() }}
@@ -191,7 +191,7 @@ export default function SaleDetailScreen() {
   )
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title={isPostSale ? 'Sale Complete' : 'Sale Details'}
         leftAction={{ icon: 'arrow-back', onPress: () => router.back() }}
