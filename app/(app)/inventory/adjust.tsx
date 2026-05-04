@@ -27,13 +27,14 @@ import type StockMovementModel from '../../../src/database/models/StockMovement'
 import { formatDate } from '../../../src/lib/formatters'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { getProductById } from '../../../src/hooks/useProducts'
-import { sendLowStockNotification } from '../../../src/lib/notifications'
 import type { AdjustmentReason, Product } from '../../../src/types'
-import { supabase } from '../../../src/lib/supabase'
+import {
+  pushShopkeeperProductPatchesRemote,
+  enqueuePendingShopkeeperProductSync,
+  flushPendingShopkeeperOutbound,
+} from '../../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../../src/lib/activityLogger'
 import { wmRaw } from '../../../src/lib/watermelonRaw'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type AdjustmentDirection = 'remove' | 'add'
 
@@ -300,6 +301,8 @@ export default function AdjustStockScreen() {
         ? `${values.reason}: ${values.description}`
         : values.reason
 
+      const updatedMs = Date.now()
+
       const productRecord = await database
         .get<ProductModel>('products')
         .find(values.productId)
@@ -307,7 +310,7 @@ export default function AdjustStockScreen() {
       await database.write(async () => {
         await productRecord.update((p) => {
           p.stockQty = newStockQty
-          wmRaw(p).updated_at = Date.now()
+          wmRaw(p).updated_at = updatedMs
         })
 
         await database!
@@ -333,43 +336,28 @@ export default function AdjustStockScreen() {
       })
 
       if (activeRole === 'owner') {
-        supabase
-          .from('products')
-          .update({
-            stock_qty: newStockQty,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', values.productId)
-          .then(({ error }) => {
-            if (error) console.warn('Product sync failed:', error.message)
-          })
-
-        supabase
-          .from('stock_movements')
-          .insert({
-            business_id: business.id,
-            product_id: selectedProduct.id,
-            product_name_snapshot: selectedProduct.name,
-            action: 'adjustment',
-            qty_change: qtyChange,
-            reason: reasonString,
-            supplier: '',
-            created_at: new Date(values.adjustmentDate || Date.now()).toISOString(),
-          })
-          .then(({ error }) => {
-            if (error) console.warn('Stock movement sync failed:', error.message)
-          })
-      }
-
-      // Fire-and-forget low stock notification for removals
-      if (isRemoving && newStockQty <= selectedProduct.lowStockThreshold) {
-        sendLowStockNotification({
-          productId: selectedProduct.id,
-          productName: selectedProduct.name,
-          currentStock: newStockQty,
-          threshold: selectedProduct.lowStockThreshold,
-          unit: selectedProduct.unit,
-        }).catch((err) => console.warn('Notification failed:', err.message))
+        // Offline-first: local write already visible via WatermelonDB reactive subscriptions.
+        // Fast path: push products + movements to cloud immediately so Realtime fires to shopkeeper.
+        // Full sync runs in background to reconcile all other tables.
+        useAuthStore.getState().triggerInventorySync(business.id)
+      } else if (activeRole === 'shopkeeper') {
+        const tok = useAuthStore.getState().shopkeeperSession?.sessionToken
+        const skId = useAuthStore.getState().shopkeeperSession?.shopkeeper.id
+        const patch = {
+          product_id: values.productId,
+          stock_qty: newStockQty,
+          updated_at: new Date(updatedMs).toISOString(),
+        }
+        void (async () => {
+          if (!tok || !skId) return
+          try {
+            await flushPendingShopkeeperOutbound(tok, business.id, skId)
+            const ok = await pushShopkeeperProductPatchesRemote(tok, [patch])
+            if (!ok) await enqueuePendingShopkeeperProductSync(business.id, [values.productId])
+          } catch {
+            await enqueuePendingShopkeeperProductSync(business.id, [values.productId])
+          }
+        })()
       }
 
       const unit = selectedProduct.unit

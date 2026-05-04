@@ -27,11 +27,27 @@ export async function getProductById(id: string): Promise<Product> {
   return mapProductRecord(record)
 }
 
+/**
+ * useProducts
+ *
+ * Subscribes to the products collection via WatermelonDB's `observe()`.
+ * The subscription is permanent for the lifetime of a given businessId —
+ * it is never torn down by `refetch()` calls, so there is no race window
+ * where a background-sync write could be silently missed.
+ *
+ * When WatermelonDB is updated (e.g. by `mergeRemoteProductsIntoWatermelon`
+ * after a sync), `observe()` fires immediately and `setProducts` pushes new
+ * data into React state, re-rendering all subscribers without any manual
+ * refresh trigger.
+ *
+ * `refetch()` is intentionally a no-op — the live observable already handles
+ * all updates. Call sites that still invoke refetch() after a pull are safe
+ * to leave as-is; they just become a harmless extra call.
+ */
 export function useProducts(businessId: string) {
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [refreshTick, setRefreshTick] = useState(0)
   const prevBusinessIdRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
@@ -66,9 +82,11 @@ export function useProducts(businessId: string) {
       })
 
     return () => subscription.unsubscribe()
-  }, [businessId, refreshTick])
+  }, [businessId]) // No refreshTick — observe() is always live and fires on every write.
 
-  const refetch = useCallback(() => setRefreshTick((t) => t + 1), [])
+  // No-op: the live observable already fires on every WatermelonDB write.
+  // Kept for API compatibility with existing call sites.
+  const refetch = useCallback(() => {}, [])
 
   return { products, isLoading, error, refetch }
 }

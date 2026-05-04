@@ -32,6 +32,15 @@ type TableResult = {
   error?: string
 }
 
+/**
+ * How far back incremental pulls reach (same idea as sales).
+ * Staff `push_sale` commits the sale row before line items and stock decrements finish,
+ * so owner Realtime can trigger sync while `products.updated_at` is still old. A strict
+ * cursor alone can then skip the stock row after the cursor jumps forward (especially
+ * with device/server clock skew). Re-fetching a rolling window keeps inventory aligned.
+ */
+const REMOTE_PULL_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000
+
 // ---------------------------------------------------------------------------
 // Timestamp storage
 // ---------------------------------------------------------------------------
@@ -88,16 +97,27 @@ export type SupabaseProductRow = {
   updated_at: string
 }
 
+export type MergeRemoteProductsOptions = {
+  /**
+   * Apply every server row over local state (ignore updated_at ordering).
+   * Use on login / session restore so dashboard stock matches Supabase even when
+   * server timestamps lag or local clocks differ.
+   */
+  authoritative?: boolean
+}
+
 /**
  * Merge remote product rows into WatermelonDB (create/update by id).
  * Used by owner incremental sync and shopkeeper `pull_products`.
  */
 export async function mergeRemoteProductsIntoWatermelon(
   remoteRecords: SupabaseProductRow[],
+  options?: MergeRemoteProductsOptions,
 ): Promise<number> {
   if (!database || remoteRecords.length === 0) return 0
 
   const ops: ReturnType<Product['prepareUpdate']>[] = []
+  const authoritative = options?.authoritative === true
 
   for (const remote of remoteRecords) {
     const remoteMs = new Date(remote.updated_at).getTime()
@@ -106,7 +126,9 @@ export async function mergeRemoteProductsIntoWatermelon(
       const existing = await database.get<Product>('products').find(remote.id)
       const localMs = wmRaw(existing).updated_at as number
 
-      if (remoteMs > localMs) {
+      // Use >= so a patch that echoes back the exact same timestamp we wrote
+      // locally still wins and applies the authoritative server stock value.
+      if (authoritative || remoteMs >= localMs) {
         ops.push(
           existing.prepareUpdate((r) => {
             r.name = remote.name
@@ -267,8 +289,44 @@ async function syncProducts(
   let pulled = 0
 
   try {
-    // ---- PUSH ----
-    const localRecords = await database
+    // ---- PULL FIRST (LWW: know what the server has before deciding what to push) ----
+    // Remote wins when its updated_at >= local (authoritative stock from server).
+    // We pull first so the push step can skip records where the server is already
+    // as-new-or-newer, preventing an older local write from overwriting a newer one.
+    const productsPullLowerBound =
+      lastSyncedAt > 0 ? Math.max(0, lastSyncedAt - REMOTE_PULL_LOOKBACK_MS) : 0
+    const productsPull = withPullTimeFilter(
+      supabase.from('products').select('*').eq('business_id', businessId),
+      'updated_at',
+      productsPullLowerBound,
+    )
+    const { data: remoteRecords, error: pullError } = await productsPull.order(
+      'updated_at',
+      { ascending: true },
+    )
+
+    if (pullError) {
+      return { pushed, pulled, error: `products pull: ${pullError.message}` }
+    }
+
+    // Build a map of the remote timestamp by product id so the push can filter.
+    const remoteUpdatedAt = new Map<string, number>()
+    if (remoteRecords) {
+      for (const r of remoteRecords) {
+        remoteUpdatedAt.set(r.id, new Date(r.updated_at).getTime())
+      }
+      if (remoteRecords.length > 0) {
+        pulled = await mergeRemoteProductsIntoWatermelon(remoteRecords as SupabaseProductRow[])
+      }
+    }
+
+    // ---- PUSH: only records where local is still newer than remote ----
+    // After the pull above, any record where remote was newer has already been
+    // updated locally, so its WatermelonDB updated_at now reflects the server value
+    // and it won't appear in this query. Records that are genuinely local-newer
+    // (edited on this device since lastSyncedAt and more recently than remote) are
+    // the ones that should win on the server.
+    const candidates = await database
       .get<Product>('products')
       .query(
         Q.where('business_id', businessId),
@@ -278,6 +336,14 @@ async function syncProducts(
         ),
       )
       .fetch()
+
+    const localRecords = candidates.filter((r) => {
+      const localMs = wmRaw(r).updated_at as number
+      const serverMs = remoteUpdatedAt.get(r.id)
+      // New local record (not on server yet): always push.
+      // Existing record: only push if local is strictly newer.
+      return serverMs == null || localMs > serverMs
+    })
 
     if (localRecords.length > 0) {
       const payload = localRecords.map((r) => ({
@@ -301,7 +367,6 @@ async function syncProducts(
 
       if (!pushError) {
         pushed = localRecords.length
-        // Mark unsynced records as synced
         const unsyncedRecords = localRecords.filter((r) => !r.supabaseId)
         if (unsyncedRecords.length > 0) {
           await database.write(async () => {
@@ -316,31 +381,6 @@ async function syncProducts(
         }
       }
     }
-
-    // ---- PULL ----
-    const productsPull = withPullTimeFilter(
-      supabase.from('products').select('*').eq('business_id', businessId),
-      'updated_at',
-      lastSyncedAt,
-    )
-    const { data: remoteRecords, error: pullError } = await productsPull.order(
-      'updated_at',
-      { ascending: true },
-    )
-
-    if (pullError) {
-      return {
-        pushed,
-        pulled,
-        error: `products pull: ${pullError.message}`,
-      }
-    }
-
-    if (remoteRecords && remoteRecords.length > 0) {
-      pulled = await mergeRemoteProductsIntoWatermelon(
-        remoteRecords as SupabaseProductRow[],
-      )
-    }
   } catch (e) {
     return {
       pushed,
@@ -350,6 +390,89 @@ async function syncProducts(
   }
 
   return { pushed, pulled }
+}
+
+/** Full product pull for the signed-in owner — aligns local stock with Supabase after login. */
+export async function refreshOwnerProductsFromSupabase(businessId: string): Promise<void> {
+  if (!database || !businessId) return
+
+  const { data: remoteRecords, error } = await supabase
+    .from('products')
+    .select('*')
+    .eq('business_id', businessId)
+    .order('updated_at', { ascending: true })
+
+  if (error) {
+    if (__DEV__) console.warn('[sync] refreshOwnerProductsFromSupabase:', error.message)
+    return
+  }
+  if (!remoteRecords || remoteRecords.length === 0) return
+
+  await mergeRemoteProductsIntoWatermelon(remoteRecords as SupabaseProductRow[], {
+    authoritative: true,
+  })
+}
+
+/**
+ * Re-fetch only products that appear on a remote sale — used after staff sales so stock
+ * matches `sale_items` without waiting for another incremental products pull.
+ * Retries while `sale_items` appear (sale row can replicate before lines), then retries
+ * product reads so stock decrements from `push_sale` are visible (same race as Realtime:
+ * `sales` often fires before `products.stock_qty` updates).
+ */
+export async function refreshOwnerProductsForRemoteSale(
+  businessId: string,
+  saleId: string,
+): Promise<void> {
+  if (!database || !businessId || !saleId) return
+
+  const itemRetries = 8
+  const delayMs = 120
+
+  let itemRows: { product_id: string }[] = []
+
+  for (let attempt = 0; attempt < itemRetries; attempt++) {
+    const { data: items, error: itemsErr } = await supabase
+      .from('sale_items')
+      .select('product_id')
+      .eq('sale_id', saleId)
+
+    if (itemsErr) {
+      if (__DEV__) console.warn('[sync] refreshOwnerProductsForRemoteSale items:', itemsErr.message)
+      return
+    }
+    if (items != null && items.length > 0) {
+      itemRows = items
+      break
+    }
+    if (attempt < itemRetries - 1) {
+      await new Promise((r) => setTimeout(r, delayMs))
+    }
+  }
+
+  if (itemRows.length === 0) return
+
+  const productIds = [...new Set(itemRows.map((r) => String(r.product_id)).filter(Boolean))]
+  if (productIds.length === 0) return
+
+  for (let attempt = 0; attempt < itemRetries; attempt++) {
+    const { data: rows, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('business_id', businessId)
+      .in('id', productIds)
+
+    if (error) {
+      if (__DEV__) console.warn('[sync] refreshOwnerProductsForRemoteSale products:', error.message)
+      return
+    }
+    if (rows != null && rows.length > 0) {
+      await mergeRemoteProductsIntoWatermelon(rows as SupabaseProductRow[], { authoritative: true })
+    }
+    if (attempt < itemRetries - 1) {
+      await new Promise((r) => setTimeout(r, delayMs))
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -366,8 +489,75 @@ async function syncCustomers(
   let pulled = 0
 
   try {
-    // ---- PUSH ----
-    const localRecords = await database
+    // ---- PULL FIRST (LWW — same pattern as syncProducts) ----
+    const customersPull = withPullTimeFilter(
+      supabase.from('customers').select('*').eq('business_id', businessId),
+      'updated_at',
+      lastSyncedAt,
+    )
+    const { data: remoteRecords, error: pullError } = await customersPull.order(
+      'updated_at',
+      { ascending: true },
+    )
+
+    if (pullError) {
+      return { pushed, pulled, error: `customers pull: ${pullError.message}` }
+    }
+
+    const remoteUpdatedAt = new Map<string, number>()
+    if (remoteRecords) {
+      for (const remote of remoteRecords) {
+        const remoteMs = remote.updated_at
+          ? new Date(remote.updated_at).getTime()
+          : new Date(remote.created_at).getTime()
+        remoteUpdatedAt.set(remote.id, remoteMs)
+      }
+
+      if (remoteRecords.length > 0) {
+        const ops: ReturnType<Customer['prepareUpdate']>[] = []
+        for (const remote of remoteRecords) {
+          const remoteMs = remoteUpdatedAt.get(remote.id)!
+          try {
+            const existing = await database.get<Customer>('customers').find(remote.id)
+            const localMs =
+              (wmRaw(existing).updated_at as number) || (wmRaw(existing).created_at as number)
+            if (remoteMs > localMs) {
+              ops.push(
+                existing.prepareUpdate((r) => {
+                  r.name = remote.name
+                  r.phone = remote.phone
+                  r.outstandingBalanceCents = remote.outstanding_balance_cents
+                  r.supabaseId = remote.id
+                  wmRaw(r).updated_at = remoteMs
+                }),
+              )
+            }
+          } catch {
+            ops.push(
+              database.get<Customer>('customers').prepareCreate((r) => {
+                r._raw.id = remote.id
+                r.businessId = remote.business_id
+                r.name = remote.name
+                r.phone = remote.phone
+                r.outstandingBalanceCents = remote.outstanding_balance_cents
+                r.supabaseId = remote.id
+                wmRaw(r).created_at = new Date(remote.created_at).getTime()
+                wmRaw(r).updated_at = remoteMs
+              }) as ReturnType<Customer['prepareUpdate']>,
+            )
+          }
+        }
+        if (ops.length > 0) {
+          await database.write(async () => {
+            await database!.batch(...ops)
+          })
+          pulled = ops.length
+        }
+      }
+    }
+
+    // ---- PUSH: only records locally newer than what server has ----
+    const candidates = await database
       .get<Customer>('customers')
       .query(
         Q.where('business_id', businessId),
@@ -377,6 +567,12 @@ async function syncCustomers(
         ),
       )
       .fetch()
+
+    const localRecords = candidates.filter((r) => {
+      const localMs = (wmRaw(r).updated_at as number) || (wmRaw(r).created_at as number)
+      const serverMs = remoteUpdatedAt.get(r.id)
+      return serverMs == null || localMs > serverMs
+    })
 
     if (localRecords.length > 0) {
       const payload = localRecords.map((r) => ({
@@ -407,72 +603,6 @@ async function syncCustomers(
             )
           })
         }
-      }
-    }
-
-    // ---- PULL ----
-    const customersPull = withPullTimeFilter(
-      supabase.from('customers').select('*').eq('business_id', businessId),
-      'updated_at',
-      lastSyncedAt,
-    )
-    const { data: remoteRecords, error: pullError } = await customersPull.order(
-      'updated_at',
-      { ascending: true },
-    )
-
-    if (pullError) {
-      return {
-        pushed,
-        pulled,
-        error: `customers pull: ${pullError.message}`,
-      }
-    }
-
-    if (remoteRecords && remoteRecords.length > 0) {
-      const ops: ReturnType<Customer['prepareUpdate']>[] = []
-
-      for (const remote of remoteRecords) {
-        const remoteMs = remote.updated_at
-          ? new Date(remote.updated_at).getTime()
-          : new Date(remote.created_at).getTime()
-
-        try {
-          const existing = await database.get<Customer>('customers').find(remote.id)
-          const localMs = (wmRaw(existing).updated_at as number) || (wmRaw(existing).created_at as number)
-
-          if (remoteMs > localMs) {
-            ops.push(
-              existing.prepareUpdate((r) => {
-                r.name = remote.name
-                r.phone = remote.phone
-                r.outstandingBalanceCents = remote.outstanding_balance_cents
-                r.supabaseId = remote.id
-                wmRaw(r).updated_at = remoteMs
-              }),
-            )
-          }
-        } catch {
-          ops.push(
-            database.get<Customer>('customers').prepareCreate((r) => {
-              r._raw.id = remote.id
-              r.businessId = remote.business_id
-              r.name = remote.name
-              r.phone = remote.phone
-              r.outstandingBalanceCents = remote.outstanding_balance_cents
-              r.supabaseId = remote.id
-              wmRaw(r).created_at = new Date(remote.created_at).getTime()
-              wmRaw(r).updated_at = remoteMs
-            }) as ReturnType<Customer['prepareUpdate']>,
-          )
-        }
-      }
-
-      if (ops.length > 0) {
-        await database.write(async () => {
-          await database!.batch(...ops)
-        })
-        pulled = ops.length
       }
     }
   } catch (e) {
@@ -558,10 +688,13 @@ async function syncSales(
     }
 
     // ---- PULL new remote sales ----
+    // Rolling lookback (same window as products): offline shopkeeper sales and clock skew.
+    const salesLookbackAt =
+      lastSyncedAt > 0 ? Math.max(0, lastSyncedAt - REMOTE_PULL_LOOKBACK_MS) : 0
     const salesPull = withPullTimeFilter(
       supabase.from('sales').select('*').eq('business_id', businessId),
       'created_at',
-      lastSyncedAt,
+      salesLookbackAt,
     )
     const { data: remoteSales, error: pullError } = await salesPull.order('created_at', {
       ascending: true,
@@ -677,10 +810,13 @@ async function syncStockMovements(
     }
 
     // ---- PULL new remote movements ----
+    // Rolling lookback so offline / clock-skew rows are not skipped (same idea as sales pull).
+    const MOVEMENTS_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000
+    const movementsLookbackAt = lastSyncedAt > 0 ? lastSyncedAt - MOVEMENTS_LOOKBACK_MS : 0
     const movementsPull = withPullTimeFilter(
       supabase.from('stock_movements').select('*').eq('business_id', businessId),
       'created_at',
-      lastSyncedAt,
+      movementsLookbackAt,
     )
     const { data: remoteMovements, error: pullError } = await movementsPull.order(
       'created_at',
@@ -1125,44 +1261,81 @@ export async function syncAll(businessId: string): Promise<SyncResult> {
   let totalPushed = 0
   let totalPulled = 0
 
-  // Order matters: credit_sales and payment_records pull from local sales/customers.
-  // When these ran in parallel with products/customers/sales, they often saw empty
-  // local tables and skipped remote pulls entirely.
-  const steps: Array<() => Promise<TableResult>> = [
-    () => syncProducts(businessId, lastSyncedAt),
-    () => syncCustomers(businessId, lastSyncedAt),
-    () => syncSales(businessId, lastSyncedAt),
-    () => syncStockMovements(businessId, lastSyncedAt),
-    () => syncCreditSales(businessId, lastSyncedAt),
-    () => syncPaymentRecords(businessId, lastSyncedAt),
-    () => syncActivityLogs(businessId, lastSyncedAt),
-  ]
+  // Phase 1: mutually independent tables — run in parallel for speed.
+  // Each uses pull-first LWW (products, customers) or create-only append (sales, movements, logs).
+  const phase1 = await Promise.allSettled([
+    syncProducts(businessId, lastSyncedAt),
+    syncCustomers(businessId, lastSyncedAt),
+    syncSales(businessId, lastSyncedAt),
+    syncStockMovements(businessId, lastSyncedAt),
+    syncActivityLogs(businessId, lastSyncedAt),
+  ])
 
-  for (const step of steps) {
-    try {
-      const result = await step()
-      totalPushed += result.pushed
-      totalPulled += result.pulled
-      if (result.error) errors.push(result.error)
-    } catch (reason) {
-      errors.push(reason instanceof Error ? reason.message : String(reason))
+  for (const r of phase1) {
+    if (r.status === 'fulfilled') {
+      totalPushed += r.value.pushed
+      totalPulled += r.value.pulled
+      if (r.value.error) errors.push(r.value.error)
+    } else {
+      errors.push(r.reason instanceof Error ? r.reason.message : String(r.reason))
+    }
+  }
+
+  // Phase 2: tables that join through phase-1 data already in local DB.
+  // credit_sales needs local sales; payment_records needs local customers.
+  const phase2 = await Promise.allSettled([
+    syncCreditSales(businessId, lastSyncedAt),
+    syncPaymentRecords(businessId, lastSyncedAt),
+  ])
+
+  for (const r of phase2) {
+    if (r.status === 'fulfilled') {
+      totalPushed += r.value.pushed
+      totalPulled += r.value.pulled
+      if (r.value.error) errors.push(r.value.error)
+    } else {
+      errors.push(r.reason instanceof Error ? r.reason.message : String(r.reason))
     }
   }
 
   const now = Date.now()
-  await setLastSyncedAt(businessId, now)
+  // Do not advance the sync cursor while critical pushes/pulls failed — otherwise
+  // offline-first writes with updated_at > lastSyncedAt would never retry.
+  const blockingErrors = errors.filter((e) => !e.startsWith('activity_logs'))
+  let nextLastSyncedAt: number | null = null
+  if (blockingErrors.length === 0) {
+    await setLastSyncedAt(businessId, now)
+    nextLastSyncedAt = now
+  }
 
-  // Status is 'error' only if ALL tables failed.
-  const allFailed = errors.length === steps.length
+  // Status is 'error' only if every step failed.
+  const totalSteps = phase1.length + phase2.length
+  const allFailed = errors.length >= totalSteps
   const status: SyncStatus = allFailed ? 'error' : 'success'
 
   return {
     status,
-    lastSyncedAt: now,
+    lastSyncedAt: nextLastSyncedAt,
     recordsPushed: totalPushed,
     recordsPulled: totalPulled,
     errors,
   }
+}
+
+/**
+ * Fast-path inventory sync: push pending products + stock_movements to Supabase
+ * and pull the latest back — both in parallel. Does NOT advance the global sync cursor
+ * (syncAll handles that). Call this immediately after an owner inventory write so the
+ * cloud is updated quickly and Realtime fires to shopkeeper devices; the full background
+ * sync runs independently via triggerSync / useAutoSync.
+ */
+export async function syncInventoryFast(businessId: string): Promise<void> {
+  if (!database) return
+  const lastSyncedAt = await getLastSyncedAt(businessId)
+  await Promise.all([
+    syncProducts(businessId, lastSyncedAt).catch(() => {}),
+    syncStockMovements(businessId, lastSyncedAt).catch(() => {}),
+  ])
 }
 
 /**

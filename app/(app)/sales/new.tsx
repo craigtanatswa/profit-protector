@@ -115,6 +115,7 @@ import { useCustomers } from '../../../src/hooks/useCustomers'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { database } from '../../../src/database'
 import { appendReceiptSuffix, formatShortReceipt6 } from '../../../src/lib/receiptNumber'
+import { wmRaw } from '../../../src/lib/watermelonRaw'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { Product, Customer } from '../../../src/types'
 import type ProductModel from '../../../src/database/models/Product'
@@ -124,7 +125,12 @@ import type StockMovementModel from '../../../src/database/models/StockMovement'
 import type CustomerModel from '../../../src/database/models/Customer'
 import type CreditSaleModel from '../../../src/database/models/CreditSale'
 import { logActivity } from '../../../src/lib/activityLogger'
-import { pushShopkeeperSaleRemote } from '../../../src/lib/shopkeeperAuth'
+import {
+  pushShopkeeperSaleRemote,
+  pullShopkeeperCloudSnapshotFast,
+  flushPendingShopkeeperOutbound,
+  enqueuePendingShopkeeperSaleId,
+} from '../../../src/lib/shopkeeperAuth'
 
 const COLORS = {
   primary: '#0047AB',
@@ -340,6 +346,9 @@ export default function NewSaleScreen() {
         }
       }
 
+      // Shared timestamp for all product updates in this write.
+      const saleProductUpdatedMs = Date.now()
+
       const newSaleId = await database.write(async () => {
         let receiptNumber: string
         if (activeRole === 'shopkeeper') {
@@ -386,7 +395,7 @@ export default function NewSaleScreen() {
         })
 
         for (const item of items) {
-          await database!.get<SaleItemModel>('sale_items').create((si) => {
+          const siRecord = await database!.get<SaleItemModel>('sale_items').create((si) => {
             si.saleId = newSale.id
             si.productId = item.productId
             si.productNameSnapshot = item.productName
@@ -396,17 +405,22 @@ export default function NewSaleScreen() {
           })
 
           const productRecord = await database!.get<ProductModel>('products').find(item.productId)
+          const newStockQty = productRecord.stockQty - item.qty
           await productRecord.update((p) => {
-            p.stockQty = p.stockQty - item.qty
-            p.updatedAt = new Date(Date.now())
+            p.stockQty = newStockQty
+            wmRaw(p).updated_at = saleProductUpdatedMs
           })
 
+          const skMovementId =
+            activeRole === 'shopkeeper' ? `sk_mov_${siRecord.id}` : undefined
           await database!.get<StockMovementModel>('stock_movements').create((sm) => {
+            if (skMovementId) sm._raw.id = skMovementId
             sm.businessId = business.id
             sm.productId = item.productId
             sm.productNameSnapshot = item.productName
             sm.action = 'sale'
             sm.qtyChange = -item.qty
+            wmRaw(sm).created_at = saleProductUpdatedMs
           })
         }
 
@@ -432,39 +446,63 @@ export default function NewSaleScreen() {
       })
 
       const skTok = useAuthStore.getState().shopkeeperSession?.sessionToken
-      if (useAuthStore.getState().activeRole === 'shopkeeper' && skTok && database) {
-        try {
-          const saleRow = await database.get<SaleModel>('sales').find(newSaleId)
-          const itemRows = await database
-            .get<SaleItemModel>('sale_items')
-            .query(Q.where('sale_id', newSaleId))
-            .fetch()
-          const createdMs =
-            saleRow.createdAt instanceof Date ? saleRow.createdAt.getTime() : Date.now()
-          void pushShopkeeperSaleRemote(skTok, {
-            sale: {
-              id: saleRow.id,
-              business_id: saleRow.businessId,
-              total_cents: saleRow.totalCents,
-              discount_cents: saleRow.discountCents,
-              payment_method: saleRow.paymentMethod,
-              receipt_number: saleRow.receiptNumber,
-              note: saleRow.note ?? null,
-              created_at: new Date(createdMs).toISOString(),
-            },
-            sale_items: itemRows.map((si) => ({
-              id: si.id,
-              sale_id: si.saleId,
-              product_id: si.productId,
-              product_name_snapshot: si.productNameSnapshot,
-              qty: si.qty,
-              unit_price_cents: si.unitPriceCents,
-              cost_price_cents: si.costPriceCents,
-            })),
-          }).catch((err) => console.warn('[shopkeeper] push_sale:', err))
-        } catch (e) {
-          console.warn('[shopkeeper] push_sale prepare failed:', e)
-        }
+      const skBizId = business.id
+      const skIdForPush = authSnapshot.shopkeeperSession?.shopkeeper.id ?? null
+
+      if (activeRole === 'shopkeeper' && skTok && database && skIdForPush) {
+        // Offline-first: complete the sale locally above; sync to Supabase after navigation.
+        void (async () => {
+          try {
+            await flushPendingShopkeeperOutbound(skTok, skBizId, skIdForPush)
+            const saleRow = await database!.get<SaleModel>('sales').find(newSaleId)
+            const itemRows = await database!
+              .get<SaleItemModel>('sale_items')
+              .query(Q.where('sale_id', newSaleId))
+              .fetch()
+            const createdMs =
+              saleRow.createdAt instanceof Date ? saleRow.createdAt.getTime() : Date.now()
+            const pushed = await pushShopkeeperSaleRemote(skTok, {
+              sale: {
+                id: saleRow.id,
+                business_id: saleRow.businessId,
+                total_cents: saleRow.totalCents,
+                discount_cents: saleRow.discountCents,
+                payment_method: saleRow.paymentMethod,
+                receipt_number: saleRow.receiptNumber,
+                note: saleRow.note ?? null,
+                created_at: new Date(createdMs).toISOString(),
+              },
+              sale_items: itemRows.map((si) => ({
+                id: si.id,
+                sale_id: si.saleId,
+                product_id: si.productId,
+                product_name_snapshot: si.productNameSnapshot,
+                qty: si.qty,
+                unit_price_cents: si.unitPriceCents,
+                cost_price_cents: si.costPriceCents,
+              })),
+              stock_movements: itemRows.map((si) => ({
+                id: `sk_mov_${si.id}`,
+                business_id: saleRow.businessId,
+                product_id: si.productId,
+                product_name_snapshot: si.productNameSnapshot,
+                action: 'sale',
+                qty_change: -si.qty,
+                reason: null,
+                supplier: '',
+                created_at: new Date(createdMs).toISOString(),
+              })),
+            })
+            if (pushed) {
+              await pullShopkeeperCloudSnapshotFast(skTok, skBizId, skIdForPush).catch(() => {})
+            } else {
+              await enqueuePendingShopkeeperSaleId(skBizId, newSaleId)
+            }
+          } catch (e) {
+            console.warn('[shopkeeper] deferred push_sale:', e)
+            await enqueuePendingShopkeeperSaleId(skBizId, newSaleId).catch(() => {})
+          }
+        })()
       }
 
       // Fire-and-forget background sync — uses WatermelonDB record IDs so
@@ -485,7 +523,10 @@ export default function NewSaleScreen() {
         for (const item of items) {
           try {
             const product = await database!.get<ProductModel>('products').find(item.productId)
-            if (product.stockQty <= product.lowStockThreshold) {
+            if (
+              product.lowStockThreshold > 0 &&
+              product.stockQty <= product.lowStockThreshold
+            ) {
               sendLowStockNotification({
                 productId: product.id,
                 productName: product.name,

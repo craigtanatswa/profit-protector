@@ -1,11 +1,14 @@
 import { create } from 'zustand'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { syncAll } from '../lib/sync'
+import { refreshOwnerProductsFromSupabase, syncAll, syncInventoryFast } from '../lib/sync'
 import { fetchBusinessRowForUser, businessInfoFromRemoteRow } from '../lib/businessRemote'
 import { ensureLocalWatermelonForSession, businessInfoFromLocalWatermelon } from '../lib/ensureLocalWatermelon'
 import type { SyncStatus } from '../lib/sync'
 import type { DeviceApprovalRequest, ShopkeeperSession, UserRole } from '../types'
+
+/** When Realtime fires during an owner sync, run another sync afterward so sales/stock always reconcile. */
+let ownerSyncQueued = false
 
 export interface BusinessInfo {
   id: string
@@ -58,6 +61,8 @@ interface AuthState {
   setSyncError: (error: string | null) => void
   setSyncStats: (pushed: number, pulled: number) => void
   triggerSync: (businessId: string) => Promise<void>
+  /** Fast path: push+pull only products and stock_movements in background after an inventory write. */
+  triggerInventorySync: (businessId: string) => void
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -135,9 +140,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         if (!bizErr && biz) {
           set({ business: businessInfoFromRemoteRow(biz), activeRole: 'owner', shopkeeperSession: null })
           await ensureLocalWatermelonForSession(session.user, biz)
+          await refreshOwnerProductsFromSupabase(biz.id).catch(() => {})
+          await get().triggerSync(biz.id).catch(() => {})
         } else {
           const localBiz = await businessInfoFromLocalWatermelon(session.user.id)
           set({ business: localBiz, activeRole: 'owner', shopkeeperSession: null })
+          if (localBiz?.id) {
+            await refreshOwnerProductsFromSupabase(localBiz.id).catch(() => {})
+            await get().triggerSync(localBiz.id).catch(() => {})
+          }
         }
       } else {
         set({ user: null, business: null, isAuthenticated: false })
@@ -165,8 +176,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   triggerSync: async (businessId: string) => {
     if (get().activeRole !== 'owner') return
-    if (get().syncStatus === 'syncing') return
 
+    if (get().syncStatus === 'syncing') {
+      ownerSyncQueued = true
+      return
+    }
+
+    ownerSyncQueued = false
     set({ syncStatus: 'syncing', syncError: null })
 
     try {
@@ -184,6 +200,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         syncStatus: 'error',
         syncError: err instanceof Error ? err.message : 'Sync failed',
       })
+    } finally {
+      if (ownerSyncQueued && get().activeRole === 'owner') {
+        ownerSyncQueued = false
+        await get().triggerSync(businessId)
+      }
     }
+  },
+
+  triggerInventorySync: (businessId: string) => {
+    if (get().activeRole !== 'owner') return
+    // Fire-and-forget: write already happened locally; push+pull products and movements
+    // to Supabase so the cloud is updated quickly without blocking the full sync queue.
+    syncInventoryFast(businessId).catch(() => {})
+    // Also schedule a full sync so the rest of the tables reconcile in the background.
+    get().triggerSync(businessId).catch(() => {})
   },
 }))

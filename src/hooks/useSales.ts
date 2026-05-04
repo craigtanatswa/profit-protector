@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import { Q } from '@nozbe/watermelondb'
+import type { Query } from '@nozbe/watermelondb'
 import { database } from '../database'
 import type { Sale, SaleItem } from '../types'
 import type SaleModel from '../database/models/Sale'
@@ -104,9 +105,23 @@ function useCalendarMonthKey(): string {
 
 export function useSalesWithItems(
   businessId: string,
-  opts?: { shopkeeperId?: string | null },
+  opts?: {
+    /**
+     * Shopkeeper view: restrict to this SK's own sales within the current
+     * calendar month only. When set, `ownerCreatorFilter` is ignored.
+     */
+    shopkeeperId?: string | null
+    /**
+     * Owner view: filter by who made the sale.
+     * - 'all'    → every sale (default)
+     * - 'owner'  → only sales with no shopkeeper attribution
+     * - string   → only sales made by that specific shopkeeper (full history, no month cap)
+     */
+    ownerCreatorFilter?: 'all' | 'owner' | string
+  },
 ) {
   const shopkeeperId = opts?.shopkeeperId ?? null
+  const ownerCreatorFilter = opts?.ownerCreatorFilter ?? 'all'
   const calendarKey = useCalendarMonthKey()
 
   const monthBounds = useMemo(
@@ -132,18 +147,37 @@ export function useSalesWithItems(
     prevBusinessIdRef.current = businessId
     if (businessChanged) setIsLoading(true)
 
-    const saleQuery =
-      shopkeeperId != null
-        ? database.get<SaleModel>('sales').query(
-            Q.where('business_id', businessId),
-            Q.where('created_at', Q.gte(monthBounds.start)),
-            Q.where('created_at', Q.lte(monthBounds.end)),
-            Q.where('created_by_shopkeeper_id', shopkeeperId),
-            Q.sortBy('created_at', Q.desc),
-          )
-        : database
-            .get<SaleModel>('sales')
-            .query(Q.where('business_id', businessId), Q.sortBy('created_at', Q.desc))
+    let saleQuery: Query<SaleModel>
+
+    if (shopkeeperId != null) {
+      // Shopkeeper's own view — current calendar month only
+      saleQuery = database.get<SaleModel>('sales').query(
+        Q.where('business_id', businessId),
+        Q.where('created_at', Q.gte(monthBounds.start)),
+        Q.where('created_at', Q.lte(monthBounds.end)),
+        Q.where('created_by_shopkeeper_id', shopkeeperId),
+        Q.sortBy('created_at', Q.desc),
+      )
+    } else if (ownerCreatorFilter === 'owner') {
+      // Owner wants to see only their own sales (no shopkeeper attribution)
+      saleQuery = database.get<SaleModel>('sales').query(
+        Q.where('business_id', businessId),
+        Q.where('created_by_shopkeeper_id', Q.eq(null)),
+        Q.sortBy('created_at', Q.desc),
+      )
+    } else if (ownerCreatorFilter !== 'all') {
+      // Owner filtering by a specific shopkeeper (no month cap)
+      saleQuery = database.get<SaleModel>('sales').query(
+        Q.where('business_id', businessId),
+        Q.where('created_by_shopkeeper_id', ownerCreatorFilter),
+        Q.sortBy('created_at', Q.desc),
+      )
+    } else {
+      // Owner default — all sales across the entire business
+      saleQuery = database
+        .get<SaleModel>('sales')
+        .query(Q.where('business_id', businessId), Q.sortBy('created_at', Q.desc))
+    }
 
     const subscription = saleQuery.observe().subscribe({
         next: async (salesData) => {
@@ -191,7 +225,7 @@ export function useSalesWithItems(
       })
 
     return () => subscription.unsubscribe()
-  }, [businessId, refreshToken, shopkeeperId, monthBounds.start, monthBounds.end])
+  }, [businessId, refreshToken, shopkeeperId, ownerCreatorFilter, monthBounds.start, monthBounds.end])
 
   const refetch = useCallback(() => setRefreshToken((t) => t + 1), [])
 

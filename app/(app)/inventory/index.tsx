@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons'
-import { router, Stack } from 'expo-router'
+import { router, Stack, useFocusEffect } from 'expo-router'
 import React, {
   useCallback,
   useEffect,
@@ -27,9 +27,9 @@ import { EmptyState } from '../../../src/components/ui'
 import { useProducts } from '../../../src/hooks/useProducts'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
+import { pullShopkeeperCloudSnapshotFast } from '../../../src/lib/shopkeeperAuth'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
-import { pullAllShopkeeperData } from '../../../src/lib/shopkeeperAuth'
 
 // Stable separator — module-level avoids creating a new component every render
 const ItemSeparator = () => <View style={styles.itemSep} />
@@ -50,6 +50,7 @@ export default function InventoryScreen() {
   const { formatMoney } = useMoneyFormat()
   const { activeRole, business } = useAuthStore()
   const shopkeeperSession = useAuthStore((s) => s.shopkeeperSession)
+  const triggerSync = useAuthStore((s) => s.triggerSync)
   const businessId = business?.id ?? ''
   const isShopkeeper = activeRole === 'shopkeeper'
 
@@ -59,6 +60,30 @@ export default function InventoryScreen() {
     useCallback(() => {
       refetch()
     }, [refetch]),
+  )
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isShopkeeper || !shopkeeperSession?.sessionToken || !business?.id) return undefined
+      let cancelled = false
+      void (async () => {
+        await pullShopkeeperCloudSnapshotFast(
+          shopkeeperSession.sessionToken,
+          business.id,
+          shopkeeperSession.shopkeeper.id,
+        ).catch(() => {})
+        if (!cancelled) refetch()
+      })()
+      return () => {
+        cancelled = true
+      }
+    }, [
+      isShopkeeper,
+      shopkeeperSession?.sessionToken,
+      shopkeeperSession?.shopkeeper.id,
+      business?.id,
+      refetch,
+    ]),
   )
 
   const [searchText, setSearchText] = useState('')
@@ -155,15 +180,28 @@ export default function InventoryScreen() {
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true)
     try {
-      if (isShopkeeper && shopkeeperSession?.sessionToken) {
-        await pullAllShopkeeperData(shopkeeperSession.sessionToken)
+      if (isShopkeeper && shopkeeperSession?.sessionToken && business?.id) {
+        await pullShopkeeperCloudSnapshotFast(
+          shopkeeperSession.sessionToken,
+          business.id,
+          shopkeeperSession.shopkeeper.id,
+          { authoritativeProducts: true },
+        ).catch(() => {})
+      } else if (!isShopkeeper && business?.id) {
+        await triggerSync(business.id)
       }
-    } catch {
-      /* pull logs internally */
+    } finally {
+      refetch()
+      setIsRefreshing(false)
     }
-    refetch()
-    setTimeout(() => setIsRefreshing(false), 600)
-  }, [refetch, isShopkeeper, shopkeeperSession?.sessionToken])
+  }, [
+    refetch,
+    isShopkeeper,
+    shopkeeperSession?.sessionToken,
+    shopkeeperSession?.shopkeeper.id,
+    business?.id,
+    triggerSync,
+  ])
 
   const navigateToAdd = useCallback(() => {
     if (isShopkeeper) return
@@ -348,6 +386,7 @@ export default function InventoryScreen() {
           data={sortedProducts}
           keyExtractor={(item) => item.id}
           renderItem={renderProduct}
+          extraData={sortedProducts}
           contentContainerStyle={[
             styles.listContent,
             sortedProducts.length === 0 && styles.listContentEmpty,

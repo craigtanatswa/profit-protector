@@ -21,6 +21,7 @@ import {
   fetchBusinessRowForUser,
 } from '../../src/lib/businessRemote'
 import { ensureLocalWatermelonForSession } from '../../src/lib/ensureLocalWatermelon'
+import { refreshOwnerProductsFromSupabase } from '../../src/lib/sync'
 import { supabase } from '../../src/lib/supabase'
 import { useAuthStore } from '../../src/stores/authStore'
 import { getDeviceId } from '../../src/lib/deviceId'
@@ -277,6 +278,7 @@ export default function LoginScreen() {
       setUser(user)
       setBusiness(businessInfoFromRemoteRow(biz))
       await ensureLocalWatermelonForSession(user, biz)
+      await refreshOwnerProductsFromSupabase(biz.id)
       await triggerSync(biz.id)
       await logActivity({ action: 'account_login_owner', entityType: 'account' })
 

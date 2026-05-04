@@ -1,8 +1,14 @@
 import * as SecureStore from 'expo-secure-store'
 
+import { Q } from '@nozbe/watermelondb'
+
 import { getDeviceId, getDeviceName } from './deviceId'
 import { secureStoreGetLarge, secureStoreRemoveLarge, secureStoreSetLarge } from './secureStoreLarge'
 import type { ShopkeeperSession } from '../types'
+import { database } from '../database'
+import type SaleModel from '../database/models/Sale'
+import type SaleItemModel from '../database/models/SaleItem'
+import type ProductModel from '../database/models/Product'
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from './supabase'
 import {
   mergeRemoteProductsIntoWatermelon,
@@ -12,8 +18,39 @@ import {
   type SupabaseSaleRow,
 } from './sync'
 import { getLocalCalendarMonthBoundsIso } from './calendarMonth'
+import { wmRaw } from './watermelonRaw'
 
 const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/shopkeeper-auth`
+
+/**
+ * In-memory cursor tracking the last successful incremental product pull.
+ * 0 = never pulled this session → triggers a full pull (no `since`).
+ * Reset to 0 if the session changes (login/logout resets the module state naturally).
+ *
+ * A 30-second lookback window is subtracted when building the `since` timestamp to
+ * guard against server-side clock skew, replication lag, and network round-trip time.
+ * Wider than the 3-second poll interval to ensure no update window is ever missed.
+ */
+let lastSkProductSyncMs = 0
+const SK_PRODUCT_LOOKBACK_MS = 30_000
+
+/** ISO `since` string for the next incremental product poll, or null for a full pull. */
+function skProductSinceIso(): string | null {
+  if (lastSkProductSyncMs === 0) return null
+  return new Date(lastSkProductSyncMs - SK_PRODUCT_LOOKBACK_MS).toISOString()
+}
+
+/** Call after every successful product pull to advance the cursor. */
+function markSkProductSynced(): void {
+  lastSkProductSyncMs = Date.now()
+}
+
+/**
+ * In-memory timestamp of the last sales pull. Background polls only re-pull sales every
+ * 30 seconds — the shopkeeper's own sales are already local, so frequent pulls waste bandwidth.
+ */
+let lastSkSalesPullMs = 0
+const SK_SALES_BG_INTERVAL_MS = 30_000
 
 /** Legacy single-blob key (migrated on read) */
 const LEGACY_SESSION_KEY = 'shopkeeper_session'
@@ -83,17 +120,24 @@ async function callShopkeeperAuth(body: Record<string, unknown>) {
 }
 
 /** Pull products from Supabase via edge function (shopkeepers have no owner JWT for RLS reads). */
-export async function pullShopkeeperProductsIntoLocalDb(sessionToken: string): Promise<number> {
+export async function pullShopkeeperProductsIntoLocalDb(
+  sessionToken: string,
+  mergeOptions?: { authoritative?: boolean },
+  since?: string,
+): Promise<number> {
   const data = await callShopkeeperAuth({
     action: 'pull_products',
     sessionToken,
+    ...(since != null ? { since } : {}),
   })
   if (data.status === 'error') {
     if (__DEV__) console.warn('[shopkeeper] pull_products:', data.message)
     return 0
   }
   if (data.status !== 'ok' || !Array.isArray(data.products)) return 0
-  return mergeRemoteProductsIntoWatermelon(data.products as SupabaseProductRow[])
+  const count = await mergeRemoteProductsIntoWatermelon(data.products as SupabaseProductRow[], mergeOptions)
+  markSkProductSynced()
+  return count
 }
 
 /** Pull this shopkeeper's sales for the current local calendar month + line items. */
@@ -119,9 +163,26 @@ export async function pullShopkeeperSalesForCurrentMonth(sessionToken: string): 
 }
 
 /** Products + current-month sales (shopkeeper has no owner JWT sync). */
-export async function pullAllShopkeeperData(sessionToken: string): Promise<void> {
-  await pullShopkeeperProductsIntoLocalDb(sessionToken).catch(() => {})
+export async function pullAllShopkeeperData(
+  sessionToken: string,
+  opts?: { authoritativeProducts?: boolean },
+): Promise<void> {
+  const mergeOpts =
+    opts?.authoritativeProducts === true ? { authoritative: true as const } : undefined
+  await pullShopkeeperProductsIntoLocalDb(sessionToken, mergeOpts).catch(() => {})
   await pullShopkeeperSalesForCurrentMonth(sessionToken).catch(() => {})
+}
+
+export type ShopkeeperStockMovementPushRow = {
+  id: string
+  business_id: string
+  product_id: string
+  product_name_snapshot: string
+  action: string
+  qty_change: number
+  reason: string | null
+  supplier: string
+  created_at: string
 }
 
 export type ShopkeeperSalePushPayload = {
@@ -144,20 +205,255 @@ export type ShopkeeperSalePushPayload = {
     unit_price_cents: number
     cost_price_cents: number
   }>
+  /** Mirrors owner `syncStockMovements` — same Supabase `stock_movements` rows. */
+  stock_movements?: ShopkeeperStockMovementPushRow[]
 }
 
-/** Persist a shopkeeper-recorded sale + items to Supabase (service role via edge). */
 export async function pushShopkeeperSaleRemote(
   sessionToken: string,
   payload: ShopkeeperSalePushPayload,
 ): Promise<boolean> {
-  const data = await callShopkeeperAuth({
+  const body: Record<string, unknown> = {
     action: 'push_sale',
     sessionToken,
     sale: payload.sale,
     sale_items: payload.sale_items,
+  }
+  if (payload.stock_movements != null && payload.stock_movements.length > 0) {
+    body.stock_movements = payload.stock_movements
+  }
+  const data = await callShopkeeperAuth(body)
+  return data.status === 'ok'
+}
+
+export type ShopkeeperProductPatchPayload = {
+  product_id: string
+  stock_qty: number
+  updated_at: string
+  cost_price_cents?: number | null
+}
+
+/** Push product stock (and optional cost) after shopkeeper adjustment/receive — mirrors owner direct Supabase updates. */
+export async function pushShopkeeperProductPatchesRemote(
+  sessionToken: string,
+  patches: ShopkeeperProductPatchPayload[],
+): Promise<boolean> {
+  if (patches.length === 0) return true
+  const data = await callShopkeeperAuth({
+    action: 'patch_products',
+    sessionToken,
+    patches,
   })
   return data.status === 'ok'
+}
+
+// ---------------------------------------------------------------------------
+// Offline-first outbound queue (sales + product stock snapshots)
+// ---------------------------------------------------------------------------
+
+function pendingSalesKey(businessId: string): string {
+  return `pp_sk_pending_sales_${businessId}`
+}
+
+function pendingProductSyncKey(businessId: string): string {
+  return `pp_sk_pending_product_sync_${businessId}`
+}
+
+async function readStringIdList(key: string): Promise<string[]> {
+  try {
+    const raw = await SecureStore.getItemAsync(key)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed)
+      ? parsed.filter((x): x is string => typeof x === 'string' && x.length > 0)
+      : []
+  } catch {
+    return []
+  }
+}
+
+async function writeStringIdList(key: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) {
+    await SecureStore.deleteItemAsync(key).catch(() => {})
+    return
+  }
+  await SecureStore.setItemAsync(key, JSON.stringify(ids.slice(-120)))
+}
+
+/** Queue a staff sale for retry when `push_sale` could not reach the server (offline). */
+export async function enqueuePendingShopkeeperSaleId(
+  businessId: string,
+  saleId: string,
+): Promise<void> {
+  const key = pendingSalesKey(businessId)
+  const ids = await readStringIdList(key)
+  if (!ids.includes(saleId)) ids.push(saleId)
+  await writeStringIdList(key, ids)
+}
+
+async function removePendingShopkeeperSaleId(
+  businessId: string,
+  saleId: string,
+): Promise<void> {
+  const key = pendingSalesKey(businessId)
+  const ids = (await readStringIdList(key)).filter((id) => id !== saleId)
+  await writeStringIdList(key, ids)
+}
+
+/**
+ * After a failed `patch_products`, queue product IDs; flush rebuilds patches from the
+ * current local Watermelon row so ordering vs pending sales does not matter.
+ */
+export async function enqueuePendingShopkeeperProductSync(
+  businessId: string,
+  productIds: string[],
+): Promise<void> {
+  if (productIds.length === 0) return
+  const key = pendingProductSyncKey(businessId)
+  const set = new Set(await readStringIdList(key))
+  for (const id of productIds) set.add(id)
+  await writeStringIdList(key, [...set])
+}
+
+async function buildShopkeeperSalePayloadFromLocal(
+  saleId: string,
+  shopkeeperId: string,
+): Promise<ShopkeeperSalePushPayload | null> {
+  if (!database) return null
+  try {
+    const saleRow = await database.get<SaleModel>('sales').find(saleId)
+    if (saleRow.createdByShopkeeperId !== shopkeeperId) return null
+    const itemRows = await database
+      .get<SaleItemModel>('sale_items')
+      .query(Q.where('sale_id', saleId))
+      .fetch()
+    const createdMs =
+      saleRow.createdAt instanceof Date ? saleRow.createdAt.getTime() : Date.now()
+    return {
+      sale: {
+        id: saleRow.id,
+        business_id: saleRow.businessId,
+        total_cents: saleRow.totalCents,
+        discount_cents: saleRow.discountCents,
+        payment_method: saleRow.paymentMethod,
+        receipt_number: saleRow.receiptNumber,
+        note: saleRow.note ?? null,
+        created_at: new Date(createdMs).toISOString(),
+      },
+      sale_items: itemRows.map((si) => ({
+        id: si.id,
+        sale_id: si.saleId,
+        product_id: si.productId,
+        product_name_snapshot: si.productNameSnapshot,
+        qty: si.qty,
+        unit_price_cents: si.unitPriceCents,
+        cost_price_cents: si.costPriceCents,
+      })),
+      stock_movements: itemRows.map((si) => ({
+        id: `sk_mov_${si.id}`,
+        business_id: saleRow.businessId,
+        product_id: si.productId,
+        product_name_snapshot: si.productNameSnapshot,
+        action: 'sale',
+        qty_change: -si.qty,
+        reason: null,
+        supplier: '',
+        created_at: new Date(createdMs).toISOString(),
+      })),
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Retry queued staff sales and product stock snapshots. Call after each sale/adjustment
+ * and from `useAutoSync` while online — keeps Supabase `sales`, `products`, and
+ * `stock_movements` aligned with the owner's sync pipeline once data reaches the server.
+ */
+export async function flushPendingShopkeeperOutbound(
+  sessionToken: string,
+  businessId: string,
+  shopkeeperId: string,
+): Promise<void> {
+  const saleIds = await readStringIdList(pendingSalesKey(businessId))
+  for (const saleId of saleIds) {
+    const payload = await buildShopkeeperSalePayloadFromLocal(saleId, shopkeeperId)
+    if (!payload) {
+      await removePendingShopkeeperSaleId(businessId, saleId)
+      continue
+    }
+    const ok = await pushShopkeeperSaleRemote(sessionToken, payload)
+    if (ok) await removePendingShopkeeperSaleId(businessId, saleId)
+  }
+
+  const productIds = await readStringIdList(pendingProductSyncKey(businessId))
+  if (productIds.length === 0 || !database) return
+
+  const patches: ShopkeeperProductPatchPayload[] = []
+  for (const productId of productIds) {
+    try {
+      const p = await database.get<ProductModel>('products').find(productId)
+      if (p.businessId !== businessId) continue
+      const updatedMs = wmRaw(p).updated_at as number
+      patches.push({
+        product_id: p.id,
+        stock_qty: p.stockQty,
+        updated_at: new Date(updatedMs).toISOString(),
+      })
+    } catch {
+      /* skip missing product */
+    }
+  }
+
+  if (patches.length === 0) {
+    await SecureStore.deleteItemAsync(pendingProductSyncKey(businessId)).catch(() => {})
+    return
+  }
+
+  const patched = await pushShopkeeperProductPatchesRemote(sessionToken, patches)
+  if (patched) {
+    await SecureStore.deleteItemAsync(pendingProductSyncKey(businessId)).catch(() => {})
+  }
+}
+
+export async function pullShopkeeperCloudSnapshotFast(
+  sessionToken: string,
+  businessId: string,
+  shopkeeperId: string,
+  opts?: { authoritativeProducts?: boolean },
+): Promise<void> {
+  await flushPendingShopkeeperOutbound(sessionToken, businessId, shopkeeperId).catch(() => {})
+
+  const authoritative = opts?.authoritativeProducts === true
+
+  // Reset the incremental cursor before a full authoritative pull so that the
+  // very next background poll uses a `since` anchored to THIS pull's timestamp,
+  // not a stale value from a previous session.
+  if (authoritative) lastSkProductSyncMs = 0
+
+  const since = authoritative ? undefined : (skProductSinceIso() ?? undefined)
+
+  const nowMs = Date.now()
+  const salesDue = authoritative || nowMs - lastSkSalesPullMs >= SK_SALES_BG_INTERVAL_MS
+
+  const tasks: Promise<unknown>[] = [
+    pullShopkeeperProductsIntoLocalDb(
+      sessionToken,
+      authoritative ? { authoritative: true } : undefined,
+      since,
+    ).catch(() => {}),
+  ]
+
+  if (salesDue) {
+    tasks.push(
+      pullShopkeeperSalesForCurrentMonth(sessionToken)
+        .then(() => { lastSkSalesPullMs = Date.now() })
+        .catch(() => {}),
+    )
+  }
+
+  await Promise.all(tasks)
 }
 
 async function persistShopkeeperSession(session: ShopkeeperSession): Promise<void> {
@@ -314,7 +610,9 @@ export async function shopkeeperLogin(params: {
     }
 
     await persistShopkeeperSession(session)
-    await pullAllShopkeeperData(session.sessionToken).catch(() => {})
+    await pullShopkeeperCloudSnapshotFast(session.sessionToken, session.businessId, session.shopkeeper.id, { authoritativeProducts: true }).catch(
+      () => {},
+    )
     return { status: 'approved', session }
   }
 
@@ -370,7 +668,9 @@ export async function resumeShopkeeperAfterApproval(params: {
     }
 
     await persistShopkeeperSession(session)
-    await pullAllShopkeeperData(session.sessionToken).catch(() => {})
+    await pullShopkeeperCloudSnapshotFast(session.sessionToken, session.businessId, session.shopkeeper.id, { authoritativeProducts: true }).catch(
+      () => {},
+    )
     return { status: 'approved', session }
   }
 
@@ -416,7 +716,12 @@ export async function getStoredShopkeeperSession(): Promise<ShopkeeperSession | 
       }
     }
 
-    await pullAllShopkeeperData(sessionOut.sessionToken).catch(() => {})
+    await pullShopkeeperCloudSnapshotFast(
+      sessionOut.sessionToken,
+      sessionOut.businessId,
+      sessionOut.shopkeeper.id,
+      { authoritativeProducts: true },
+    ).catch(() => {})
     return sessionOut
   } catch {
     return null
@@ -424,11 +729,16 @@ export async function getStoredShopkeeperSession(): Promise<ShopkeeperSession | 
 }
 
 export async function clearShopkeeperSession(): Promise<void> {
+  const bizId = await SecureStore.getItemAsync(SK.businessId)
   await secureStoreRemoveLarge(TOKEN_STORAGE_KEY)
   await Promise.all(
     SCALAR_SESSION_KEYS.map((k) => SecureStore.deleteItemAsync(k).catch(() => {})),
   )
   await SecureStore.deleteItemAsync(LEGACY_SESSION_KEY).catch(() => {})
+  if (bizId) {
+    await SecureStore.deleteItemAsync(pendingSalesKey(bizId)).catch(() => {})
+    await SecureStore.deleteItemAsync(pendingProductSyncKey(bizId)).catch(() => {})
+  }
 }
 
 export async function checkApprovalStatus(params: {

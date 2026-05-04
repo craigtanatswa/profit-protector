@@ -9,6 +9,8 @@ import { BrandLogo } from '../../src/components/layout'
 import { StaffModeBanner } from '../../src/components/layout/StaffModeBanner'
 import { useAuthStore } from '../../src/stores/authStore'
 import { useAutoSync } from '../../src/hooks/useAutoSync'
+import { useOwnerSalesRealtimeSync } from '../../src/hooks/useOwnerSalesRealtimeSync'
+import { useShopkeeperStaffSignalsRealtimeSync } from '../../src/hooks/useShopkeeperStaffSignalsRealtimeSync'
 import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
 import { setupNotificationHandlers } from '../../src/lib/notifications'
 import { useNotificationBanner } from '../../src/hooks/useNotificationBanner'
@@ -139,6 +141,8 @@ const LISTENERS = {
 
 export default function AppLayout() {
   useAutoSync()
+  useOwnerSalesRealtimeSync()
+  useShopkeeperStaffSignalsRealtimeSync()
 
   const isLoadingAuth = useAuthStore((s) => s.isLoading)
   const user = useAuthStore((s) => s.user)
@@ -169,11 +173,14 @@ export default function AppLayout() {
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((notification) => {
       const { title, body, data } = notification.request.content
+      const d = data as Record<string, string>
+      const nType = d?.type
       showBanner({
-        title: title ?? 'Stock Alert',
+        title: title ?? 'Alert',
         message: body ?? '',
-        type: (data as Record<string, string>)?.type === 'out_of_stock' ? 'danger' : 'warning',
-        productId: (data as Record<string, string>)?.productId ?? null,
+        type: nType === 'out_of_stock' ? 'danger' : 'warning',
+        productId: d?.productId ?? null,
+        navigateHref: nType === 'staff_sale' ? '/(app)/sales' : null,
       })
     })
     return () => sub.remove()
@@ -181,13 +188,17 @@ export default function AppLayout() {
 
   const handleBannerPress = useCallback(() => {
     hideBanner()
+    if (bannerProps.navigateHref) {
+      router.push(bannerProps.navigateHref as Href)
+      return
+    }
     if (bannerProps.productId) {
       router.push({
         pathname: '/(app)/inventory/[id]',
         params: { id: bannerProps.productId },
       })
     }
-  }, [hideBanner, bannerProps.productId])
+  }, [hideBanner, bannerProps.navigateHref, bannerProps.productId])
 
   const handleShopkeeperSignOut = useCallback(() => {
     Alert.alert('Sign out?', 'Return to the login screen?', [

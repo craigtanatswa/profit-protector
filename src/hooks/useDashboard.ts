@@ -98,18 +98,23 @@ const EMPTY: Omit<DashboardData, 'isLoading' | 'refetch'> = {
  *   outstanding(customer) = Σ max(0, amountCents − amountPaidCents)
  *                            over the customer's credit_sales rows
  *
- * Reactive subscriptions fire on every WatermelonDB write so figures update
- * instantly.  A queued-refetch pattern (needsRefetchRef) ensures no update
- * is dropped when multiple subscriptions fire close together.
+ * Reactive subscriptions are permanent for the lifetime of a given businessId.
+ * They fire on every WatermelonDB write so figures update instantly without any
+ * subscription teardown / recreation race window.
+ *
+ * `refetch()` calls fetchData() directly — it does NOT recreate subscriptions,
+ * so it is safe to call from useFocusEffect or after a sync without risking a
+ * dropped-write window.
  */
 export function useDashboard(businessId: string): DashboardData {
   const [isLoading, setIsLoading] = useState(true)
   const [data, setData] = useState<Omit<DashboardData, 'isLoading' | 'refetch'>>(EMPTY)
-  const [refreshToken, setRefreshToken] = useState(0)
 
   const cancelledRef = useRef(false)
   const isFetchingRef = useRef(false)
   const needsRefetchRef = useRef(false)
+  // Exposed so refetch() can call fetchData() without touching subscriptions.
+  const triggerFetchRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (!database || !businessId) {
@@ -334,34 +339,41 @@ export function useDashboard(businessId: string): DashboardData {
         isFetchingRef.current = false
         if (needsRefetchRef.current && !cancelledRef.current) {
           needsRefetchRef.current = false
-          fetchData()
+          void fetchData()
         }
       }
     }
 
-    fetchData()
+    // Expose fetchData so refetch() can call it without touching subscriptions.
+    triggerFetchRef.current = () => { void fetchData() }
+
+    void fetchData()
 
     // ── Reactive subscriptions ─────────────────────────────────────────────
     // Each table subscription triggers fetchData via the queue so updates
     // appear instantly after every WatermelonDB write.
+    //
+    // These subscriptions are PERMANENT for the lifetime of this businessId.
+    // They are never recreated by refetch() calls, eliminating any teardown
+    // race window that could silently drop a background-sync write.
 
     const salesSub = database
       .get<SaleModel>('sales')
       .query(Q.where('business_id', businessId))
       .observe()
-      .subscribe(() => fetchData())
+      .subscribe(() => { void fetchData() })
 
     const productsSub = database
       .get<ProductModel>('products')
       .query(Q.where('business_id', businessId), Q.where('is_active', true))
       .observe()
-      .subscribe(() => fetchData())
+      .subscribe(() => { void fetchData() })
 
     const customersSub = database
       .get<CustomerModel>('customers')
       .query(Q.where('business_id', businessId))
       .observe()
-      .subscribe(() => fetchData())
+      .subscribe(() => { void fetchData() })
 
     // credit_sales fires immediately when a payment is recorded or a credit
     // sale is created — before the customer row cache is even updated.
@@ -369,18 +381,23 @@ export function useDashboard(businessId: string): DashboardData {
       .get<CreditSaleModel>('credit_sales')
       .query()
       .observe()
-      .subscribe(() => fetchData())
+      .subscribe(() => { void fetchData() })
 
     return () => {
       cancelledRef.current = true
+      triggerFetchRef.current = null
       salesSub.unsubscribe()
       productsSub.unsubscribe()
       customersSub.unsubscribe()
       creditSalesSub.unsubscribe()
     }
-  }, [businessId, refreshToken])
+  }, [businessId]) // No refreshToken — subscriptions are permanent for a given businessId.
 
-  const refetch = useCallback(() => setRefreshToken((t) => t + 1), [])
+  // Directly trigger a fetchData pass without recreating subscriptions.
+  // Safe to call from useFocusEffect, pull-to-refresh, or after any sync.
+  const refetch = useCallback(() => {
+    triggerFetchRef.current?.()
+  }, [])
 
   return { ...data, isLoading, refetch }
 }

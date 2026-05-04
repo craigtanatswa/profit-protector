@@ -14,13 +14,12 @@ import {
 } from 'react-native'
 import type { DimensionValue, TextStyle, ViewStyle } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 
 import { Button, Card, Badge, MetricCard, NotificationBanner } from '../../src/components/ui'
 import { useAuthStore } from '../../src/stores/authStore'
-import { checkAndNotifyLowStock } from '../../src/lib/notifications'
 import { useDashboard } from '../../src/hooks/useDashboard'
 import { useQuietOfflineRefreshOnFocus } from '../../src/hooks/useQuietOfflineRefreshOnFocus'
 import type { CashBreakdownItem, RecentSaleEntry } from '../../src/hooks/useDashboard'
@@ -31,7 +30,10 @@ import { useMoneyFormat } from '../../src/hooks/useMoneyFormat'
 import type { Customer, PaymentMethod, Product } from '../../src/types'
 import { DeviceApprovalModal } from '../../src/components/modals/DeviceApprovalModal'
 import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
-import { clearShopkeeperSession as clearStoredShopkeeperSession } from '../../src/lib/shopkeeperAuth'
+import {
+  clearShopkeeperSession as clearStoredShopkeeperSession,
+  pullShopkeeperCloudSnapshotFast,
+} from '../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../src/lib/activityLogger'
 
 // ---------------------------------------------------------------------------
@@ -841,6 +843,30 @@ export default function DashboardScreen() {
     }, [refetch]),
   )
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!isShopkeeper || !businessId || !shopkeeperSession?.sessionToken) return undefined
+      let cancelled = false
+      void (async () => {
+        await pullShopkeeperCloudSnapshotFast(
+          shopkeeperSession.sessionToken,
+          businessId,
+          shopkeeperSession.shopkeeper.id,
+        ).catch(() => {})
+        if (!cancelled) refetch()
+      })()
+      return () => {
+        cancelled = true
+      }
+    }, [
+      isShopkeeper,
+      businessId,
+      shopkeeperSession?.sessionToken,
+      shopkeeperSession?.shopkeeper.id,
+      refetch,
+    ]),
+  )
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -910,12 +936,21 @@ export default function DashboardScreen() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
-    refetch()
-    if (businessId && !isShopkeeper) {
-      await triggerSync(businessId)
-      checkAndNotifyLowStock(businessId).catch(() => {})
+    try {
+      if (businessId && isShopkeeper && shopkeeperSession?.sessionToken) {
+        await pullShopkeeperCloudSnapshotFast(
+          shopkeeperSession.sessionToken,
+          businessId,
+          shopkeeperSession.shopkeeper.id,
+          { authoritativeProducts: true },
+        ).catch(() => {})
+      } else if (businessId && !isShopkeeper) {
+        await triggerSync(businessId)
+      }
+    } finally {
+      refetch()
+      setIsRefreshing(false)
     }
-    setIsRefreshing(false)
   }
 
   const handleShopkeeperSignOut = () => {

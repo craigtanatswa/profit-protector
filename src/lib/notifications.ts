@@ -14,7 +14,8 @@
  *    via Expo's push API: https://exp.host/--/api/v2/push/send
  *
  * This is sufficient for MVP — users will see alerts
- * whenever they open the app or complete a sale.
+ * on the owner's first digest of the local day (startup or resume after a calendar-day change),
+ * plus per-product alerts when a sale line drives stock at or below threshold.
  */
 
 import * as Notifications from 'expo-notifications'
@@ -33,7 +34,7 @@ import { getPersonalisation, normalizeBusinessType } from './appPersonalisation'
 // Android notification channels
 // ---------------------------------------------------------------------------
 
-async function setupAndroidChannels(): Promise<void> {
+export async function setupAndroidChannels(): Promise<void> {
   if (Platform.OS !== 'android') return
 
   await Notifications.setNotificationChannelAsync('low-stock', {
@@ -52,6 +53,15 @@ async function setupAndroidChannels(): Promise<void> {
     lightColor: '#C0152A',
     sound: 'default',
     description: 'Alerts when products are out of stock',
+  })
+
+  await Notifications.setNotificationChannelAsync('staff-sales', {
+    name: 'Staff sales',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 200, 120, 200],
+    lightColor: '#0047AB',
+    sound: 'default',
+    description: 'When a shopkeeper records a sale',
   })
 }
 
@@ -118,16 +128,72 @@ export async function sendLowStockNotification(params: {
   })
 }
 
+/** Local notification for the business owner when staff completes a sale (foreground / background). */
+export async function notifyOwnerStaffSale(params: {
+  receiptNumber: string
+  staffLabel: string
+  totalLabel?: string
+}): Promise<void> {
+  await setupAndroidChannels()
+
+  const { status } = await Notifications.getPermissionsAsync()
+  if (status !== 'granted') return
+
+  const receipt = params.receiptNumber.trim() || 'Sale'
+  const totalPart = params.totalLabel ? ` · ${params.totalLabel}` : ''
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Staff sale recorded',
+      body: `${params.staffLabel} completed ${receipt}${totalPart}`,
+      data: {
+        type: 'staff_sale',
+        screen: 'sales',
+      },
+      sound: 'default',
+      priority: Notifications.AndroidNotificationPriority.HIGH,
+      color: '#0047AB',
+      ...(Platform.OS === 'android' ? { channelId: 'staff-sales' } : {}),
+    },
+    trigger: null,
+  })
+}
+
 // ---------------------------------------------------------------------------
-// Batch low stock check — called after sync or pull-to-refresh
+// Batch low stock digest — once per local calendar day per business (owners)
 // ---------------------------------------------------------------------------
 
+function localCalendarDayKey(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+async function lowStockDigestAlreadySentToday(businessId: string): Promise<boolean> {
+  const key = `low_stock_digest_day_${businessId}`
+  const last = await SecureStore.getItemAsync(key)
+  return last === localCalendarDayKey()
+}
+
+async function markLowStockDigestSentToday(businessId: string): Promise<void> {
+  const key = `low_stock_digest_day_${businessId}`
+  await SecureStore.setItemAsync(key, localCalendarDayKey())
+}
+
+/**
+ * Sends a digest of currently low/out-of-stock products at most once per local day per business,
+ * while `sendLowStockNotification` still fires per line item when a sale completes.
+ */
 export async function checkAndNotifyLowStock(businessId: string): Promise<void> {
   const enabled = await SecureStore.getItemAsync('setting_low_stock_alerts')
   if (enabled === 'false') return
 
   const { status } = await Notifications.getPermissionsAsync()
   if (status !== 'granted') return
+
+  if (await lowStockDigestAlreadySentToday(businessId)) return
 
   if (!database) return
 
@@ -151,7 +217,10 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
     (p) => p.lowStockThreshold > 0 && p.stockQty <= p.lowStockThreshold,
   )
 
-  if (lowStock.length === 0) return
+  if (lowStock.length === 0) {
+    await markLowStockDigestSentToday(businessId)
+    return
+  }
 
   const toNotify = lowStock.slice(0, 5)
 
@@ -184,6 +253,8 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
       identifier: 'multi-low-stock',
     })
   }
+
+  await markLowStockDigestSentToday(businessId)
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +283,8 @@ export function setupNotificationHandlers(): () => void {
         })
       } else if (data.screen === 'inventory') {
         router.push('/(app)/inventory')
+      } else if (data.screen === 'sales') {
+        router.push('/(app)/sales')
       }
     },
   )

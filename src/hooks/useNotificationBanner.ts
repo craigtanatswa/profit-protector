@@ -6,6 +6,8 @@ interface ShowBannerParams {
   message: string
   type: 'warning' | 'danger'
   productId?: string | null
+  /** When set, tapping the banner navigates here (e.g. /(app)/sales) */
+  navigateHref?: string | null
 }
 
 interface UseNotificationBannerReturn {
@@ -21,12 +23,14 @@ export function useNotificationBanner(): UseNotificationBannerReturn {
     message: string
     type: 'warning' | 'danger'
     productId: string | null
+    navigateHref: string | null
   }>({
     visible: false,
     title: '',
     message: '',
     type: 'warning',
     productId: null,
+    navigateHref: null,
   })
 
   const showBanner = useCallback((params: ShowBannerParams) => {
@@ -36,6 +40,7 @@ export function useNotificationBanner(): UseNotificationBannerReturn {
       message: params.message,
       type: params.type,
       productId: params.productId ?? null,
+      navigateHref: params.navigateHref ?? null,
     })
   }, [])
 
@@ -49,6 +54,7 @@ export function useNotificationBanner(): UseNotificationBannerReturn {
     message: bannerState.message,
     type: bannerState.type,
     productId: bannerState.productId,
+    navigateHref: bannerState.navigateHref,
     onPress: () => {},
     onDismiss: hideBanner,
   }

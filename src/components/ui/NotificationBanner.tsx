@@ -15,6 +15,8 @@ export interface NotificationBannerProps {
   message: string
   type: 'warning' | 'danger'
   productId?: string | null
+  /** Banner tap navigates here before falling back to product detail */
+  navigateHref?: string | null
   onPress: () => void
   onDismiss: () => void
   /** Extra top offset (added after safe area inset), e.g. to stack below another banner */

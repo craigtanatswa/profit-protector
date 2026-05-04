@@ -222,10 +222,21 @@ serve(async (req) => {
 
       if (!device?.is_approved) return error('Device no longer approved.')
 
-      const { data: rows, error: prodErr } = await supabase
+      // `since` enables incremental polling: only rows updated after this ISO timestamp are
+      // returned. Callers pass this on background polls; omit it for a full authoritative pull.
+      const sinceIso =
+        typeof body.since === 'string' && body.since.length > 0 ? body.since : null
+
+      let query = supabase
         .from('products')
         .select('*')
         .eq('business_id', bizId)
+
+      if (sinceIso !== null) {
+        query = query.gt('updated_at', sinceIso)
+      }
+
+      const { data: rows, error: prodErr } = await query
 
       if (prodErr) return error(prodErr.message)
 
@@ -362,6 +373,125 @@ serve(async (req) => {
         .from('sale_items')
         .upsert(itemsPayload, { onConflict: 'id' })
       if (upItems) return error(upItems.message)
+
+      const movementsRaw = body.stock_movements as Record<string, unknown>[] | undefined
+      if (Array.isArray(movementsRaw) && movementsRaw.length > 0) {
+        const movRows = movementsRaw
+          .map((m) => ({
+            id: String(m.id ?? ''),
+            business_id: bizId,
+            product_id: String(m.product_id ?? ''),
+            product_name_snapshot: String(m.product_name_snapshot ?? ''),
+            action: String(m.action ?? 'sale'),
+            qty_change: Number(m.qty_change),
+            reason:
+              m.reason == null || String(m.reason).length === 0 ? null : String(m.reason),
+            supplier: m.supplier == null ? '' : String(m.supplier),
+            created_at: String(m.created_at ?? row.created_at),
+          }))
+          .filter((r) => r.id.length > 0 && r.product_id.length > 0)
+
+        if (movRows.length > 0) {
+          const { error: movErr } = await supabase
+            .from('stock_movements')
+            .upsert(movRows, { onConflict: 'id' })
+          if (movErr) return error(movErr.message)
+        }
+      }
+
+      const { error: appliedErr } = await supabase
+        .from('sale_inventory_applied')
+        .insert({ sale_id: row.id })
+
+      let stockAlreadyApplied = false
+      if (appliedErr) {
+        if (appliedErr.code === '23505') stockAlreadyApplied = true
+        else return error(appliedErr.message)
+      }
+
+      if (!stockAlreadyApplied) {
+        for (const it of itemsPayload) {
+          const qty = Number(it.qty)
+          if (!Number.isFinite(qty) || qty <= 0) continue
+          const pid = String(it.product_id)
+          const { error: stockErr } = await supabase.rpc('decrement_product_stock_for_sale', {
+            p_product_id: pid,
+            p_business_id: bizId,
+            p_qty: Math.floor(qty),
+          })
+          if (stockErr) return error(stockErr.message)
+        }
+      }
+
+      return json({ status: 'ok' })
+    }
+
+    if (action === 'patch_products') {
+      const payload = await verifyToken(sessionToken)
+      if (!payload) {
+        return error('Session expired. Please log in again.')
+      }
+
+      const shopkeeperId = String(payload.shopkeeperId)
+      const bizId = String(payload.businessId)
+      const deviceIdFromToken = String(payload.deviceId)
+
+      const { data: shopkeeper } = await supabase
+        .from('shopkeepers')
+        .select('*')
+        .eq('id', shopkeeperId)
+        .eq('is_active', true)
+        .single()
+
+      if (!shopkeeper) return error('Account deactivated.')
+
+      const { data: device } = await supabase
+        .from('shopkeeper_devices')
+        .select('is_approved')
+        .eq('shopkeeper_id', shopkeeperId)
+        .eq('device_id', deviceIdFromToken)
+        .single()
+
+      if (!device?.is_approved) return error('Device no longer approved.')
+
+      const patchesRaw = body.patches
+      if (!Array.isArray(patchesRaw) || patchesRaw.length === 0) {
+        return error('Missing patches.')
+      }
+
+      for (const raw of patchesRaw) {
+        const p = raw as Record<string, unknown>
+        const productId = String(p.product_id ?? '')
+        const stockQty = Number(p.stock_qty)
+        const updatedAt =
+          p.updated_at != null && String(p.updated_at).length > 0
+            ? String(p.updated_at)
+            : new Date().toISOString()
+
+        if (!productId || !Number.isFinite(stockQty)) continue
+
+        const updateRow: Record<string, unknown> = {
+          stock_qty: Math.floor(stockQty),
+          updated_at: updatedAt,
+        }
+
+        if (
+          p.cost_price_cents !== undefined &&
+          p.cost_price_cents !== null &&
+          String(p.cost_price_cents) !== ''
+        ) {
+          const c = Number(p.cost_price_cents)
+          if (Number.isFinite(c)) updateRow.cost_price_cents = Math.round(c)
+        }
+
+        const { error: upErr } = await supabase
+          .from('products')
+          .update(updateRow)
+          .eq('id', productId)
+          .eq('business_id', bizId)
+
+        if (upErr) return error(upErr.message)
+      }
 
       return json({ status: 'ok' })
     }

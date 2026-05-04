@@ -11,7 +11,7 @@ interface ProductCardProps {
   onPress: () => void
 }
 
-export function ProductCard({ product, onPress }: ProductCardProps) {
+export const ProductCard = React.memo(function ProductCard({ product, onPress }: ProductCardProps) {
   const { formatMoney } = useMoneyFormat()
   const { name, category, sellingPriceCents, unit, stockQty, lowStockThreshold } = product
 
@@ -64,7 +64,7 @@ export function ProductCard({ product, onPress }: ProductCardProps) {
       </View>
     </Card>
   )
-}
+})
 
 const styles = StyleSheet.create({
   row: {

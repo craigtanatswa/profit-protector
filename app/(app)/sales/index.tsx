@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState, memo } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 import {
   Animated,
   RefreshControl,
@@ -13,20 +13,23 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import { Q } from '@nozbe/watermelondb'
 
 import { ScreenHeader } from '../../../src/components/layout'
 import { EmptyState } from '../../../src/components/ui'
 import { SaleCard } from '../../../src/components/sales/SaleCard'
-import { FilterPanel } from '../../../src/components/sales/FilterPanel'
-import type { FilterState } from '../../../src/components/sales/FilterPanel'
+import { FilterPanel, DEFAULT_FILTERS } from '../../../src/components/sales/FilterPanel'
+import type { FilterState, ShopkeeperOption } from '../../../src/components/sales/FilterPanel'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { useSalesWithItems } from '../../../src/hooks/useSales'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { SaleWithItems } from '../../../src/hooks/useSales'
 import { pullShopkeeperSalesForCurrentMonth } from '../../../src/lib/shopkeeperAuth'
+import { database } from '../../../src/database'
+import type ShopkeeperModel from '../../../src/database/models/Shopkeeper'
 
-// ─── Date helpers (no external dependency) ───────────────────────────────────
+// ─── Date helpers ─────────────────────────────────────────────────────────────
 
 function isSameDay(a: Date, b: Date): boolean {
   return (
@@ -45,8 +48,7 @@ function subDays(date: Date, n: number): Date {
 function startOfWeek(date: Date): Date {
   const d = new Date(date)
   const day = d.getDay()
-  // Treat Monday as start of week
-  const diff = (day === 0 ? -6 : 1 - day)
+  const diff = day === 0 ? -6 : 1 - day
   d.setDate(d.getDate() + diff)
   d.setHours(0, 0, 0, 0)
   return d
@@ -61,10 +63,7 @@ function formatGroupDate(timestamp: number): string {
   const now = new Date()
   if (isSameDay(date, now)) return 'Today'
   if (isSameDay(date, subDays(now, 1))) return 'Yesterday'
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ]
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`
 }
 
@@ -76,7 +75,7 @@ interface Section {
   data: SaleWithItems[]
 }
 
-// ─── Stable list separators (module-level = same reference every render) ──────
+// ─── Stable list separators ───────────────────────────────────────────────────
 const ItemSep = () => <View style={styles.itemSeparator} />
 const SectionSep = () => <View style={styles.sectionSep} />
 
@@ -84,7 +83,6 @@ const SectionSep = () => <View style={styles.sectionSep} />
 
 function SkeletonCard() {
   const opacity = useRef(new Animated.Value(0.4)).current
-
   React.useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
@@ -95,10 +93,7 @@ function SkeletonCard() {
     anim.start()
     return () => anim.stop()
   }, [opacity])
-
-  return (
-    <Animated.View style={[styles.skeleton, { opacity }]} />
-  )
+  return <Animated.View style={[styles.skeleton, { opacity }]} />
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -112,9 +107,47 @@ export default function SalesHistoryScreen() {
   const isShopkeeper = activeRole === 'shopkeeper'
   const shopkeeperIdForQuery = isShopkeeper ? shopkeeperSession?.shopkeeper.id ?? null : null
 
+  // ─── Load shopkeepers for owner filter ──────────────────────────────────────
+  const [shopkeeperOptions, setShopkeeperOptions] = useState<ShopkeeperOption[]>([])
+
+  useEffect(() => {
+    if (isShopkeeper || !business?.id || !database) return
+    database
+      .get<ShopkeeperModel>('shopkeepers')
+      .query(Q.where('business_id', business.id), Q.where('is_active', true))
+      .fetch()
+      .then((records) =>
+        setShopkeeperOptions(
+          records.map((r) => ({ id: r.id, fullName: r.fullName })),
+        ),
+      )
+      .catch(() => {})
+  }, [isShopkeeper, business?.id])
+
+  // Build a lookup map for rendering staff labels on each card
+  const staffNameMap = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {}
+    for (const sk of shopkeeperOptions) {
+      map[sk.id] = sk.fullName
+    }
+    return map
+  }, [shopkeeperOptions])
+
+  // ─── Filters ─────────────────────────────────────────────────────────────────
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
+  const [showFilterPanel, setShowFilterPanel] = useState(false)
+  const [searchText, setSearchText] = useState('')
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const { dateFilter, selectedMethods, sortOption, creatorFilter } = filters
+
+  // ─── Data ─────────────────────────────────────────────────────────────────────
+
   const { salesWithItems, isLoading, refetch } = useSalesWithItems(
     business?.id ?? '',
-    shopkeeperIdForQuery != null ? { shopkeeperId: shopkeeperIdForQuery } : undefined,
+    isShopkeeper
+      ? { shopkeeperId: shopkeeperIdForQuery }
+      : { ownerCreatorFilter: creatorFilter },
   )
 
   useQuietOfflineRefreshOnFocus(
@@ -123,18 +156,7 @@ export default function SalesHistoryScreen() {
     }, [refetch]),
   )
 
-  const [searchText, setSearchText] = useState('')
-  const [showFilterPanel, setShowFilterPanel] = useState(false)
-  const [filters, setFilters] = useState<FilterState>({
-    dateFilter: 'all',
-    selectedMethods: ['all'],
-    sortOption: 'newest',
-  })
-  const [isRefreshing, setIsRefreshing] = useState(false)
-
-  const { dateFilter, selectedMethods, sortOption } = filters
-
-  // ─── Filtered + sorted sales ─────────────────────────────────────────────
+  // ─── Filtered + sorted ────────────────────────────────────────────────────────
 
   const filtered = useMemo<SaleWithItems[]>(() => {
     let result = salesWithItems
@@ -144,16 +166,11 @@ export default function SalesHistoryScreen() {
       result = result.filter(({ sale }) => {
         const saleDate = new Date(sale.createdAt)
         switch (dateFilter) {
-          case 'today':
-            return isSameDay(saleDate, now)
-          case 'yesterday':
-            return isSameDay(saleDate, subDays(now, 1))
-          case 'this_week':
-            return saleDate >= startOfWeek(now)
-          case 'this_month':
-            return saleDate >= startOfMonth(now)
-          default:
-            return true
+          case 'today':    return isSameDay(saleDate, now)
+          case 'yesterday': return isSameDay(saleDate, subDays(now, 1))
+          case 'this_week': return saleDate >= startOfWeek(now)
+          case 'this_month': return saleDate >= startOfMonth(now)
+          default: return true
         }
       })
     }
@@ -188,12 +205,11 @@ export default function SalesHistoryScreen() {
     return result
   }, [salesWithItems, dateFilter, selectedMethods, sortOption, searchText])
 
-  // ─── Summary strip ────────────────────────────────────────────────────────
+  // ─── Summary strip ────────────────────────────────────────────────────────────
 
   const summary = useMemo(() => {
     const count = filtered.length
     const totalCents = filtered.reduce((sum, { sale }) => sum + sale.totalCents, 0)
-    // Profit = actual revenue (after discount) minus COGS — consistent with Reports screen.
     const profitCents = filtered.reduce((sum, { sale, saleItems }) => {
       const cog = saleItems.reduce((s, item) => s + item.costPriceCents * item.qty, 0)
       return sum + sale.totalCents - cog
@@ -201,12 +217,11 @@ export default function SalesHistoryScreen() {
     return { count, totalCents, profitCents }
   }, [filtered])
 
-  // ─── Sections (grouped by date) ───────────────────────────────────────────
+  // ─── Sections ─────────────────────────────────────────────────────────────────
 
   const sections = useMemo<Section[]>(() => {
     const groups: Record<string, SaleWithItems[]> = {}
     const groupOrder: string[] = []
-
     for (const entry of filtered) {
       const label = formatGroupDate(entry.sale.createdAt)
       if (!groups[label]) {
@@ -215,7 +230,6 @@ export default function SalesHistoryScreen() {
       }
       groups[label].push(entry)
     }
-
     return groupOrder.map((title) => ({
       title,
       subtotalCents: groups[title].reduce((sum, { sale }) => sum + sale.totalCents, 0),
@@ -223,24 +237,33 @@ export default function SalesHistoryScreen() {
     }))
   }, [filtered])
 
-  // ─── Active filters ───────────────────────────────────────────────────────
+  // ─── Active filter pills ──────────────────────────────────────────────────────
 
   const hasActiveFilters =
     dateFilter !== 'all' ||
     (selectedMethods.length > 0 && !selectedMethods.includes('all')) ||
+    creatorFilter !== 'all' ||
     searchText.trim().length > 0
 
   const activePills: { label: string; onRemove: () => void }[] = []
 
+  if (creatorFilter !== 'all') {
+    const label =
+      creatorFilter === 'owner'
+        ? 'Owner'
+        : staffNameMap[creatorFilter] ?? 'Staff'
+    activePills.push({
+      label: `By: ${label}`,
+      onRemove: () => setFilters((f) => ({ ...f, creatorFilter: 'all' })),
+    })
+  }
+
   if (dateFilter !== 'all') {
     const label =
-      dateFilter === 'today'
-        ? 'Today'
-        : dateFilter === 'yesterday'
-          ? 'Yesterday'
-          : dateFilter === 'this_week'
-            ? 'This week'
-            : 'This month'
+      dateFilter === 'today' ? 'Today'
+      : dateFilter === 'yesterday' ? 'Yesterday'
+      : dateFilter === 'this_week' ? 'This week'
+      : 'This month'
     activePills.push({
       label,
       onRemove: () => setFilters((f) => ({ ...f, dateFilter: 'all' })),
@@ -248,11 +271,8 @@ export default function SalesHistoryScreen() {
   }
 
   const PAYMENT_LABELS: Record<string, string> = {
-    cash_usd: 'Cash $',
-    cash_zig: 'Cash ZiG',
-    ecocash: 'EcoCash',
-    bank_transfer: 'Bank',
-    credit: 'Credit',
+    cash_usd: 'Cash $', cash_zig: 'Cash ZiG', ecocash: 'EcoCash',
+    bank_transfer: 'Bank', credit: 'Credit',
   }
 
   if (!selectedMethods.includes('all')) {
@@ -275,37 +295,44 @@ export default function SalesHistoryScreen() {
     })
   }
 
-  // ─── Stable list renderers ────────────────────────────────────────────────
+  // ─── List renderers ───────────────────────────────────────────────────────────
 
   const renderSectionHeader = useCallback(
     ({ section }: { section: Section }) => (
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionHeaderTitle}>{section.title}</Text>
-        <Text style={styles.sectionHeaderSubtotal}>
-          {formatMoney(section.subtotalCents)}
-        </Text>
+        <Text style={styles.sectionHeaderSubtotal}>{formatMoney(section.subtotalCents)}</Text>
       </View>
     ),
     [formatMoney],
   )
 
   const renderItem = useCallback(
-    ({ item: entry }: { item: SaleWithItems }) => (
-      <SaleCard
-        sale={entry.sale}
-        saleItems={entry.saleItems}
-        onPress={() =>
-          router.push({
-            pathname: '/(app)/sales/[id]',
-            params: { id: entry.sale.id },
-          })
-        }
-      />
-    ),
-    [],
+    ({ item: entry }: { item: SaleWithItems }) => {
+      // For owner: show who made the sale. Null = owner themselves.
+      let staffLabel: string | undefined
+      if (!isShopkeeper) {
+        const skId = entry.sale.createdByShopkeeperId
+        staffLabel = skId ? (staffNameMap[skId] ?? 'Staff') : 'Owner'
+      }
+      return (
+        <SaleCard
+          sale={entry.sale}
+          saleItems={entry.saleItems}
+          staffLabel={staffLabel}
+          onPress={() =>
+            router.push({
+              pathname: '/(app)/sales/[id]',
+              params: { id: entry.sale.id },
+            })
+          }
+        />
+      )
+    },
+    [isShopkeeper, staffNameMap, router],
   )
 
-  // ─── Refresh ──────────────────────────────────────────────────────────────
+  // ─── Refresh ──────────────────────────────────────────────────────────────────
 
   async function handleRefresh() {
     setIsRefreshing(true)
@@ -314,18 +341,16 @@ export default function SalesHistoryScreen() {
         await pullShopkeeperSalesForCurrentMonth(shopkeeperSession.sessionToken)
       }
     } catch {
-      /* pull logs */
+      /* pull errors are non-fatal */
     }
     refetch()
-    // Give the subscription a moment to re-fire
     setTimeout(() => setIsRefreshing(false), 800)
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   const noSalesAtAll = !isLoading && salesWithItems.length === 0
-  const noResultsFromFilter =
-    !isLoading && salesWithItems.length > 0 && filtered.length === 0
+  const noResultsFromFilter = !isLoading && salesWithItems.length > 0 && filtered.length === 0
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -334,6 +359,7 @@ export default function SalesHistoryScreen() {
         rightAction={{ icon: 'funnel-outline', onPress: () => setShowFilterPanel(true) }}
         showBorder
       />
+
       {isShopkeeper ? (
         <Text style={styles.scopeHint}>
           Your sales this calendar month — the list clears when a new month starts.
@@ -373,7 +399,10 @@ export default function SalesHistoryScreen() {
             autoCorrect={false}
           />
           {searchText.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchText('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={() => setSearchText('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
               <Ionicons name="close-circle" size={18} color="#5A6A8A" />
             </TouchableOpacity>
           )}
@@ -404,10 +433,7 @@ export default function SalesHistoryScreen() {
 
       {/* Main content */}
       {isLoading ? (
-        <ScrollView
-          style={styles.listArea}
-          contentContainerStyle={styles.skeletonContent}
-        >
+        <ScrollView style={styles.listArea} contentContainerStyle={styles.skeletonContent}>
           {[0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)}
         </ScrollView>
       ) : noSalesAtAll ? (
@@ -415,9 +441,17 @@ export default function SalesHistoryScreen() {
           <EmptyState
             icon="receipt-outline"
             title="No sales yet"
-            subtitle="Complete your first sale to see it here"
-            actionLabel="New Sale"
-            onAction={() => router.push('/(app)/sales/new')}
+            subtitle={
+              creatorFilter !== 'all'
+                ? 'No sales match this filter'
+                : 'Complete your first sale to see it here'
+            }
+            actionLabel={creatorFilter !== 'all' ? 'Clear Filter' : 'New Sale'}
+            onAction={() =>
+              creatorFilter !== 'all'
+                ? setFilters(DEFAULT_FILTERS)
+                : router.push('/(app)/sales/new')
+            }
           />
         </View>
       ) : noResultsFromFilter ? (
@@ -429,7 +463,7 @@ export default function SalesHistoryScreen() {
             actionLabel="Clear Filters"
             onAction={() => {
               setSearchText('')
-              setFilters({ dateFilter: 'all', selectedMethods: ['all'], sortOption: 'newest' })
+              setFilters(DEFAULT_FILTERS)
             }}
           />
         </View>
@@ -473,6 +507,7 @@ export default function SalesHistoryScreen() {
         current={filters}
         onApply={(next) => setFilters(next)}
         onClose={() => setShowFilterPanel(false)}
+        shopkeepers={isShopkeeper ? undefined : shopkeeperOptions}
       />
     </SafeAreaView>
   )
@@ -500,32 +535,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    fontSize: 11,
-    color: '#5A6A8A',
-    marginBottom: 2,
-  },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0047AB',
-  },
-  summaryDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: '#C7D4F0',
-  },
+  summaryItem: { flex: 1, alignItems: 'center' },
+  summaryLabel: { fontSize: 11, color: '#5A6A8A', marginBottom: 2 },
+  summaryValue: { fontSize: 14, fontWeight: '700', color: '#0047AB' },
+  summaryDivider: { width: 1, height: 32, backgroundColor: '#C7D4F0' },
 
   // Search bar
-  searchWrapper: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
+  searchWrapper: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
   searchBar: {
     height: 44,
     backgroundColor: '#FFFFFF',
@@ -536,20 +552,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
   },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: '#0D1B3E',
-    paddingVertical: 0,
-  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 14, color: '#0D1B3E', paddingVertical: 0 },
 
   // Active filter pills
-  pillsScroll: {
-    paddingBottom: 0,
-  },
+  pillsScroll: { paddingBottom: 0 },
   pillsContent: {
     paddingHorizontal: 16,
     paddingBottom: 8,
@@ -564,31 +571,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 12,
   },
-  activePillText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '500',
-  },
-  activePillRemove: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
+  activePillText: { fontSize: 12, color: '#FFFFFF', fontWeight: '500' },
+  activePillRemove: { fontSize: 14, color: '#FFFFFF', fontWeight: '700' },
 
   // List
-  listArea: {
-    flex: 1,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 88,
-    flexGrow: 1,
-  },
-  skeletonContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    gap: 8,
-  },
+  listArea: { flex: 1 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 88, flexGrow: 1 },
+  skeletonContent: { paddingHorizontal: 16, paddingTop: 8, gap: 8 },
 
   // Section header
   sectionHeader: {
@@ -599,37 +588,18 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 4,
   },
-  sectionHeaderTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#5A6A8A',
-  },
-  sectionHeaderSubtotal: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0047AB',
-  },
+  sectionHeaderTitle: { fontSize: 13, fontWeight: '600', color: '#5A6A8A' },
+  sectionHeaderSubtotal: { fontSize: 13, fontWeight: '600', color: '#0047AB' },
 
   // Separators
-  itemSeparator: {
-    height: 8,
-  },
-  sectionSep: {
-    height: 4,
-  },
+  itemSeparator: { height: 8 },
+  sectionSep: { height: 4 },
 
   // Empty state
-  emptyWrapper: {
-    flex: 1,
-    paddingBottom: 80,
-  },
+  emptyWrapper: { flex: 1, paddingBottom: 80 },
 
   // Skeleton
-  skeleton: {
-    height: 80,
-    backgroundColor: '#DDE3F0',
-    borderRadius: 12,
-  },
+  skeleton: { height: 80, backgroundColor: '#DDE3F0', borderRadius: 12 },
 
   // FAB
   fab: {

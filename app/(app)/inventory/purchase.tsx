@@ -28,7 +28,11 @@ import { formatDate } from '../../../src/lib/formatters'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
 import { getProductById } from '../../../src/hooks/useProducts'
-import { supabase } from '../../../src/lib/supabase'
+import {
+  pushShopkeeperProductPatchesRemote,
+  enqueuePendingShopkeeperProductSync,
+  flushPendingShopkeeperOutbound,
+} from '../../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../../src/lib/activityLogger'
 import { wmRaw } from '../../../src/lib/watermelonRaw'
 
@@ -202,11 +206,13 @@ export default function PurchaseScreen() {
       const prevQty = productRecord.stockQty
       const newQty = prevQty + qty
 
+      const updatedMs = Date.now()
+
       await database.write(async () => {
         // Update product stock
         await productRecord.update((p) => {
           p.stockQty = newQty
-          wmRaw(p).updated_at = Date.now()
+          wmRaw(p).updated_at = updatedMs
           if (values.updateCostPrice && costCents !== null) {
             p.costPriceCents = costCents
           }
@@ -234,36 +240,31 @@ export default function PurchaseScreen() {
       })
 
       if (activeRole === 'owner') {
-        const updatePayload: Record<string, unknown> = {
+        // Offline-first: local write already visible via WatermelonDB reactive subscriptions.
+        // Fast path: push products + movements to cloud immediately so Realtime fires to shopkeeper.
+        // Full sync runs in background to reconcile all other tables.
+        useAuthStore.getState().triggerInventorySync(business.id)
+      } else if (activeRole === 'shopkeeper') {
+        const tok = useAuthStore.getState().shopkeeperSession?.sessionToken
+        const skId = useAuthStore.getState().shopkeeperSession?.shopkeeper.id
+        const patch: Parameters<typeof pushShopkeeperProductPatchesRemote>[1][0] = {
+          product_id: values.productId,
           stock_qty: newQty,
-          updated_at: new Date().toISOString(),
+          updated_at: new Date(updatedMs).toISOString(),
         }
         if (values.updateCostPrice && costCents !== null) {
-          updatePayload.cost_price_cents = costCents
+          patch.cost_price_cents = costCents
         }
-        supabase
-          .from('products')
-          .update(updatePayload)
-          .eq('id', values.productId)
-          .then(({ error }) => {
-            if (error) console.warn('Product sync failed:', error.message)
-          })
-
-        supabase
-          .from('stock_movements')
-          .insert({
-            business_id: business.id,
-            product_id: values.productId,
-            product_name_snapshot: productRecord.name,
-            action: 'purchase',
-            qty_change: qty,
-            reason: values.notes ?? '',
-            supplier: values.supplierName ?? '',
-            created_at: new Date(values.purchaseDate || Date.now()).toISOString(),
-          })
-          .then(({ error }) => {
-            if (error) console.warn('Stock movement sync failed:', error.message)
-          })
+        void (async () => {
+          if (!tok || !skId) return
+          try {
+            await flushPendingShopkeeperOutbound(tok, business.id, skId)
+            const ok = await pushShopkeeperProductPatchesRemote(tok, [patch])
+            if (!ok) await enqueuePendingShopkeeperProductSync(business.id, [values.productId])
+          } catch {
+            await enqueuePendingShopkeeperProductSync(business.id, [values.productId])
+          }
+        })()
       }
 
       Alert.alert(

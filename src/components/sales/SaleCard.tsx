@@ -9,6 +9,8 @@ interface SaleCardProps {
   sale: Sale
   saleItems: SaleItem[]
   onPress: () => void
+  /** Owner view: who made this sale. Pass 'Owner' or the shopkeeper's name. */
+  staffLabel?: string
 }
 
 interface PaymentBadgeStyle {
@@ -40,7 +42,7 @@ function formatTime(timestamp: number): string {
   return `${h}:${m}`
 }
 
-export function SaleCard({ sale, saleItems, onPress }: SaleCardProps) {
+export function SaleCard({ sale, saleItems, onPress, staffLabel }: SaleCardProps) {
   const { formatMoney } = useMoneyFormat()
   const badge = PAYMENT_BADGE[sale.paymentMethod] ?? PAYMENT_BADGE.cash_usd
   const borderColor = BORDER_COLOR[sale.paymentMethod] ?? '#0047AB'
@@ -89,6 +91,12 @@ export function SaleCard({ sale, saleItems, onPress }: SaleCardProps) {
           <Text style={styles.itemCountText}>
             {itemCount} {itemCount === 1 ? 'item' : 'items'}
           </Text>
+          {staffLabel != null && (
+            <View style={styles.staffBadge}>
+              <Ionicons name="person-outline" size={11} color="#5A6A8A" />
+              <Text style={styles.staffBadgeText}>{staffLabel}</Text>
+            </View>
+          )}
         </View>
         <View style={styles.profitRow}>
           <Text style={[styles.profit, { color: profitColor }]}>
@@ -147,11 +155,28 @@ const styles = StyleSheet.create({
   itemCountRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
+    gap: 4,
   },
   itemCountText: {
     fontSize: 13,
     color: '#5A6A8A',
     marginLeft: 4,
+  },
+  staffBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F3FA',
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    gap: 3,
+    marginLeft: 4,
+  },
+  staffBadgeText: {
+    fontSize: 11,
+    color: '#5A6A8A',
+    fontWeight: '500',
   },
   profitRow: {
     flexDirection: 'row',

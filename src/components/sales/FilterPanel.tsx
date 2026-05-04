@@ -12,11 +12,20 @@ import { Button } from '../ui/Button'
 
 export type DateFilter = 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month'
 export type SortOption = 'newest' | 'oldest' | 'highest' | 'lowest'
+/** 'all' = everyone, 'owner' = owner-only, any other string = shopkeeper ID */
+export type CreatorFilter = 'all' | 'owner' | string
 
 export interface FilterState {
   dateFilter: DateFilter
   selectedMethods: string[]
   sortOption: SortOption
+  /** Owner-only: which seller's sales to show. */
+  creatorFilter: CreatorFilter
+}
+
+export interface ShopkeeperOption {
+  id: string
+  fullName: string
 }
 
 interface FilterPanelProps {
@@ -24,6 +33,8 @@ interface FilterPanelProps {
   current: FilterState
   onApply: (state: FilterState) => void
   onClose: () => void
+  /** Pass the business's shopkeepers so the owner gets a "Sold by" section. */
+  shopkeepers?: ShopkeeperOption[]
 }
 
 const DATE_OPTIONS: { value: DateFilter; label: string }[] = [
@@ -50,25 +61,28 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'lowest', label: 'Lowest value' },
 ]
 
-const DEFAULT_FILTERS: FilterState = {
+export const DEFAULT_FILTERS: FilterState = {
   dateFilter: 'all',
   selectedMethods: ['all'],
   sortOption: 'newest',
+  creatorFilter: 'all',
 }
 
-export function FilterPanel({ visible, current, onApply, onClose }: FilterPanelProps) {
+export function FilterPanel({ visible, current, onApply, onClose, shopkeepers }: FilterPanelProps) {
   const [dateFilter, setDateFilter] = useState<DateFilter>(current.dateFilter)
   const [selectedMethods, setSelectedMethods] = useState<string[]>(current.selectedMethods)
   const [sortOption, setSortOption] = useState<SortOption>(current.sortOption)
+  const [creatorFilter, setCreatorFilter] = useState<CreatorFilter>(current.creatorFilter)
 
-  // Sync local state when panel opens with current filter values
+  // Sync local state when panel opens
   React.useEffect(() => {
     if (visible) {
       setDateFilter(current.dateFilter)
       setSelectedMethods(current.selectedMethods)
       setSortOption(current.sortOption)
+      setCreatorFilter(current.creatorFilter)
     }
-  }, [visible, current.dateFilter, current.selectedMethods, current.sortOption])
+  }, [visible, current.dateFilter, current.selectedMethods, current.sortOption, current.creatorFilter])
 
   function toggleMethod(value: string) {
     if (value === 'all') {
@@ -89,14 +103,23 @@ export function FilterPanel({ visible, current, onApply, onClose }: FilterPanelP
     setDateFilter('all')
     setSelectedMethods(['all'])
     setSortOption('newest')
+    setCreatorFilter('all')
     onApply(DEFAULT_FILTERS)
     onClose()
   }
 
   function handleApply() {
-    onApply({ dateFilter, selectedMethods, sortOption })
+    onApply({ dateFilter, selectedMethods, sortOption, creatorFilter })
     onClose()
   }
+
+  const showSoldBy = shopkeepers !== undefined && shopkeepers.length > 0
+
+  const creatorOptions: { value: CreatorFilter; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'owner', label: 'Owner' },
+    ...(shopkeepers ?? []).map((sk) => ({ value: sk.id, label: sk.fullName })),
+  ]
 
   return (
     <Modal
@@ -108,14 +131,46 @@ export function FilterPanel({ visible, current, onApply, onClose }: FilterPanelP
     >
       <Pressable style={styles.overlay} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={() => {}}>
-          {/* Handle bar */}
           <View style={styles.handle} />
 
           <Text style={styles.panelTitle}>Filter Sales</Text>
 
           <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Sold By — owner only */}
+            {showSoldBy && (
+              <>
+                <Text style={styles.sectionLabel}>Sold By</Text>
+                <View style={styles.pillRow}>
+                  {creatorOptions.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[
+                        styles.pill,
+                        creatorFilter === opt.value ? styles.pillSelected : styles.pillUnselected,
+                      ]}
+                      onPress={() => setCreatorFilter(opt.value)}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={[
+                          styles.pillText,
+                          creatorFilter === opt.value
+                            ? styles.pillTextSelected
+                            : styles.pillTextUnselected,
+                        ]}
+                      >
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
             {/* Date Range */}
-            <Text style={styles.sectionLabel}>Date Range</Text>
+            <Text style={[styles.sectionLabel, showSoldBy && styles.sectionLabelSpaced]}>
+              Date Range
+            </Text>
             <View style={styles.pillRow}>
               {DATE_OPTIONS.map((opt) => (
                 <TouchableOpacity
@@ -142,9 +197,7 @@ export function FilterPanel({ visible, current, onApply, onClose }: FilterPanelP
             </View>
 
             {/* Payment Method */}
-            <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>
-              Payment Method
-            </Text>
+            <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>Payment Method</Text>
             <View style={styles.pillRow}>
               {PAYMENT_OPTIONS.map((opt) => {
                 const active = selectedMethods.includes(opt.value)
@@ -201,20 +254,10 @@ export function FilterPanel({ visible, current, onApply, onClose }: FilterPanelP
 
             <View style={styles.buttonRow}>
               <View style={styles.buttonFlex}>
-                <Button
-                  label="Reset Filters"
-                  onPress={handleReset}
-                  variant="ghost"
-                  fullWidth
-                />
+                <Button label="Reset Filters" onPress={handleReset} variant="ghost" fullWidth />
               </View>
               <View style={styles.buttonFlex}>
-                <Button
-                  label="Apply"
-                  onPress={handleApply}
-                  variant="primary"
-                  fullWidth
-                />
+                <Button label="Apply" onPress={handleApply} variant="primary" fullWidth />
               </View>
             </View>
           </ScrollView>
