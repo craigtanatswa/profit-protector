@@ -1058,12 +1058,11 @@ export default function DashboardScreen() {
         {/* ── Date strip ── */}
         <View style={styles.dateStrip}>
           <Text style={styles.dateText}>{todayDate}</Text>
-          <TouchableOpacity
-            disabled={isShopkeeper}
-            onPress={() => router.push('/(app)/reports' as never)}
-          >
-            <Text style={styles.reportsLink}>View Reports →</Text>
-          </TouchableOpacity>
+          {!isShopkeeper ? (
+            <TouchableOpacity onPress={() => router.push('/(app)/reports' as never)}>
+              <Text style={styles.reportsLink}>View Reports →</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {/* ── Scrollable content ── */}

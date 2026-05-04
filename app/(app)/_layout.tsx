@@ -255,13 +255,14 @@ export default function AppLayout() {
           listeners={LISTENERS.inventory}
           options={INVENTORY_OPTIONS}
         />
-        {!isShopkeeper ? (
-          <Tabs.Screen
-            name="reports"
-            listeners={LISTENERS.reports}
-            options={REPORTS_OPTIONS}
-          />
-        ) : null}
+        <Tabs.Screen
+          name="reports"
+          listeners={isShopkeeper ? undefined : LISTENERS.reports}
+          options={{
+            ...REPORTS_OPTIONS,
+            ...(isShopkeeper ? { href: null } : {}),
+          }}
+        />
         <Tabs.Screen
           name="customers"
           listeners={LISTENERS.customers}
