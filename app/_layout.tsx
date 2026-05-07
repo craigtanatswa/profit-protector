@@ -1,3 +1,4 @@
+import '../src/lib/alertAndroidPatch'
 import { useEffect } from 'react'
 import { Slot, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
@@ -7,6 +8,7 @@ import { database } from '../src/database'
 import { supabase } from '../src/lib/supabase'
 import { useAuthStore } from '../src/stores/authStore'
 import { useOnboardingStore } from '../src/stores/onboardingStore'
+import { AppAlertProvider } from '../src/components/ui/AppAlertProvider'
 import { LoadingScreen } from '../src/components/ui/LoadingScreen'
 import { requestNotificationPermissions } from '../src/lib/notifications'
 import {
@@ -179,10 +181,12 @@ export default function RootLayout() {
   }, [])
 
   const shell = (
-    <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <AuthGate />
-    </SafeAreaProvider>
+    <AppAlertProvider>
+      <SafeAreaProvider>
+        <StatusBar style="dark" />
+        <AuthGate />
+      </SafeAreaProvider>
+    </AppAlertProvider>
   )
   if (database) {
     return <DatabaseProvider database={database}>{shell}</DatabaseProvider>
