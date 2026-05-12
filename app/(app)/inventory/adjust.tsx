@@ -34,6 +34,7 @@ import {
   flushPendingShopkeeperOutbound,
 } from '../../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../../src/lib/activityLogger'
+import { sendLowStockNotification } from '../../../src/lib/notifications'
 import { wmRaw } from '../../../src/lib/watermelonRaw'
 
 type AdjustmentDirection = 'remove' | 'add'
@@ -358,6 +359,22 @@ export default function AdjustStockScreen() {
             await enqueuePendingShopkeeperProductSync(business.id, [values.productId])
           }
         })()
+      }
+
+      if (
+        selectedProduct.lowStockThreshold > 0 &&
+        newStockQty <= selectedProduct.lowStockThreshold
+      ) {
+        sendLowStockNotification({
+          businessId: business.id,
+          productId: selectedProduct.id,
+          productName: selectedProduct.name,
+          currentStock: newStockQty,
+          threshold: selectedProduct.lowStockThreshold,
+          unit: selectedProduct.unit,
+        }).catch((err) =>
+          console.warn('Low stock notification failed:', err?.message ?? err),
+        )
       }
 
       const unit = selectedProduct.unit

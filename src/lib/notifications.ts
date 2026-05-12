@@ -1,21 +1,8 @@
 /*
- * TODO — Background Push Notifications (Post-MVP):
- *
- * Current implementation sends LOCAL notifications only.
- * These work when the app is open or in the background
- * but NOT when the app is completely closed.
- *
- * For closed-app notifications:
- * 1. Get Expo push token:
- *    const token = await Notifications.getExpoPushTokenAsync()
- * 2. Store token in Supabase against the business record
- * 3. Set up a Supabase Edge Function or cron job that
- *    checks stock levels daily and sends push notifications
- *    via Expo's push API: https://exp.host/--/api/v2/push/send
- *
- * This is sufficient for MVP — users will see alerts
- * on the owner's first digest of the local day (startup or resume after a calendar-day change),
- * plus per-product alerts when a sale line drives stock at or below threshold.
+ * Low-stock alerts: local notifications (when JS runs) plus Expo Push via
+ * `low-stock-expo-push` Edge Function so owners can be reached when the app is killed.
+ * Register tokens in `owner_expo_push_tokens` (see expoPushRemote.ts).
+ * Optional: database trigger → Edge Function with x-low-stock-internal-secret for staff-only devices.
  */
 
 import * as Notifications from 'expo-notifications'
@@ -29,10 +16,82 @@ import { Q } from '@nozbe/watermelondb'
 import type ProductModel from '../database/models/Product'
 import WMBusiness from '../database/models/Business'
 import { getPersonalisation, normalizeBusinessType } from './appPersonalisation'
+import { shouldScheduleOsLocalBusinessAlerts } from './notificationDeliveryMode'
+import { requestLowStockRemotePushIfOwner, requestStaffSaleRemotePushIfOwner } from './expoPushRemote'
 
 // ---------------------------------------------------------------------------
 // Android notification channels
 // ---------------------------------------------------------------------------
+
+export type InAppBizNotificationPayload = {
+  title: string
+  body: string
+  data: Record<string, string | undefined>
+}
+
+let inAppBizNotificationSink: ((payload: InAppBizNotificationPayload) => void) | null = null
+
+/** Register the tab shell handler for in-session alerts; clear on unmount. */
+export function registerInAppBizNotificationSink(
+  handler: ((payload: InAppBizNotificationPayload) => void) | null,
+) {
+  inAppBizNotificationSink = handler
+}
+
+function normalizeNotificationData(
+  data: Record<string, unknown> | undefined,
+): Record<string, string | undefined> {
+  if (data == null || typeof data !== 'object') return {}
+  const out: Record<string, string | undefined> = {}
+  for (const [k, v] of Object.entries(data)) {
+    out[k] = v == null ? undefined : String(v)
+  }
+  return out
+}
+
+function isLowStockNotificationData(
+  data: Record<string, unknown> | undefined,
+): boolean {
+  const t = data?.type
+  return t === 'low_stock' || t === 'out_of_stock' || t === 'multi_low_stock'
+}
+
+async function deliverBizLocalNotification(params: {
+  identifier?: string
+  content: Notifications.NotificationContentInput
+  /**
+   * Low-stock alerts always use scheduled locals so the owner is notified outside the app
+   * (background/closed), including right after a sale taps stock under threshold.
+   */
+  alwaysScheduleOs?: boolean
+}): Promise<void> {
+  const title =
+    typeof params.content.title === 'string' ? params.content.title : ''
+  const body = typeof params.content.body === 'string' ? params.content.body : ''
+  const data = normalizeNotificationData(
+    params.content.data as Record<string, unknown> | undefined,
+  )
+
+  const useOs =
+    params.alwaysScheduleOs || shouldScheduleOsLocalBusinessAlerts()
+
+  if (useOs) {
+    await Notifications.scheduleNotificationAsync({
+      content: params.content,
+      trigger: null,
+      ...(params.identifier != null ? { identifier: params.identifier } : {}),
+    })
+    return
+  }
+
+  if (inAppBizNotificationSink) {
+    inAppBizNotificationSink({ title, body, data })
+  } else if (__DEV__) {
+    console.warn(
+      '[notifications] In-app-only mode but no sink registered; alert dropped',
+    )
+  }
+}
 
 export async function setupAndroidChannels(): Promise<void> {
   if (Platform.OS !== 'android') return
@@ -87,6 +146,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 export async function sendLowStockNotification(params: {
+  businessId: string
   productId: string
   productName: string
   currentStock: number
@@ -106,30 +166,52 @@ export async function sendLowStockNotification(params: {
     params.messagePrefix ??
     (isOutOfStock ? 'Out of stock' : 'Low stock')
 
-  await Notifications.scheduleNotificationAsync({
+  const title = isOutOfStock ? '🚨 Out of Stock!' : '⚠️ Low Stock Alert'
+  const bodyText = isOutOfStock
+    ? `${prefix} — ${params.productName} is out of stock. Tap to reorder now.`
+    : `${prefix} — ${params.productName} has only ${params.currentStock} ${params.unit} left (threshold: ${params.threshold}). Time to reorder!`
+  const dataFields = {
+    productId: params.productId,
+    type: isOutOfStock ? 'out_of_stock' : 'low_stock',
+    screen: 'product_detail',
+  } as const
+
+  await deliverBizLocalNotification({
+    alwaysScheduleOs: true,
+    identifier: `stock-${params.productId}`,
     content: {
-      title: isOutOfStock ? '🚨 Out of Stock!' : '⚠️ Low Stock Alert',
-      body: isOutOfStock
-        ? `${prefix} — ${params.productName} is out of stock. Tap to reorder now.`
-        : `${prefix} — ${params.productName} has only ${params.currentStock} ${params.unit} left (threshold: ${params.threshold}). Time to reorder!`,
+      title,
+      body: bodyText,
       data: {
-        productId: params.productId,
-        type: isOutOfStock ? 'out_of_stock' : 'low_stock',
-        screen: 'product_detail',
+        ...dataFields,
       },
       sound: 'default',
       priority: isOutOfStock
         ? Notifications.AndroidNotificationPriority.MAX
         : Notifications.AndroidNotificationPriority.HIGH,
       color: isOutOfStock ? '#C0152A' : '#B45309',
+      ...(Platform.OS === 'android'
+        ? { channelId: isOutOfStock ? 'out-of-stock' : 'low-stock' }
+        : {}),
     },
-    trigger: null,
-    identifier: `stock-${params.productId}`,
+  })
+
+  void requestLowStockRemotePushIfOwner({
+    businessId: params.businessId,
+    productId: params.productId,
+    title,
+    body: bodyText,
+    data: {
+      productId: params.productId,
+      type: dataFields.type,
+      screen: dataFields.screen,
+    },
   })
 }
 
-/** Local notification for the business owner when staff completes a sale (foreground / background). */
+/** Local + remote notification for the business owner when staff completes a sale. */
 export async function notifyOwnerStaffSale(params: {
+  businessId: string
   receiptNumber: string
   staffLabel: string
   totalLabel?: string
@@ -141,11 +223,13 @@ export async function notifyOwnerStaffSale(params: {
 
   const receipt = params.receiptNumber.trim() || 'Sale'
   const totalPart = params.totalLabel ? ` · ${params.totalLabel}` : ''
+  const title = '🛒 Staff Sale Recorded'
+  const body = `${params.staffLabel} completed ${receipt}${totalPart}`
 
-  await Notifications.scheduleNotificationAsync({
+  await deliverBizLocalNotification({
     content: {
-      title: 'Staff sale recorded',
-      body: `${params.staffLabel} completed ${receipt}${totalPart}`,
+      title,
+      body,
       data: {
         type: 'staff_sale',
         screen: 'sales',
@@ -155,7 +239,13 @@ export async function notifyOwnerStaffSale(params: {
       color: '#0047AB',
       ...(Platform.OS === 'android' ? { channelId: 'staff-sales' } : {}),
     },
-    trigger: null,
+  })
+
+  // Push to any other owner devices (e.g. owner has two phones, or tablet + phone)
+  void requestStaffSaleRemotePushIfOwner({
+    businessId: params.businessId,
+    title,
+    body,
   })
 }
 
@@ -226,6 +316,7 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
 
   for (const product of toNotify) {
     await sendLowStockNotification({
+      businessId,
       productId: product.id,
       productName: product.name,
       currentStock: product.stockQty,
@@ -236,21 +327,35 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
   }
 
   if (lowStock.length > 5) {
-    await Notifications.scheduleNotificationAsync({
+    const multiTitle = '⚠️ Multiple Low Stock Items'
+    const multiBody =
+      messagePrefix != null
+        ? `${messagePrefix} — ${lowStock.length} products need restocking. Tap to view your inventory.`
+        : `${lowStock.length} products need restocking. Tap to view your inventory.`
+
+    await deliverBizLocalNotification({
+      alwaysScheduleOs: true,
+      identifier: 'multi-low-stock',
       content: {
-        title: '⚠️ Multiple Low Stock Items',
-        body:
-          messagePrefix != null
-            ? `${messagePrefix} — ${lowStock.length} products need restocking. Tap to view your inventory.`
-            : `${lowStock.length} products need restocking. Tap to view your inventory.`,
+        title: multiTitle,
+        body: multiBody,
         data: {
           type: 'multi_low_stock',
           screen: 'inventory',
         },
         sound: 'default',
+        ...(Platform.OS === 'android' ? { channelId: 'low-stock' } : {}),
       },
-      trigger: null,
-      identifier: 'multi-low-stock',
+    })
+
+    void requestLowStockRemotePushIfOwner({
+      businessId,
+      title: multiTitle,
+      body: multiBody,
+      data: {
+        type: 'multi_low_stock',
+        screen: 'inventory',
+      },
     })
   }
 
@@ -262,13 +367,19 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
 // ---------------------------------------------------------------------------
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const raw = notification.request.content
+      .data as Record<string, unknown> | undefined
+    const showOs =
+      isLowStockNotificationData(raw) || shouldScheduleOsLocalBusinessAlerts()
+    return {
+      shouldShowAlert: showOs,
+      shouldPlaySound: showOs,
+      shouldSetBadge: false,
+      shouldShowBanner: showOs,
+      shouldShowList: showOs,
+    }
+  },
 })
 
 export function setupNotificationHandlers(): () => void {

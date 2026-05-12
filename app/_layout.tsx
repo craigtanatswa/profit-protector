@@ -1,5 +1,5 @@
 import '../src/lib/alertAndroidPatch'
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { Slot, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -11,6 +11,8 @@ import { useOnboardingStore } from '../src/stores/onboardingStore'
 import { AppAlertProvider } from '../src/components/ui/AppAlertProvider'
 import { LoadingScreen } from '../src/components/ui/LoadingScreen'
 import { requestNotificationPermissions } from '../src/lib/notifications'
+import { setBusinessAlertsPreferInAppOnly } from '../src/lib/notificationDeliveryMode'
+import { syncOwnerExpoPushTokenToSupabase } from '../src/lib/expoPushRemote'
 import {
   clearShopkeeperSession as clearStoredShopkeeperSession,
   getStoredShopkeeperSession,
@@ -50,6 +52,16 @@ function AuthGate() {
   const hasCompletedOnboarding = useOnboardingStore((s) => s.hasCompletedOnboarding)
   const hydrateOnboarding = useOnboardingStore((s) => s.hydrateFromStorage)
   const markCompletedSyncedWithAuth = useOnboardingStore((s) => s.markCompletedSyncedWithAuth)
+
+  useLayoutEffect(() => {
+    const inSession = isAuthenticated || activeRole === 'shopkeeper'
+    setBusinessAlertsPreferInAppOnly(inSession)
+  }, [isAuthenticated, activeRole])
+
+  useEffect(() => {
+    if (!isAuthenticated || activeRole !== 'owner' || isLoading) return
+    void syncOwnerExpoPushTokenToSupabase()
+  }, [isAuthenticated, activeRole, isLoading])
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -174,7 +186,7 @@ function AuthGate() {
 export default function RootLayout() {
   useEffect(() => {
     requestNotificationPermissions().then((granted) => {
-      if (granted) {
+      if (granted && __DEV__) {
         console.log('Notifications permission granted')
       }
     })

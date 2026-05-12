@@ -73,6 +73,7 @@ export function useOwnerSalesRealtimeSync() {
               if (data?.full_name) staffLabel = String(data.full_name)
 
               await notifyOwnerStaffSale({
+                businessId,
                 receiptNumber,
                 staffLabel,
                 totalLabel,

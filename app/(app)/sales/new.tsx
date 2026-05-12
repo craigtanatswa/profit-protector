@@ -528,6 +528,7 @@ export default function NewSaleScreen() {
               product.stockQty <= product.lowStockThreshold
             ) {
               sendLowStockNotification({
+                businessId: business.id,
                 productId: product.id,
                 productName: product.name,
                 currentStock: product.stockQty,

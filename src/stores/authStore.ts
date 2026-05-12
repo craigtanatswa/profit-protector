@@ -109,6 +109,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
+      const { removeOwnerExpoPushTokensFromSupabase } = await import('../lib/expoPushRemote')
+      await removeOwnerExpoPushTokensFromSupabase()
+    } catch {
+      /* push cleanup is best-effort */
+    }
+    try {
       await supabase.auth.signOut()
     } catch {
       /* session may already be invalid after server-side user deletion */

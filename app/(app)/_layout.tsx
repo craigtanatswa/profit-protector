@@ -3,7 +3,6 @@ import { Alert, StyleSheet, View } from 'react-native'
 import { Tabs, router, type Href } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { Text } from 'react-native'
-import * as Notifications from 'expo-notifications'
 
 import { BrandLogo, StaffModeBanner, STAFF_MODE_BANNER_ROW_HEIGHT } from '../../src/components/layout'
 import { AppChromeContext } from '../../src/context/AppChromeContext'
@@ -12,7 +11,7 @@ import { useAutoSync } from '../../src/hooks/useAutoSync'
 import { useOwnerSalesRealtimeSync } from '../../src/hooks/useOwnerSalesRealtimeSync'
 import { useShopkeeperStaffSignalsRealtimeSync } from '../../src/hooks/useShopkeeperStaffSignalsRealtimeSync'
 import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
-import { setupNotificationHandlers } from '../../src/lib/notifications'
+import { setupNotificationHandlers, registerInAppBizNotificationSink } from '../../src/lib/notifications'
 import { useNotificationBanner } from '../../src/hooks/useNotificationBanner'
 import { NotificationBanner } from '../../src/components/ui/NotificationBanner'
 import { clearShopkeeperSession as clearStoredShopkeeperSession } from '../../src/lib/shopkeeperAuth'
@@ -170,21 +169,27 @@ export default function AppLayout() {
     return cleanup
   }, [])
 
-  // Show in-app banner when a notification arrives while app is open
+  // In-session business alerts (low stock, staff sales) bypass OS notifications and use this sink.
   useEffect(() => {
-    const sub = Notifications.addNotificationReceivedListener((notification) => {
-      const { title, body, data } = notification.request.content
-      const d = data as Record<string, string>
+    registerInAppBizNotificationSink((payload) => {
+      const d = payload.data
       const nType = d?.type
+      const screen = d?.screen
+      const navigateHref =
+        screen === 'sales' || nType === 'staff_sale'
+          ? '/(app)/sales'
+          : screen === 'inventory'
+            ? '/(app)/inventory'
+            : null
       showBanner({
-        title: title ?? 'Alert',
-        message: body ?? '',
+        title: payload.title || 'Alert',
+        message: payload.body,
         type: nType === 'out_of_stock' ? 'danger' : 'warning',
         productId: d?.productId ?? null,
-        navigateHref: nType === 'staff_sale' ? '/(app)/sales' : null,
+        navigateHref,
       })
     })
-    return () => sub.remove()
+    return () => registerInAppBizNotificationSink(null)
   }, [showBanner])
 
   const handleBannerPress = useCallback(() => {

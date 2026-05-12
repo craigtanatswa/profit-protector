@@ -45,3 +45,15 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/delete-account/deno.json"
 entrypoint = "./functions/delete-account/index.ts"
+
+[functions.low-stock-expo-push]
+enabled = true
+verify_jwt = false
+import_map = "./functions/low-stock-expo-push/deno.json"
+entrypoint = "./functions/low-stock-expo-push/index.ts"
+
+[functions.send-owner-push]
+enabled = true
+verify_jwt = false
+import_map = "./functions/send-owner-push/deno.json"
+entrypoint = "./functions/send-owner-push/index.ts"
