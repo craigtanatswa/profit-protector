@@ -1,9 +1,34 @@
 import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from './supabase'
 
+/** Headers required when calling Edge Functions with the anon key (matches Supabase dashboard / RN patterns). */
+const edgeFunctionHeaders: Record<string, string> = {
+  'Content-Type': 'application/json',
+  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+  apikey: SUPABASE_ANON_KEY,
+}
+
 // TODO(optional): Pass the logged-in user's access token in the Edge Function `Authorization`
 // header instead of the anon key so `send-otp-email` can verify `userId` against `sub`.
 
 export type EmailOtpPurpose = 'add_email' | 'change_password' | 'recovery'
+
+/** Edge / gateway bodies may use `error`, `message`, or neither — avoid generic-only failures. */
+function errorMessageFromEdgeResponse(
+  data: Record<string, unknown>,
+  response: Response,
+  responseBodyText: string,
+): string {
+  const str = (v: unknown): string | undefined =>
+    typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined
+  return (
+    str(data.error) ??
+    str(data.message) ??
+    str(data.msg) ??
+    (responseBodyText.trim().slice(0, 280) ||
+      `${response.status} ${response.statusText || ''}`.trim() ||
+      'Request failed. Open the Supabase dashboard → Edge Functions → Logs.')
+  )
+}
 
 /**
  * Send a 6-digit code via Resend (Edge Function). Requires a logged-in user.
@@ -27,10 +52,7 @@ export async function sendEmailOTP(
 
   const response = await fetch(`${SUPABASE_URL}/functions/v1/send-otp-email`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
+    headers: edgeFunctionHeaders,
     body: JSON.stringify({ email: trimmed, userId, purpose }),
   })
 
@@ -55,24 +77,42 @@ export async function sendRecoveryOtp(
   phone: string,
   email: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/send-recovery-otp`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-    body: JSON.stringify({ phone: phone.trim(), email: email.trim() }),
-  })
-
-  let data: { error?: string } = {}
+  let response: Response
   try {
-    data = (await response.json()) as { error?: string }
+    response = await fetch(`${SUPABASE_URL}/functions/v1/send-recovery-otp`, {
+      method: 'POST',
+      headers: edgeFunctionHeaders,
+      body: JSON.stringify({ phone: phone.trim(), email: email.trim() }),
+    })
+  } catch (e) {
+    const msg =
+      e instanceof TypeError && e.message === 'Network request failed'
+        ? 'Could not reach the server. Check your connection and that the app uses the correct Supabase URL.'
+        : (e as Error)?.message ?? 'Network error'
+    return { success: false, error: msg }
+  }
+
+  const text = await response.text()
+  let data: Record<string, unknown> = {}
+  try {
+    if (text) data = JSON.parse(text) as Record<string, unknown>
   } catch {
+    if (!response.ok) {
+      return {
+        success: false,
+        error:
+          text.trim().slice(0, 280) ||
+          `Request failed (${response.status}). Check Supabase Logs for send-recovery-otp.`,
+      }
+    }
     return { success: false, error: 'Invalid response from server' }
   }
 
   if (!response.ok) {
-    return { success: false, error: data.error ?? 'Failed to send code' }
+    return {
+      success: false,
+      error: errorMessageFromEdgeResponse(data, response, text),
+    }
   }
   return { success: true }
 }
@@ -125,10 +165,7 @@ export async function verifyRecoveryOTP(
 ): Promise<VerifyRecoveryResult> {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/verify-recovery-otp`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
+    headers: edgeFunctionHeaders,
     body: JSON.stringify({
       phone: phone.trim(),
       email: email.trim(),
@@ -166,10 +203,7 @@ export async function completeRecoveryPassword(
 ): Promise<{ success: boolean; error?: string }> {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/complete-recovery-password`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
+    headers: edgeFunctionHeaders,
     body: JSON.stringify({
       recoveryToken,
       newPassword,

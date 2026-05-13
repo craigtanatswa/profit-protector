@@ -101,11 +101,9 @@ export default function ForgotPasswordScreen() {
   }, [step, otpPrimed, recoveryEmail, submittedPhone])
 
   async function onPhoneSubmit(values: PhoneForm) {
-    const { data, error } = await supabase
-      .from('businesses')
-      .select('recovery_email, recovery_email_verified, user_id')
-      .eq('phone', values.phone)
-      .maybeSingle()
+    const { data, error } = await supabase.rpc('lookup_recovery_by_phone', {
+      p_phone: values.phone.trim(),
+    })
 
     if (error) {
       if (isMissingRecoveryColumnsError(error)) {
@@ -119,13 +117,15 @@ export default function ForgotPasswordScreen() {
       return
     }
 
-    if (!data) {
+    const row = Array.isArray(data) ? (data[0] ?? null) : (data ?? null)
+
+    if (!row || !row.user_id) {
       Alert.alert('Not found', 'No account found with this phone number.')
       return
     }
 
-    const emailRaw = typeof data.recovery_email === 'string' ? data.recovery_email.trim() : ''
-    if (!emailRaw || data.recovery_email_verified !== true) {
+    const emailRaw = typeof row.recovery_email === 'string' ? row.recovery_email.trim() : ''
+    if (!emailRaw || row.recovery_email_verified !== true) {
       Alert.alert(
         'No Recovery Email',
         'This account does not have a verified recovery email. Please contact support on WhatsApp to reset your password.\n\nTo protect your account in future, add a recovery email in Settings after logging in.',

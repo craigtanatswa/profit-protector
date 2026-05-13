@@ -12,19 +12,19 @@ entrypoint = "./functions/send-otp-email/index.ts"
 
 [functions.send-recovery-otp]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/send-recovery-otp/deno.json"
 entrypoint = "./functions/send-recovery-otp/index.ts"
 
 [functions.verify-recovery-otp]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/verify-recovery-otp/deno.json"
 entrypoint = "./functions/verify-recovery-otp/index.ts"
 
 [functions.complete-recovery-password]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/complete-recovery-password/deno.json"
 entrypoint = "./functions/complete-recovery-password/index.ts"
 

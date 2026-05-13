@@ -35,6 +35,7 @@ yarn-error.*
 .env
 
 supabase/sql/
+supabase/migrations/
 
 google-services.json
 
