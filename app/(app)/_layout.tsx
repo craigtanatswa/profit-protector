@@ -281,6 +281,10 @@ export default function AppLayout() {
             listeners={LISTENERS.settings}
             options={settingsOptions}
           />
+          <Tabs.Screen
+            name="notifications"
+            options={{ href: null, headerShown: false }}
+          />
         </Tabs>
       </View>
     </AppChromeContext.Provider>

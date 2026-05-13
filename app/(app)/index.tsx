@@ -226,82 +226,6 @@ function DashboardSkeleton({ topInset }: { topInset: number }) {
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard sync indicator (white palette for cobalt header)
-// ---------------------------------------------------------------------------
-
-function DashboardSyncIndicator() {
-  const syncStatus = useAuthStore((s) => s.syncStatus)
-  const lastSyncedAt = useAuthStore((s) => s.lastSyncedAt)
-  const spinAnim = useRef(new Animated.Value(0)).current
-  const loopRef = useRef<Animated.CompositeAnimation | null>(null)
-
-  useEffect(() => {
-    if (syncStatus === 'syncing') {
-      spinAnim.setValue(0)
-      loopRef.current = Animated.loop(
-        Animated.timing(spinAnim, {
-          toValue: 1,
-          duration: 1000,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }),
-      )
-      loopRef.current.start()
-    } else {
-      loopRef.current?.stop()
-      loopRef.current = null
-      spinAnim.setValue(0)
-    }
-    return () => loopRef.current?.stop()
-  }, [syncStatus, spinAnim])
-
-  const spin = spinAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  })
-
-  function timeAgo(ts: number): string {
-    const secs = Math.floor((Date.now() - ts) / 1000)
-    if (secs < 10) return 'just now'
-    if (secs < 60) return `${secs}s ago`
-    const mins = Math.floor(secs / 60)
-    if (mins < 60) return `${mins}m ago`
-    return `${Math.floor(mins / 60)}h ago`
-  }
-
-  if (syncStatus === 'syncing') {
-    return (
-      <View style={styles.syncRow}>
-        <Animated.View style={{ transform: [{ rotate: spin }] }}>
-          <Ionicons name="sync" size={14} color="rgba(255,255,255,0.9)" />
-        </Animated.View>
-        <Text style={styles.syncText}>Syncing...</Text>
-      </View>
-    )
-  }
-
-  if (syncStatus === 'error') {
-    return (
-      <View style={styles.syncRow}>
-        <Ionicons name="warning" size={14} color="rgba(255,200,100,0.95)" />
-        <Text style={styles.syncText}>Sync failed</Text>
-      </View>
-    )
-  }
-
-  if (syncStatus === 'success' && lastSyncedAt) {
-    return (
-      <View style={styles.syncRow}>
-        <Ionicons name="checkmark-circle" size={14} color="rgba(255,255,255,0.9)" />
-        <Text style={styles.syncText}>Synced {timeAgo(lastSyncedAt)}</Text>
-      </View>
-    )
-  }
-
-  return null
-}
-
-// ---------------------------------------------------------------------------
 // Section label
 // ---------------------------------------------------------------------------
 
@@ -805,6 +729,8 @@ export default function DashboardScreen() {
   const headerTopInset = staffBannerConsumesTopSafeArea ? 0 : insets.top
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [emailSecurityBannerVisible, setEmailSecurityBannerVisible] = useState(false)
+  const [bellSeen, setBellSeen] = useState(false)
+  const bellShakeAnim = useRef(new Animated.Value(0)).current
 
   const {
     activeRole,
@@ -937,6 +863,45 @@ export default function DashboardScreen() {
     }
   }, [business?.id, business?.businessType, totalProductCount, isLoading, isShopkeeper, refetch])
 
+  // ── Notification bell logic ────────────────────────────────────────────
+  const notifHash = `${lowStockProducts.length}:${recoveryVerified ? '1' : '0'}`
+  const hasUnreadNotifs =
+    !isShopkeeper && !bellSeen && (lowStockProducts.length > 0 || !recoveryVerified)
+
+  useEffect(() => {
+    if (isShopkeeper) return
+    let cancelled = false
+    void (async () => {
+      const savedHash = await SecureStore.getItemAsync('notifications_seen_hash')
+      if (!cancelled) setBellSeen(savedHash === notifHash)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isShopkeeper, notifHash])
+
+  useEffect(() => {
+    if (!hasUnreadNotifs) return
+    const doShake = () => {
+      bellShakeAnim.setValue(0)
+      Animated.sequence([
+        Animated.timing(bellShakeAnim, { toValue: 1, duration: 80, useNativeDriver: true }),
+        Animated.timing(bellShakeAnim, { toValue: -1, duration: 80, useNativeDriver: true }),
+        Animated.timing(bellShakeAnim, { toValue: 1, duration: 80, useNativeDriver: true }),
+        Animated.timing(bellShakeAnim, { toValue: -1, duration: 80, useNativeDriver: true }),
+        Animated.timing(bellShakeAnim, { toValue: 0, duration: 80, useNativeDriver: true }),
+      ]).start()
+    }
+    doShake()
+    const interval = setInterval(doShake, 3000)
+    return () => clearInterval(interval)
+  }, [hasUnreadNotifs, bellShakeAnim])
+
+  const bellRotate = bellShakeAnim.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: ['-20deg', '0deg', '20deg'],
+  })
+
   const handleRefresh = async () => {
     setIsRefreshing(true)
     try {
@@ -1044,15 +1009,23 @@ export default function DashboardScreen() {
                   <Text style={styles.staffSignOutText}>Sign out</Text>
                 </TouchableOpacity>
               ) : (
-                <>
-                  <DashboardSyncIndicator />
-                  <Ionicons
-                    name="notifications-outline"
-                    size={24}
-                    color="white"
-                    style={styles.bellIcon}
-                  />
-                </>
+                <TouchableOpacity
+                  onPress={() => {
+                    setBellSeen(true)
+                    router.push('/(app)/notifications' as never)
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.bellWrapper}
+                >
+                  <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
+                    <Ionicons
+                      name={hasUnreadNotifs ? 'notifications' : 'notifications-outline'}
+                      size={24}
+                      color="white"
+                    />
+                  </Animated.View>
+                  {hasUnreadNotifs && <View style={styles.bellBadge} />}
+                </TouchableOpacity>
               )}
             </View>
           </View>
@@ -1173,17 +1146,20 @@ const styles = StyleSheet.create({
   shieldIcon: {
     marginLeft: 6,
   },
-  syncRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  syncText: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.85)',
-  },
-  bellIcon: {
+  bellWrapper: {
     marginLeft: 12,
+    position: 'relative',
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#C0152A',
+    borderWidth: 1.5,
+    borderColor: '#0047AB',
   },
   staffSignOutBtn: {
     backgroundColor: 'rgba(255,255,255,0.15)',
