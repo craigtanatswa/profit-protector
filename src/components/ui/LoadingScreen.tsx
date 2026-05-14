@@ -1,5 +1,5 @@
-import React from 'react'
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
+import React, { useEffect, useRef } from 'react'
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 
 import { BrandLogo } from '../layout/BrandLogo'
@@ -9,12 +9,34 @@ interface LoadingScreenProps {
 }
 
 export function LoadingScreen({ message = 'Loading...' }: LoadingScreenProps) {
+  const pulse = useRef(new Animated.Value(1)).current
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1.15,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start()
+  }, [pulse])
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <BrandLogo variant="full" width={100} height={100} style={styles.logo} />
-      <ActivityIndicator size="large" color="#FFFFFF" />
-      <Text style={styles.message}>{message}</Text>
+      <Animated.View style={{ transform: [{ scale: pulse }] }}>
+        <BrandLogo variant="full" color="white" width={120} height={120} />
+      </Animated.View>
+      {message ? <Text style={styles.message}>{message}</Text> : null}
     </View>
   )
 }
@@ -26,12 +48,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#0047AB',
   },
-  logo: {
-    marginBottom: 28,
-  },
   message: {
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.9)',
-    marginTop: 16,
+    marginTop: 32,
   },
 })

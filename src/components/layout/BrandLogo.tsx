@@ -2,19 +2,27 @@ import React from 'react'
 import { Image, type ImageStyle, type StyleProp } from 'react-native'
 
 const brandLogo = require('../../../assets/brand-logo.png')
+const brandLogoWhite = require('../../../assets/brand-logo-white.png')
 const logoMark = require('../../../assets/logo-mark.png')
+const logoMarkWhite = require('../../../assets/brand-logo-white.png')
 
 type Variant = 'full' | 'mark'
+type Color = 'blue' | 'white'
 
 interface BrandLogoProps {
   variant?: Variant
+  color?: Color
   width: number
   height?: number
   style?: StyleProp<ImageStyle>
 }
 
-export function BrandLogo({ variant = 'full', width, height, style }: BrandLogoProps) {
-  const source = variant === 'full' ? brandLogo : logoMark
+export function BrandLogo({ variant = 'full', color = 'blue', width, height, style }: BrandLogoProps) {
+  const isWhite = color === 'white'
+  const source =
+    variant === 'full'
+      ? isWhite ? brandLogoWhite : brandLogo
+      : isWhite ? logoMarkWhite : logoMark
   const aspectHeight = height ?? width
 
   return (
