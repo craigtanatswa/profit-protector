@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TouchableOpacity,
   useWindowDimensions,
   View,
   type AlertButton,
@@ -24,15 +25,40 @@ const color = {
   outlineMuted: '#DDE3F0',
 }
 
-function buttonTextStyle(btn: AlertButton): { color: string; weight: '600' | '500' } {
+function buttonBg(btn: AlertButton): string {
   switch (btn.style) {
     case 'destructive':
-      return { color: color.danger, weight: '600' }
+      return color.danger
     case 'cancel':
-      return { color: color.onSurfaceMuted, weight: '500' }
+      return color.onSurfaceMuted
     default:
-      return { color: color.primary, weight: '600' }
+      return color.primary
   }
+}
+
+function ActionButton({
+  btn,
+  onPress,
+  fullWidth = false,
+}: {
+  btn: AlertButton
+  onPress: (b: AlertButton) => void
+  fullWidth?: boolean
+}) {
+  const bg = buttonBg(btn)
+  return (
+    <TouchableOpacity
+      activeOpacity={0.78}
+      onPress={() => onPress(btn)}
+      style={[
+        styles.actionBtn,
+        fullWidth ? styles.actionBtnFull : undefined,
+        { backgroundColor: bg },
+      ]}
+    >
+      <Text style={styles.actionBtnLabel}>{btn.text}</Text>
+    </TouchableOpacity>
+  )
 }
 
 function Actions({
@@ -45,44 +71,18 @@ function Actions({
   if (buttons.length <= 2) {
     return (
       <View style={styles.actionsRow}>
-        {buttons.map((btn, index) => {
-          const ts = buttonTextStyle(btn)
-          return (
-            <Pressable
-              key={`row-${index}`}
-              onPress={() => onPress(btn)}
-              style={({ pressed }) => [styles.textButtonWide, pressed && styles.textButtonPressed]}
-              hitSlop={8}
-              android_ripple={{ color: 'rgba(0, 71, 171, 0.12)', borderless: true }}
-            >
-              <Text style={[styles.actionLabel, { color: ts.color, fontWeight: ts.weight }]}>
-                {btn.text}
-              </Text>
-            </Pressable>
-          )
-        })}
+        {buttons.map((btn, index) => (
+          <ActionButton key={`row-${index}`} btn={btn} onPress={onPress} />
+        ))}
       </View>
     )
   }
 
   return (
     <View style={styles.actionsStack}>
-      {[...buttons].reverse().map((btn, index) => {
-        const ts = buttonTextStyle(btn)
-        return (
-          <Pressable
-            key={`stack-${index}`}
-            onPress={() => onPress(btn)}
-            style={({ pressed }) => [styles.textButtonStack, pressed && styles.textButtonPressed]}
-            hitSlop={6}
-            android_ripple={{ color: 'rgba(0, 71, 171, 0.12)' }}
-          >
-            <Text style={[styles.actionLabel, { color: ts.color, fontWeight: ts.weight }]}>
-              {btn.text}
-            </Text>
-          </Pressable>
-        )
-      })}
+      {[...buttons].reverse().map((btn, index) => (
+        <ActionButton key={`stack-${index}`} btn={btn} onPress={onPress} fullWidth />
+      ))}
     </View>
   )
 }
@@ -222,35 +222,32 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 4,
-    paddingTop: 8,
+    gap: 8,
+    paddingTop: 16,
     paddingBottom: 4,
   },
   actionsStack: {
-    paddingTop: 4,
+    gap: 8,
+    paddingTop: 16,
+    paddingBottom: 4,
   },
-  textButtonWide: {
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    minHeight: 48,
-    justifyContent: 'center',
+  actionBtn: {
     borderRadius: 100,
-  },
-  textButtonStack: {
-    paddingVertical: 14,
-    paddingHorizontal: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     minHeight: 48,
     justifyContent: 'center',
-    borderRadius: 12,
-    alignItems: 'flex-end',
+    alignItems: 'center',
+    borderWidth: 0,
   },
-  textButtonPressed: {
-    opacity: 0.92,
+  actionBtnFull: {
+    alignSelf: 'stretch',
   },
-  actionLabel: {
+  actionBtnLabel: {
     fontSize: 14,
-    letterSpacing: 0.1,
-    textAlign: 'right',
-    textTransform: 'none',
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: 0.25,
+    textAlign: 'center',
   },
 })
