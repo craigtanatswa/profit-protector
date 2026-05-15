@@ -5,6 +5,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { useAppChrome } from '../../context/AppChromeContext'
+import { BrandLogo } from './BrandLogo'
 
 const HEADER_BG = '#0047AB'
 
@@ -44,29 +45,33 @@ export function ScreenHeader({
           { paddingTop: topPad, paddingBottom: 12 },
         ]}
       >
-        <View style={styles.leftSlot}>
-          {leftAction != null && (
-            <TouchableOpacity
-              onPress={leftAction.onPress}
-              style={styles.actionTouch}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name={leftAction.icon} size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
-        </View>
+        {/* Left: optional back/action button */}
+        {leftAction != null && (
+          <TouchableOpacity
+            onPress={leftAction.onPress}
+            style={styles.leftAction}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name={leftAction.icon} size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
 
-        <View style={styles.titleContainer}>
-          <Text style={styles.title} numberOfLines={1}>
-            {title}
-          </Text>
-          {subtitle != null && (
-            <Text style={styles.subtitle} numberOfLines={1}>
-              {subtitle}
+        {/* Logo + Title — left-aligned, takes remaining space */}
+        <View style={styles.titleRow}>
+          <BrandLogo variant="mark" color="blue" width={33} height={33} onBlueBackground />
+          <View style={styles.titleStack}>
+            <Text style={styles.title} numberOfLines={1}>
+              {title}
             </Text>
-          )}
+            {subtitle != null && (
+              <Text style={styles.subtitle} numberOfLines={1}>
+                {subtitle}
+              </Text>
+            )}
+          </View>
         </View>
 
+        {/* Right action */}
         <View style={styles.rightSlot}>
           {rightAction != null && (
             isLabelAction(rightAction) ? (
@@ -99,17 +104,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
+    gap: 10,
   },
   border: {
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.22)',
   },
-  leftSlot: {
-    width: 44,
-    alignItems: 'flex-start',
+  leftAction: {
+    width: 36,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  titleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  titleStack: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  subtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.82)',
+    marginTop: 1,
   },
   rightSlot: {
-    width: 44,
     alignItems: 'flex-end',
   },
   actionTouch: {
@@ -117,20 +143,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  titleContainer: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.82)',
-    marginTop: 2,
   },
   rightLabel: {
     fontSize: 15,

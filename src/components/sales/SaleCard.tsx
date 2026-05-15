@@ -61,7 +61,7 @@ export function SaleCard({ sale, saleItems, onPress, staffLabel }: SaleCardProps
     <Card
       onPress={onPress}
       padding="md"
-      style={[styles.card, { borderLeftWidth: 3, borderLeftColor: borderColor }]}
+      style={[styles.card, { borderLeftWidth: 4, borderLeftColor: borderColor }]}
     >
       {/* Row 1 */}
       <View style={styles.row}>

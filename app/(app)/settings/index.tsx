@@ -40,7 +40,7 @@ import { Q } from '@nozbe/watermelondb'
 import { Badge, Button, Input, LoadingScreen } from '../../../src/components/ui'
 import { AddRecoveryEmailModal } from '../../../src/components/settings/AddRecoveryEmailModal'
 import { ChangePasswordModal } from '../../../src/components/settings/ChangePasswordModal'
-import { ScreenHeader } from '../../../src/components/layout'
+import { BrandLogo, ScreenHeader } from '../../../src/components/layout'
 import { SettingsRow } from '../../../src/components/settings/SettingsRow'
 import { SettingsSection } from '../../../src/components/settings/SettingsSection'
 import { useAuthStore } from '../../../src/stores/authStore'
@@ -1312,29 +1312,22 @@ function SettingsScreen() {
       >
         {/* ── Business Profile Hero ── */}
         <View style={s.hero}>
-          {heroLogoUri ? (
-            <View style={s.heroLogoWrap}>
-              <Image source={{ uri: heroLogoUri }} style={s.heroLogo} resizeMode="contain" />
+          <TouchableOpacity style={s.profileCard} onPress={() => setEditBizVisible(true)} activeOpacity={0.8}>
+            {/* Avatar / Logo */}
+            <View style={s.profileAvatarWrap}>
+              {heroLogoUri ? (
+                <Image source={{ uri: heroLogoUri }} style={s.profileLogo} resizeMode="contain" />
+              ) : (
+                <BrandLogo variant="mark" color="blue" width={36} height={36} onBlueBackground />
+              )}
             </View>
-          ) : null}
-          <View style={s.heroAvatar}>
-            <Text style={s.heroAvatarText}>{businessInitial}</Text>
-          </View>
-          <Text style={s.heroName}>{business?.name ?? 'My Business'}</Text>
-          <Text style={s.heroOwner}>{business?.ownerName ?? ''}</Text>
-          {business?.phone ? (
-            <Text style={s.heroPhone}>{business.phone}</Text>
-          ) : null}
-          {publicId ? (
-            <TouchableOpacity onPress={copyBusinessId} style={s.heroBusinessIdTouch}>
-              <Text style={s.heroBusinessId}>Business ID: {publicId}</Text>
-              <Text style={s.heroBusinessIdHint}>
-                {businessIdCopied ? 'Copied!' : 'Tap to copy'}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-          <TouchableOpacity style={s.heroEditBtn} onPress={() => setEditBizVisible(true)}>
-            <Text style={s.heroEditBtnText}>Edit Profile</Text>
+            {/* Info */}
+            <View style={s.profileInfo}>
+              <Text style={s.profileName} numberOfLines={1}>{business?.ownerName ?? business?.name ?? 'My Business'}</Text>
+              <Text style={s.profileRole}>Business Owner</Text>
+            </View>
+            {/* Chevron */}
+            <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.6)" />
           </TouchableOpacity>
         </View>
 
@@ -1742,77 +1735,39 @@ const s = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 40 },
 
-  // Hero
+  // Hero — horizontal profile card
   hero: {
     backgroundColor: '#0047AB',
-    paddingHorizontal: 20,
-    paddingVertical: 24,
-    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 20,
   },
-  heroLogoWrap: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+  profileCard: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-    maxWidth: 220,
-    maxHeight: 72,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  profileAvatarWrap: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroLogo: { width: 196, height: 56 },
-  heroAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroAvatarText: { fontSize: 28, fontWeight: '700', color: '#FFFFFF' },
-  heroName: {
-    fontSize: 20,
-    fontWeight: '700',
+  profileLogo: { width: 48, height: 48, borderRadius: 24, overflow: 'hidden' },
+  profileAvatarText: { fontSize: 22, fontWeight: '700', color: '#FFFFFF' },
+  profileInfo: { flex: 1 },
+  profileName: {
+    fontSize: 17,
+    fontWeight: '600',
     color: '#FFFFFF',
-    marginTop: 10,
-    textAlign: 'center',
   },
-  heroOwner: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  heroPhone: {
+  profileRole: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
-    textAlign: 'center',
+    color: 'rgba(255,255,255,0.75)',
     marginTop: 2,
   },
-  heroBusinessIdTouch: {
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  heroBusinessId: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: 'monospace',
-  },
-  heroBusinessIdHint: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
-    marginTop: 1,
-  },
-  heroEditBtn: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 999,
-    paddingHorizontal: 20,
-    paddingVertical: 6,
-    marginTop: 12,
-  },
-  heroEditBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '500' },
 
   // Stats
   statsCard: {

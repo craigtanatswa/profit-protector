@@ -10,7 +10,7 @@ export default function SettingsLayout() {
         headerShadowVisible: false,
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Settings' }} />
+      <Stack.Screen name="index" options={{ title: 'Settings', headerShown: false }} />
       <Stack.Screen
         name="manage-staff"
         options={{ title: 'Manage Staff', headerShown: false }}

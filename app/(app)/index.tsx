@@ -181,10 +181,12 @@ function DashboardSkeleton({ topInset }: { topInset: number }) {
         <SkeletonBox width={220} height={22} />
       </View>
 
-      {/* Date strip */}
-      <View style={styles.skeletonDateStrip}>
-        <SkeletonBox width={180} height={12} />
-        <SkeletonBox width={80} height={12} />
+      {/* Date strip (rounded panel) */}
+      <View style={[styles.skeletonDateStrip, { paddingBottom: 16 }]}>
+        <View style={{ backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 8, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, flex: 1 }}>
+          <SkeletonBox width={180} height={12} />
+          <SkeletonBox width={80} height={12} />
+        </View>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.skeletonContent}>
@@ -455,13 +457,18 @@ function QuickAction({
   labelColor,
   onPress,
 }: QuickActionProps) {
+  const isPrimary = backgroundColor === '#0047AB'
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.8}
-      style={[styles.quickAction, { backgroundColor }]}
+      style={[
+        styles.quickAction,
+        { backgroundColor },
+        isPrimary && styles.quickActionPrimary,
+      ]}
     >
-      <Ionicons name={iconName} size={28} color={iconColor} />
+      <Ionicons name={iconName} size={26} color={iconColor} />
       <Text style={[styles.quickActionLabel, { color: labelColor }]}>{label}</Text>
     </TouchableOpacity>
   )
@@ -474,31 +481,31 @@ function QuickActionsSection({ isShopkeeper }: { isShopkeeper: boolean }) {
       <View style={styles.quickActionsRow}>
         <QuickAction
           backgroundColor="#0047AB"
-          iconName="add-circle"
+          iconName="add"
           iconColor="#FFFFFF"
           label="New Sale"
           labelColor="#FFFFFF"
           onPress={() => router.push('/(app)/sales/new' as never)}
         />
         <QuickAction
-          backgroundColor="#E6EEFF"
+          backgroundColor="#FFFFFF"
           iconName="arrow-down-circle"
-          iconColor="#0047AB"
+          iconColor="#5A6A8A"
           label="Add Stock"
-          labelColor="#0047AB"
+          labelColor="#5A6A8A"
           onPress={() => router.push('/(app)/inventory/purchase')}
         />
         <QuickAction
-          backgroundColor="#FFF8F0"
+          backgroundColor="#FFFFFF"
           iconName="swap-vertical"
-          iconColor="#B45309"
+          iconColor="#5A6A8A"
           label="Adjust"
-          labelColor="#B45309"
+          labelColor="#5A6A8A"
           onPress={() => router.push('/(app)/inventory/adjust')}
         />
         {!isShopkeeper ? (
           <QuickAction
-            backgroundColor="#F4F6FB"
+            backgroundColor="#FFFFFF"
             iconName="bar-chart"
             iconColor="#5A6A8A"
             label="Reports"
@@ -970,7 +977,7 @@ export default function DashboardScreen() {
       />
       <View style={styles.root}>
         {/* ── Custom cobalt header ── */}
-        <View style={[styles.header, { paddingTop: headerTopInset + 22 }]}>
+        <View style={[styles.header, { paddingTop: 14 }]}>
           <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
               <Text style={styles.greetingText}>
@@ -983,24 +990,23 @@ export default function DashboardScreen() {
                     ? greetingNameSuffix(business.businessType)
                     : ''}
                 </Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    router.push({ pathname: '/(app)/settings', params: { focus: 'security' } })
-                  }}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-                  disabled={recoveryVerified}
-                >
-                  <Ionicons
-                    name={recoveryVerified ? 'shield-checkmark' : 'shield-outline'}
-                    size={14}
-                    color={
-                      recoveryVerified
-                        ? 'rgba(255,255,255,0.7)'
-                        : 'rgba(255,255,255,0.5)'
-                    }
+                {recoveryVerified ? (
+                  <TouchableOpacity
+                    onPress={() => router.push({ pathname: '/(app)/settings', params: { focus: 'security' } })}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                    style={styles.verifiedBadge}
+                  >
+                    <Text style={styles.verifiedBadgeText}>Verified</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => router.push({ pathname: '/(app)/settings', params: { focus: 'security' } })}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
                     style={styles.shieldIcon}
-                  />
-                </TouchableOpacity>
+                  >
+                    <Ionicons name="shield-outline" size={14} color="rgba(255,255,255,0.5)" />
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
             <View style={styles.headerRight}>
@@ -1009,36 +1015,42 @@ export default function DashboardScreen() {
                   <Text style={styles.staffSignOutText}>Sign out</Text>
                 </TouchableOpacity>
               ) : (
-                <TouchableOpacity
-                  onPress={() => {
-                    setBellSeen(true)
-                    router.push('/(app)/notifications' as never)
-                  }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={styles.bellWrapper}
-                >
-                  <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
-                    <Ionicons
-                      name={hasUnreadNotifs ? 'notifications' : 'notifications-outline'}
-                      size={24}
-                      color="white"
-                    />
-                  </Animated.View>
-                  {hasUnreadNotifs && <View style={styles.bellBadge} />}
-                </TouchableOpacity>
+                <View style={styles.headerActions}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setBellSeen(true)
+                      router.push('/(app)/notifications' as never)
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={styles.bellWrapper}
+                  >
+                    <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
+                      <Ionicons
+                        name={hasUnreadNotifs ? 'notifications' : 'notifications-outline'}
+                        size={24}
+                        color="white"
+                      />
+                    </Animated.View>
+                    {hasUnreadNotifs && <View style={styles.bellBadge} />}
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           </View>
-        </View>
 
-        {/* ── Date strip ── */}
-        <View style={styles.dateStrip}>
-          <Text style={styles.dateText}>{todayDate}</Text>
-          {!isShopkeeper ? (
-            <TouchableOpacity onPress={() => router.push('/(app)/reports' as never)}>
-              <Text style={styles.reportsLink}>View Reports →</Text>
-            </TouchableOpacity>
-          ) : null}
+          {/* ── Date strip inside header as rounded panel ── */}
+          <View style={styles.dateStrip}>
+            <Text style={styles.dateText}>{todayDate}</Text>
+            {!isShopkeeper ? (
+              <TouchableOpacity
+                onPress={() => router.push('/(app)/reports' as never)}
+                style={styles.reportsLinkRow}
+              >
+                <Text style={styles.reportsLink}>View Reports</Text>
+                <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.9)" />
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
 
         {/* ── Scrollable content ── */}
@@ -1114,7 +1126,7 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#0047AB',
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 0,
   },
   headerContent: {
     flexDirection: 'row',
@@ -1129,6 +1141,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 4,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   greetingText: {
     fontSize: 14,
     color: 'rgba(255,255,255,0.8)',
@@ -1137,17 +1154,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 2,
+    flexWrap: 'wrap',
+    gap: 6,
   },
   businessName: {
     fontSize: 22,
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  verifiedBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  verifiedBadgeText: {
+    fontSize: 11,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
   shieldIcon: {
-    marginLeft: 6,
+    marginLeft: 2,
   },
   bellWrapper: {
-    marginLeft: 12,
     position: 'relative',
   },
   bellBadge: {
@@ -1175,24 +1204,31 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // ── Date strip ────────────────────────────────────────────────────────
+  // ── Date strip (rounded panel inside header) ──────────────────────────
   dateStrip: {
-    backgroundColor: '#003380',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginTop: 12,
+    marginBottom: 16,
   },
   dateText: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.75)',
+    color: 'rgba(255,255,255,0.85)',
+  },
+  reportsLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   reportsLink: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.9)',
-    fontWeight: '500',
+    fontWeight: '600',
   },
 
   // ── Scroll ────────────────────────────────────────────────────────────
@@ -1343,6 +1379,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#DDE3F0',
+  },
+  quickActionPrimary: {
+    borderWidth: 0,
   },
   quickActionLabel: {
     fontSize: 12,
@@ -1355,7 +1396,7 @@ const styles = StyleSheet.create({
   lowStockCard: {
     marginHorizontal: 16,
     marginBottom: 8,
-    borderLeftWidth: 3,
+    borderLeftWidth: 4,
     borderRadius: 12,
   },
   lowStockRow: {
@@ -1372,8 +1413,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   orderBtn: {
-    backgroundColor: '#E6EEFF',
-    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#0047AB',
+    borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 12,
     marginLeft: 8,
@@ -1388,6 +1431,8 @@ const styles = StyleSheet.create({
   recentSaleCard: {
     marginHorizontal: 16,
     marginBottom: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#0047AB',
   },
   recentSaleRow: {
     flexDirection: 'row',
@@ -1500,7 +1545,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   skeletonDateStrip: {
-    backgroundColor: '#003380',
+    backgroundColor: '#0047AB',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',

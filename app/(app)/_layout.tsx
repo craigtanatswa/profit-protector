@@ -63,7 +63,7 @@ const tabBadgeStyles = StyleSheet.create({
 // ─── Stable header title for Dashboard ───────────────────────────────────────
 const DashboardHeaderTitle = () => (
   <View style={headerTitleStyles.row}>
-    <BrandLogo variant="full" color="white" width={32} height={32} />
+    <BrandLogo variant="mark" color="blue" width={35} height={35} onBlueBackground />
     <Text style={headerTitleStyles.text}>Dashboard</Text>
   </View>
 )

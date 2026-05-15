@@ -19,10 +19,10 @@ export const ProductCard = React.memo(function ProductCard({ product, onPress }:
   const isLowStock = stockQty > 0 && stockQty <= lowStockThreshold
 
   const borderStyle: ViewStyle = isOutOfStock
-    ? { borderLeftWidth: 3, borderLeftColor: '#C0152A', borderColor: '#DDE3F0' }
+    ? { borderLeftWidth: 4, borderLeftColor: '#C0152A', borderColor: '#DDE3F0' }
     : isLowStock
-      ? { borderLeftWidth: 3, borderLeftColor: '#B45309', borderColor: '#DDE3F0' }
-      : { borderColor: '#DDE3F0' }
+      ? { borderLeftWidth: 4, borderLeftColor: '#B45309', borderColor: '#DDE3F0' }
+      : { borderLeftWidth: 4, borderLeftColor: '#0047AB', borderColor: '#DDE3F0' }
 
   const badgeVariant: 'success' | 'warning' | 'danger' = isOutOfStock
     ? 'danger'

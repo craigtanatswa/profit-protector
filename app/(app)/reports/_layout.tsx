@@ -17,7 +17,7 @@ export default function ReportsLayout() {
         headerShadowVisible: false,
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Reports' }} />
+      <Stack.Screen name="index" options={{ title: 'Reports', headerShown: false }} />
     </Stack>
   )
 }

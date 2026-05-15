@@ -531,14 +531,14 @@ const styles = StyleSheet.create({
   summaryStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E6EEFF',
+    backgroundColor: '#0047AB',
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
   summaryItem: { flex: 1, alignItems: 'center' },
-  summaryLabel: { fontSize: 11, color: '#5A6A8A', marginBottom: 2 },
-  summaryValue: { fontSize: 14, fontWeight: '700', color: '#0047AB' },
-  summaryDivider: { width: 1, height: 32, backgroundColor: '#C7D4F0' },
+  summaryLabel: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 },
+  summaryValue: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  summaryDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.3)' },
 
   // Search bar
   searchWrapper: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
