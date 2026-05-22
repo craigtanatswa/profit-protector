@@ -23,6 +23,7 @@ import { Button, Card, Badge, MetricCard, NotificationBanner } from '../../src/c
 import { useAuthStore } from '../../src/stores/authStore'
 import { useDashboard } from '../../src/hooks/useDashboard'
 import { useQuietOfflineRefreshOnFocus } from '../../src/hooks/useQuietOfflineRefreshOnFocus'
+import { useSubscription } from '../../src/hooks/useSubscription'
 import type { CashBreakdownItem, RecentSaleEntry } from '../../src/hooks/useDashboard'
 import { formatPaymentMethod } from '../../src/lib/formatters'
 import { insertSampleProductsForBusiness } from '../../src/lib/insertSampleProducts'
@@ -756,6 +757,8 @@ export default function DashboardScreen() {
     activeRole === 'owner' ? businessId : '',
   )
 
+  const { subscription, daysRemainingInTrial } = useSubscription()
+
   const {
     todaysSalesCents,
     todaysProfitCents,
@@ -976,6 +979,43 @@ export default function DashboardScreen() {
         }}
       />
       <View style={styles.root}>
+        {!isShopkeeper &&
+          subscription?.status === 'trial' &&
+          daysRemainingInTrial <= 7 && (
+          <View
+            style={[
+              styles.trialBannerOuter,
+              {
+                backgroundColor:
+                  daysRemainingInTrial === 0 || daysRemainingInTrial === 1
+                    ? '#C0152A'
+                    : daysRemainingInTrial <= 3
+                      ? '#B45309'
+                      : '#0047AB',
+              },
+            ]}
+          >
+            <View style={styles.trialBannerRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
+                <Ionicons name="time-outline" size={14} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.trialBannerMsg} numberOfLines={2}>
+                  {daysRemainingInTrial === 0
+                    ? 'Trial ends today — subscribe now'
+                    : daysRemainingInTrial === 1
+                      ? '1 day left in your free trial'
+                      : `${daysRemainingInTrial} days left in free trial`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => router.push('/(app)/paywall')}
+                activeOpacity={0.85}
+                style={styles.trialBannerChip}
+              >
+                <Text style={styles.trialBannerChipTxt}>Subscribe $10/mo</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
         {/* ── Custom cobalt header ── */}
         <View style={[styles.header, { paddingTop: 14 }]}>
           <View style={styles.headerContent}>
@@ -1117,6 +1157,38 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#F4F6FB',
+  },
+  trialBannerOuter: {
+    minHeight: 36,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  trialBannerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    minHeight: 36,
+    gap: 12,
+  },
+  trialBannerMsg: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    flexShrink: 1,
+  },
+  trialBannerChip: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 999,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  trialBannerChipTxt: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#FFFFFF',
   },
   flex: {
     flex: 1,

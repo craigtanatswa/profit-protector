@@ -2,6 +2,8 @@ export interface Business {
   id: string
   name: string
   ownerName: string
+  /** Optional billing / Paynow checkout email separate from recovery email */
+  ownerEmail?: string
   phone: string
   businessType: string
   currency: string
@@ -94,6 +96,57 @@ export interface PaymentRecord {
 }
 
 export type PaymentMethod = 'cash_usd' | 'cash_zig' | 'ecocash' | 'bank_transfer' | 'credit'
+
+export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'grace' | 'cancelled'
+
+export interface Subscription {
+  id: string
+  businessId: string
+  status: SubscriptionStatus
+  trialStart: string
+  trialEnd: string
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  lastPaymentAt: string | null
+  lastPaymentAmountCents: number | null
+  nextBillingDate: string | null
+  paymentMethod: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Payment {
+  id: string
+  businessId: string
+  subscriptionId: string
+  paynowReference: string | null
+  paynowPollUrl: string | null
+  amountCents: number
+  currency: string
+  paymentMethod: string
+  phoneNumber: string | null
+  status: 'pending' | 'paid' | 'failed' | 'cancelled'
+  paynowStatus: string | null
+  createdAt: string
+}
+
+export interface InitiatePaymentResult {
+  success: boolean
+  paymentId?: string
+  pollUrl?: string
+  redirectUrl?: string
+  paymentMethod?: string
+  instructions?: string
+  authorizationCode?: string
+  authorizationExpires?: string
+  deepLink?: string
+  message?: string
+}
+
+export interface PollResult {
+  status: string
+  isPaid: boolean
+}
 
 export type StockAction = 'sale' | 'purchase' | 'adjustment'
 

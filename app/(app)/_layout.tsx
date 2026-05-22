@@ -1,8 +1,9 @@
 import { useCallback, useEffect } from 'react'
-import { Alert, StyleSheet, View } from 'react-native'
-import { Tabs, router, type Href } from 'expo-router'
+import { Alert, AppState, StyleSheet, View } from 'react-native'
+import { Tabs, router, type Href, useSegments, useUnstableGlobalHref } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { Text } from 'react-native'
+import * as SecureStore from 'expo-secure-store'
 
 import { BrandLogo, StaffModeBanner, STAFF_MODE_BANNER_ROW_HEIGHT } from '../../src/components/layout'
 import { AppChromeContext } from '../../src/context/AppChromeContext'
@@ -11,6 +12,7 @@ import { useAutoSync } from '../../src/hooks/useAutoSync'
 import { useOwnerSalesRealtimeSync } from '../../src/hooks/useOwnerSalesRealtimeSync'
 import { useShopkeeperStaffSignalsRealtimeSync } from '../../src/hooks/useShopkeeperStaffSignalsRealtimeSync'
 import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
+import { useSubscription } from '../../src/hooks/useSubscription'
 import { setupNotificationHandlers, registerInAppBizNotificationSink } from '../../src/lib/notifications'
 import { useNotificationBanner } from '../../src/hooks/useNotificationBanner'
 import { NotificationBanner } from '../../src/components/ui/NotificationBanner'
@@ -155,6 +157,67 @@ export default function AppLayout() {
     activeRole === 'owner' ? business?.id ?? '' : '',
   )
 
+  const segments = useSegments()
+  const unstableHref = useUnstableGlobalHref()
+  const paywallFocused =
+    segments.includes('paywall') ||
+    (typeof unstableHref === 'string' && unstableHref.includes('paywall'))
+  const {
+    canUseApp,
+    isLoading: subscriptionLoading,
+    refetch: refetchSubscription,
+    subscription,
+    daysRemainingInTrial,
+  } = useSubscription()
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') void refetchSubscription()
+    })
+    return () => sub.remove()
+  }, [refetchSubscription])
+
+  useEffect(() => {
+    if (isLoadingAuth || subscriptionLoading) return
+    if (activeRole === 'owner' && canUseApp && paywallFocused) {
+      router.replace('/(app)')
+    }
+  }, [activeRole, canUseApp, isLoadingAuth, paywallFocused, subscriptionLoading])
+
+  useEffect(() => {
+    if (isLoadingAuth || subscriptionLoading) return
+    if (activeRole !== 'owner' || canUseApp) return
+    if (paywallFocused) return
+    router.replace('/(app)/paywall')
+  }, [activeRole, canUseApp, isLoadingAuth, paywallFocused, subscriptionLoading])
+
+  // Show a one-time "welcome — you have a 30-day trial" alert on the very
+  // first login after a new account is created.
+  useEffect(() => {
+    if (isLoadingAuth || subscriptionLoading) return
+    if (activeRole !== 'owner') return
+    if (subscription?.status !== 'trial') return
+    if (!business?.id) return
+
+    const key = `trial_welcome_shown_${business.id}`
+    void SecureStore.getItemAsync(key).then((shown) => {
+      if (shown) return
+      void SecureStore.setItemAsync(key, '1')
+      Alert.alert(
+        'Welcome to Profit Protector!',
+        `You have a ${daysRemainingInTrial}-day free trial — no payment needed yet.\n\nExplore all features and start protecting your business profits today.`,
+        [{ text: 'Get Started', style: 'default' }],
+      )
+    })
+  }, [
+    activeRole,
+    business?.id,
+    daysRemainingInTrial,
+    isLoadingAuth,
+    subscription?.status,
+    subscriptionLoading,
+  ])
+
   /** Accounts that verified phone but never finished `createBusinessProfile` (e.g. older builds). */
   useEffect(() => {
     if (isShopkeeper || isLoadingAuth || !user || business != null) return
@@ -284,6 +347,15 @@ export default function AppLayout() {
           <Tabs.Screen
             name="notifications"
             options={{ href: null, headerShown: false }}
+          />
+          <Tabs.Screen
+            name="paywall"
+            options={{
+              href: null,
+              headerShown: false,
+              tabBarStyle: { display: 'none', height: 0 },
+              tabBarItemStyle: { height: 0, width: 0, overflow: 'hidden' },
+            }}
           />
         </Tabs>
       </View>

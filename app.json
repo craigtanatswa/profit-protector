@@ -4,10 +4,10 @@
     "slug": "profit-protector",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo-mark.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "scheme": "profit-protector",
+    "scheme": "profitprotector",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -18,8 +18,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0047AB"
+        "foregroundImage": "./assets/logo-mark.png",
+        "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -40,7 +40,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
+          "icon": "./assets/logo-mark-blue.png",
           "color": "#0047AB",
           "sounds": [],
           "mode": "production"

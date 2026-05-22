@@ -12,6 +12,7 @@ interface InputProps {
   placeholder?: string
   value: string
   onChangeText: (text: string) => void
+  onFocus?: () => void
   onBlur?: () => void
   error?: string
   hint?: string
@@ -32,6 +33,7 @@ export function Input({
   placeholder,
   value,
   onChangeText,
+  onFocus,
   onBlur,
   error,
   hint,
@@ -77,7 +79,10 @@ export function Input({
           multiline={multiline}
           numberOfLines={numberOfLines}
           maxLength={maxLength}
-          onFocus={() => setIsFocused(true)}
+          onFocus={() => {
+            setIsFocused(true)
+            onFocus?.()
+          }}
           onBlur={() => { setIsFocused(false); onBlur?.() }}
           style={[
             styles.input,

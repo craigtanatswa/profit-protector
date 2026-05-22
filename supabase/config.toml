@@ -57,3 +57,21 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/send-owner-push/deno.json"
 entrypoint = "./functions/send-owner-push/index.ts"
+
+[functions.paynow-initiate]
+enabled = true
+verify_jwt = false
+import_map = "./functions/paynow-initiate/deno.json"
+entrypoint = "./functions/paynow-initiate/index.ts"
+
+[functions.paynow-poll]
+enabled = true
+verify_jwt = false
+import_map = "./functions/paynow-poll/deno.json"
+entrypoint = "./functions/paynow-poll/index.ts"
+
+[functions.paynow-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/paynow-webhook/deno.json"
+entrypoint = "./functions/paynow-webhook/index.ts"

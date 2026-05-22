@@ -27,6 +27,7 @@ export default function SettingsLayout() {
         name="terms-of-service"
         options={{ title: 'Terms of Service', headerShown: false }}
       />
+      <Stack.Screen name="payments" options={{ title: 'Payment History', headerShown: false }} />
     </Stack>
   )
 }

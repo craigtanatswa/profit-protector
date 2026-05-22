@@ -51,12 +51,13 @@ import { exportReportCSV } from '../../../src/lib/reportCSV'
 import { syncAll } from '../../../src/lib/sync'
 import { clearShopkeeperSession as clearStoredShopkeeperSession } from '../../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../../src/lib/activityLogger'
-import { formatDateTime, formatMonthYear, maskEmail } from '../../../src/lib/formatters'
+import { formatDate, formatDateTime, formatMonthYear, maskEmail } from '../../../src/lib/formatters'
 import {
   getBusinessLogoDisplayUri,
   pickAndSaveBusinessLogoFromDevice,
   removeBusinessLogo,
 } from '../../../src/lib/businessLogo'
+import { useSubscription } from '../../../src/hooks/useSubscription'
 import Business from '../../../src/database/models/Business'
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,15 @@ function getSyncValueText(status: string, lastSyncedAt: number | null): string {
   if (status === 'error') return 'Sync failed'
   if (status === 'success' && lastSyncedAt) return `Synced ${timeAgo(lastSyncedAt)}`
   return 'Up to date'
+}
+
+function formatSubsBillingMethod(pm: string | null | undefined): string {
+  const raw = (pm ?? '').trim().toLowerCase()
+  if (raw.includes('ecocash')) return 'EcoCash'
+  if (raw.includes('onemoney') || raw.includes('one_money')) return 'OneMoney'
+  if (raw.includes('innbucks')) return 'InnBucks'
+  if (raw.includes('card')) return 'Visa / Mastercard'
+  return raw.length > 0 ? (pm ?? '') : '—'
 }
 
 // ---------------------------------------------------------------------------
@@ -1078,6 +1088,13 @@ function SettingsScreen() {
   const lastSyncedAt = useAuthStore((s) => s.lastSyncedAt)
   const triggerSync = useAuthStore((s) => s.triggerSync)
 
+  const {
+    subscription,
+    daysRemainingInTrial,
+    isTrialExpired,
+    nextBillingDate,
+  } = useSubscription()
+
   // Modal visibility
   const [editBizVisible, setEditBizVisible] = useState(false)
   const [currencyVisible, setCurrencyVisible] = useState(false)
@@ -1347,6 +1364,93 @@ function SettingsScreen() {
             <Text style={[s.statValue, { fontSize: 16 }]}>{stats.memberSince || '—'}</Text>
             <Text style={s.statLabel}>Since</Text>
           </View>
+        </View>
+
+        {/* ── Subscription (owner) ── */}
+        {subscription?.status === 'active' || subscription?.status === 'grace' ? (
+          <View style={sub.activeCard}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={sub.activeTitle}>Profit Protector Pro</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <View style={sub.paidBadge}>
+                    <Text style={sub.paidBadgeTxt}>Active</Text>
+                  </View>
+                  {subscription?.status === 'grace' ? (
+                    <Text style={sub.smallGreen}>Grace access</Text>
+                  ) : null}
+                </View>
+              </View>
+              <Ionicons name="shield-checkmark" size={32} color="#0A7A4B" />
+            </View>
+            <View style={sub.divGreen} />
+            <View style={sub.rowKV}>
+              <Text style={sub.k}>Next renewal</Text>
+              <Text style={sub.v}>
+                {nextBillingDate != null && !Number.isNaN(nextBillingDate.getTime())
+                  ? formatDate(nextBillingDate.getTime())
+                  : '—'}
+              </Text>
+            </View>
+            <View style={sub.rowKV}>
+              <Text style={sub.k}>Monthly</Text>
+              <Text style={sub.v}>$10.00 / month</Text>
+            </View>
+            <View style={sub.rowKV}>
+              <Text style={sub.k}>Payment method</Text>
+              <Text style={sub.v}>{formatSubsBillingMethod(subscription.paymentMethod)}</Text>
+            </View>
+          </View>
+        ) : subscription?.status === 'trial' && !isTrialExpired ? (
+          <View style={sub.trialCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Text style={sub.trialTitle}>Free Trial</Text>
+              <View style={sub.amberBadge}>
+                <Text style={sub.amberBadgeTxt}>Active</Text>
+              </View>
+            </View>
+            <Text style={sub.trialLine}>
+              Trial ends:{` `}
+              {(() => {
+                const t =
+                  subscription != null ? Date.parse(subscription.trialEnd) : NaN
+                return Number.isFinite(t) ? formatDate(t) : '—'
+              })()}
+            </Text>
+            <Text style={sub.trialLine}>{daysRemainingInTrial} days remaining</Text>
+            <View style={{ marginTop: 12 }}>
+              <Button
+                label="Subscribe now — $10/mo"
+                variant="primary"
+                size="sm"
+                fullWidth
+                onPress={() => router.push('/(app)/paywall')}
+              />
+            </View>
+          </View>
+        ) : subscription != null ? (
+          <View style={sub.expiredCard}>
+            <Text style={sub.expiredTitle}>Trial Expired</Text>
+            <Text style={sub.expiredSub}>Subscribe to keep access to your data</Text>
+            <View style={{ marginTop: 14 }}>
+              <Button
+                label="Subscribe Now"
+                variant="danger"
+                size="md"
+                fullWidth
+                onPress={() => router.push('/(app)/paywall')}
+              />
+            </View>
+          </View>
+        ) : null}
+
+        <View style={{ marginHorizontal: 16, marginBottom: 16 }}>
+          <SettingsRow
+            icon="receipt-outline"
+            label="Payment History"
+            description="View past payments"
+            onPress={() => router.push('/(app)/settings/payments')}
+          />
         </View>
 
         {/* ── Section 1: Business ── */}
@@ -1809,6 +1913,100 @@ const s = StyleSheet.create({
   },
 
   bottomPad: { height: 20 },
+})
+
+const sub = StyleSheet.create({
+  activeCard: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#EAF3DE',
+    borderWidth: 1,
+    borderColor: '#0A7A4B',
+  },
+  activeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0A7A4B',
+  },
+  paidBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#0A7A4B',
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 10,
+  },
+  paidBadgeTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  smallGreen: { fontSize: 12, color: '#3B6D11' },
+  divGreen: {
+    height: 1,
+    backgroundColor: '#CDE5BD',
+    marginVertical: 12,
+  },
+  rowKV: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  k: { fontSize: 13, color: '#3B6D11', flexShrink: 1 },
+  v: { fontSize: 13, fontWeight: '600', color: '#3B6D11' },
+
+  trialCard: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#FAEEDA',
+    borderWidth: 1,
+    borderColor: '#B45309',
+  },
+  trialTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#854F0B',
+  },
+  amberBadge: {
+    backgroundColor: '#FFF8EC',
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#D4A843',
+  },
+  amberBadgeTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#854F0B',
+  },
+  trialLine: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#854F0B',
+    lineHeight: 20,
+  },
+
+  expiredCard: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#FCEBEB',
+    borderWidth: 1,
+    borderColor: '#C0152A',
+  },
+  expiredTitle: { fontSize: 17, fontWeight: '600', color: '#C0152A' },
+  expiredSub: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#5A6A8A',
+    lineHeight: 20,
+  },
 })
 
 export default SettingsScreen
