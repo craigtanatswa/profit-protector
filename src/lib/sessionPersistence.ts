@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store'
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 
 import { supabase } from './supabase'
+import { clearOwnerActiveSessionId, registerOwnerActiveSession } from './activeSession'
 
 /** Users must sign in again after this duration. */
 export const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000
@@ -109,10 +110,18 @@ export async function handleOwnerAuthStateChange(
   event: AuthChangeEvent,
   session: Session | null,
 ): Promise<Session | null> {
-  if (!session?.user) return session
+  if (event === 'SIGNED_OUT' || !session?.user) {
+    await clearOwnerActiveSessionId()
+    return session
+  }
 
   if (event === 'SIGNED_IN') {
     await recordOwnerSessionLogin()
+    try {
+      await registerOwnerActiveSession()
+    } catch (err) {
+      console.warn('[sessionPersistence] registerOwnerActiveSession:', err)
+    }
     return session
   }
 

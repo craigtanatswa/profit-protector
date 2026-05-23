@@ -24,6 +24,7 @@ import {
   isShopkeeperSessionExpired,
   recordShopkeeperSessionLogin,
 } from './sessionPersistence'
+import { isSessionSupersededResponse } from './activeSession'
 import { wmRaw } from './watermelonRaw'
 
 const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/shopkeeper-auth`
@@ -702,6 +703,10 @@ export async function getStoredShopkeeperSession(): Promise<ShopkeeperSession | 
       action: 'verify_token',
       sessionToken: session.sessionToken,
     })
+    if (isSessionSupersededResponse(data)) {
+      await clearShopkeeperSession()
+      return null
+    }
     if (data.status !== 'valid') {
       await clearShopkeeperSession()
       return null
@@ -738,6 +743,24 @@ export async function getStoredShopkeeperSession(): Promise<ShopkeeperSession | 
     return sessionOut
   } catch {
     return null
+  }
+}
+
+/** Returns true when the server reports this shopkeeper session was replaced. */
+export async function verifyShopkeeperSessionActive(): Promise<boolean> {
+  const session = await readSessionFromKeys()
+  if (!session?.sessionToken) return false
+
+  if (await isShopkeeperSessionExpired()) return false
+
+  try {
+    const data = await callShopkeeperAuth({
+      action: 'verify_token',
+      sessionToken: session.sessionToken,
+    })
+    return isSessionSupersededResponse(data)
+  } catch {
+    return false
   }
 }
 

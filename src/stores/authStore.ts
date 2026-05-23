@@ -8,6 +8,7 @@ import {
   clearOwnerSessionLogin,
   enforceOwnerSessionMaxAge,
 } from '../lib/sessionPersistence'
+import { clearOwnerActiveSessionId, ensureOwnerActiveSession } from '../lib/activeSession'
 import type { SyncStatus } from '../lib/sync'
 import type { DeviceApprovalRequest, ShopkeeperSession, UserRole } from '../types'
 
@@ -124,6 +125,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       /* session may already be invalid after server-side user deletion */
     }
     await clearOwnerSessionLogin()
+    await clearOwnerActiveSessionId()
     set({
       user: null,
       business: null,
@@ -147,6 +149,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } = await supabase.auth.getSession()
       const sessionValid = await enforceOwnerSessionMaxAge(session)
       if (sessionValid && session?.user) {
+        const activeResult = await ensureOwnerActiveSession()
+        if (activeResult === 'superseded') {
+          await clearOwnerSessionLogin()
+          await clearOwnerActiveSessionId()
+          try {
+            await supabase.auth.signOut()
+          } catch {
+            /* session may already be invalid */
+          }
+          set({ user: null, business: null, isAuthenticated: false })
+          return
+        }
+
         set({ user: session.user, isAuthenticated: true })
         const { data: biz, error: bizErr } = await fetchBusinessRowForUser(session.user.id)
         if (!bizErr && biz) {

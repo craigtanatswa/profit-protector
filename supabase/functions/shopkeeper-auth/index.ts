@@ -132,11 +132,12 @@ serve(async (req) => {
         .eq('shopkeeper_id', shopkeeper.id)
         .eq('device_id', deviceId)
 
-      const token = await generateToken({
-        shopkeeperId: shopkeeper.id,
-        businessId: business.id,
+      const token = await issueShopkeeperSession(
+        supabase,
+        shopkeeper.id,
+        business.id,
         deviceId,
-      })
+      )
 
       return json({
         status: 'approved',
@@ -180,6 +181,9 @@ serve(async (req) => {
         .single()
 
       if (!device?.is_approved) return error('Device no longer approved.')
+
+      const sessionCheck = await assertActiveShopkeeperSession(supabase, payload)
+      if (sessionCheck === 'superseded') return sessionSuperseded()
 
       return json({
         status: 'valid',
@@ -225,6 +229,9 @@ serve(async (req) => {
         .single()
 
       if (!device?.is_approved) return error('Device no longer approved.')
+
+      const sessionCheckProducts = await assertActiveShopkeeperSession(supabase, payload)
+      if (sessionCheckProducts === 'superseded') return sessionSuperseded()
 
       // `since` enables incremental polling: only rows updated after this ISO timestamp are
       // returned. Callers pass this on background polls; omit it for a full authoritative pull.
@@ -281,6 +288,9 @@ serve(async (req) => {
         .single()
 
       if (!device?.is_approved) return error('Device no longer approved.')
+
+      const sessionCheckSales = await assertActiveShopkeeperSession(supabase, payload)
+      if (sessionCheckSales === 'superseded') return sessionSuperseded()
 
       const { data: saleRows, error: salesErr } = await supabase
         .from('sales')
@@ -339,6 +349,9 @@ serve(async (req) => {
         .single()
 
       if (!device?.is_approved) return error('Device no longer approved.')
+
+      const sessionCheckPush = await assertActiveShopkeeperSession(supabase, payload)
+      if (sessionCheckPush === 'superseded') return sessionSuperseded()
 
       const sale = body.sale as Record<string, unknown> | undefined
       const sale_items = body.sale_items as Record<string, unknown>[] | undefined
@@ -484,6 +497,9 @@ serve(async (req) => {
 
       if (!device?.is_approved) return error('Device no longer approved.')
 
+      const sessionCheckPatch = await assertActiveShopkeeperSession(supabase, payload)
+      if (sessionCheckPatch === 'superseded') return sessionSuperseded()
+
       const patchesRaw = body.patches
       if (!Array.isArray(patchesRaw) || patchesRaw.length === 0) {
         return error('Missing patches.')
@@ -606,11 +622,12 @@ serve(async (req) => {
         .eq('shopkeeper_id', shopkeeper.id)
         .eq('device_id', deviceId)
 
-      const token = await generateToken({
-        shopkeeperId: shopkeeper.id,
-        businessId: business.id,
+      const token = await issueShopkeeperSession(
+        supabase,
+        shopkeeper.id,
+        business.id,
         deviceId,
-      })
+      )
 
       return json({
         status: 'approved',
@@ -635,6 +652,81 @@ serve(async (req) => {
     return error(err instanceof Error ? err.message : 'Unexpected error')
   }
 })
+
+type SupabaseAdmin = ReturnType<typeof createClient>
+
+/** Upserts the single active session for this shopkeeper and returns a signed JWT. */
+async function issueShopkeeperSession(
+  supabase: SupabaseAdmin,
+  shopkeeperId: string,
+  businessId: string,
+  deviceId: string,
+): Promise<string> {
+  const sessionId = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  const { error } = await supabase.from('shopkeeper_active_sessions').upsert(
+    {
+      shopkeeper_id: shopkeeperId,
+      device_id: deviceId,
+      session_id: sessionId,
+      last_seen_at: now,
+    },
+    { onConflict: 'shopkeeper_id' },
+  )
+
+  if (error) {
+    console.error(JSON.stringify({ tag: 'issue_shopkeeper_session', shopkeeperId, error: String(error) }))
+    throw new Error('Failed to register active session')
+  }
+
+  return generateToken({ shopkeeperId, businessId, deviceId, sessionId })
+}
+
+/** Returns 'superseded' when this JWT is no longer the active session. */
+async function assertActiveShopkeeperSession(
+  supabase: SupabaseAdmin,
+  payload: Record<string, unknown>,
+): Promise<'ok' | 'superseded'> {
+  const sessionId = payload.sessionId
+  if (typeof sessionId !== 'string' || sessionId.length === 0) return 'superseded'
+
+  const shopkeeperId = payload.shopkeeperId
+  if (typeof shopkeeperId !== 'string' && typeof shopkeeperId !== 'number') return 'superseded'
+
+  const { data, error } = await supabase
+    .from('shopkeeper_active_sessions')
+    .select('session_id')
+    .eq('shopkeeper_id', shopkeeperId)
+    .maybeSingle()
+
+  if (error) {
+    console.error(JSON.stringify({ tag: 'assert_shopkeeper_session', shopkeeperId, error: String(error) }))
+    return 'superseded'
+  }
+
+  if (!data || data.session_id !== sessionId) return 'superseded'
+
+  await supabase
+    .from('shopkeeper_active_sessions')
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq('shopkeeper_id', shopkeeperId)
+
+  return 'ok'
+}
+
+function sessionSuperseded(): Response {
+  return new Response(
+    JSON.stringify({
+      status: 'session_superseded',
+      message: 'Signed in on another device. Please log in again.',
+    }),
+    {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    },
+  )
+}
 
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder()

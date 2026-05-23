@@ -9,6 +9,7 @@ import { BrandLogo, StaffModeBanner, STAFF_MODE_BANNER_ROW_HEIGHT } from '../../
 import { AppChromeContext } from '../../src/context/AppChromeContext'
 import { useAuthStore } from '../../src/stores/authStore'
 import { useAutoSync } from '../../src/hooks/useAutoSync'
+import { useActiveSessionGuard } from '../../src/hooks/useActiveSessionGuard'
 import { useOwnerSalesRealtimeSync } from '../../src/hooks/useOwnerSalesRealtimeSync'
 import { useShopkeeperStaffSignalsRealtimeSync } from '../../src/hooks/useShopkeeperStaffSignalsRealtimeSync'
 import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
@@ -143,6 +144,7 @@ const LISTENERS = {
 
 export default function AppLayout() {
   useAutoSync()
+  useActiveSessionGuard()
   useOwnerSalesRealtimeSync()
   useShopkeeperStaffSignalsRealtimeSync()
 
