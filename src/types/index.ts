@@ -103,6 +103,8 @@ export interface Subscription {
   id: string
   businessId: string
   status: SubscriptionStatus
+  /** Which paid plan the business is on. Defaults to 'pro' for legacy rows. */
+  planTier: 'pro' | 'pro_plus'
   trialStart: string
   trialEnd: string
   currentPeriodStart: string | null

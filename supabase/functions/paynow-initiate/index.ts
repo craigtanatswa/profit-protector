@@ -9,7 +9,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sha512 } from '../_shared/crypto.ts'
-import type { InitiateRequest } from '../_shared/types.ts'
+import type { InitiateRequest, PlanTier } from '../_shared/types.ts'
 
 const INTEGRATION_ID = Deno.env.get('PAYNOW_INTEGRATION_ID') ?? ''
 const INTEGRATION_KEY = Deno.env.get('PAYNOW_INTEGRATION_KEY') ?? ''
@@ -28,8 +28,11 @@ const PAYNOW_INITIATE_URL = 'https://www.paynow.co.zw/interface/initiatetransact
 // Express checkout (EcoCash/InnBucks) accepts deep links; card payments require https://
 const RETURN_URL = 'profitprotector://payment/result'
 const CARD_RETURN_URL = `${SUPABASE_URL}/functions/v1/paynow-card-complete`
-const ADDITIONAL_INFO = 'Profit Protector Monthly Subscription'
-const AMOUNT_STRING = '10.00'
+
+const PLAN_PRICES: Record<string, { cents: number; amountString: string; label: string }> = {
+  pro:      { cents: 1000, amountString: '10.00', label: 'Profit Protector Pro'  },
+  pro_plus: { cents: 1500, amountString: '15.00', label: 'Profit Protector Pro+' },
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -86,7 +89,12 @@ serve(async (req) => {
   }
 
   const { businessId, paymentMethod, phoneNumber, amount, authEmail } = body
-  const amountCents = amount ?? 1000
+  const rawTier = (body.planTier as string | undefined) ?? 'pro'
+  const planTier: PlanTier = rawTier === 'pro_plus' ? 'pro_plus' : 'pro'
+  const plan = PLAN_PRICES[planTier]
+  const amountCents = amount ?? plan.cents
+  const AMOUNT_STRING = plan.amountString
+  const ADDITIONAL_INFO = plan.label + ' Monthly Subscription'
 
   if (!businessId || !paymentMethod) {
     return jsonResponse(
@@ -135,6 +143,7 @@ serve(async (req) => {
       business_id: businessId,
       amount_cents: amountCents,
       payment_method: storedPaymentMethod,
+      plan_tier: planTier,
       status: 'pending',
       merchant_trace: merchantTrace,
     })

@@ -26,6 +26,8 @@ import { hashPasswordClient } from '../../../src/lib/hashPassword'
 import { logActivity } from '../../../src/lib/activityLogger'
 import { supabase } from '../../../src/lib/supabase'
 import { useAuthStore } from '../../../src/stores/authStore'
+import { useSubscription } from '../../../src/hooks/useSubscription'
+import { planLabel } from '../../../src/lib/plans'
 import type { Shopkeeper } from '../../../src/types'
 
 const receiptSuffixFieldSchema = z
@@ -217,7 +219,14 @@ function AddShopkeeperModal({
         .single()
 
       if (error || !data) {
-        Alert.alert('Could not add staff member', error?.message ?? 'Please try again.')
+        const msg = error?.message ?? 'Please try again.'
+        const isLimitError = msg.toLowerCase().includes('shopkeeper limit')
+        Alert.alert(
+          isLimitError ? 'Staff limit reached' : 'Could not add staff member',
+          isLimitError
+            ? 'Your plan does not allow more staff members. Upgrade to Pro+ to add up to 5.'
+            : msg,
+        )
         return
       }
 
@@ -531,11 +540,27 @@ function ManageStaffScreen() {
   const router = useRouter()
   const business = useAuthStore((s) => s.business)
   const activeRole = useAuthStore((s) => s.activeRole)
+  const { planTier, maxShopkeepers } = useSubscription()
   const [staff, setStaff] = useState<Shopkeeper[]>([])
   const [deviceCounts, setDeviceCounts] = useState<Record<string, number>>({})
   const [addVisible, setAddVisible] = useState(false)
   const [selected, setSelected] = useState<Shopkeeper | null>(null)
   const publicId = business?.publicId ?? (business?.id ? `pp-${business.id.slice(0, 8).toLowerCase()}` : '')
+
+  const activeStaffCount = staff.filter((s) => s.isActive).length
+  const isAtLimit = activeStaffCount >= maxShopkeepers
+
+  function handleAddPress() {
+    if (isAtLimit) {
+      Alert.alert(
+        'Staff limit reached',
+        `Your Profit Protector ${planLabel(planTier)} plan allows up to ${maxShopkeepers} staff member${maxShopkeepers === 1 ? '' : 's'}. Upgrade to Pro+ to add up to 5 staff members.`,
+        [{ text: 'OK' }],
+      )
+      return
+    }
+    setAddVisible(true)
+  }
 
   const loadStaff = useCallback(async () => {
     if (!business?.id || !database || activeRole !== 'owner') return
@@ -593,7 +618,7 @@ function ManageStaffScreen() {
       <ScreenHeader
         title="Manage Staff"
         leftAction={{ icon: 'arrow-back', onPress: () => router.back() }}
-        rightAction={{ icon: 'person-add-outline', onPress: () => setAddVisible(true) }}
+        rightAction={{ icon: 'person-add-outline', onPress: handleAddPress }}
         showBorder
       />
       <FlatList
@@ -601,14 +626,55 @@ function ManageStaffScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
-          <Card padding="md" style={styles.businessIdCard}>
-            <View style={styles.businessIdHintRow}>
-              <Ionicons name="information-circle" size={18} color="#0047AB" />
-              <Text style={styles.businessIdHint}>Share this ID with staff so they can log in</Text>
-            </View>
-            <Text style={styles.businessId}>{publicId}</Text>
-            <Button label="Copy Business ID" variant="secondary" size="sm" onPress={() => void Clipboard.setStringAsync(publicId)} />
-          </Card>
+          <>
+            {/* Staff usage / plan limit card */}
+            <Card
+              padding="md"
+              style={[
+                styles.limitCard,
+                isAtLimit && styles.limitCardFull,
+              ]}
+            >
+              <View style={styles.limitRow}>
+                <View style={styles.limitLeft}>
+                  <Ionicons
+                    name="people-outline"
+                    size={18}
+                    color={isAtLimit ? '#C0152A' : '#0047AB'}
+                  />
+                  <Text style={[styles.limitText, isAtLimit && styles.limitTextFull]}>
+                    Staff accounts
+                  </Text>
+                </View>
+                <View style={[styles.limitBadge, isAtLimit && styles.limitBadgeFull]}>
+                  <Text style={[styles.limitBadgeText, isAtLimit && styles.limitBadgeTextFull]}>
+                    {activeStaffCount} / {maxShopkeepers}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.limitPlan}>
+                Profit Protector {planLabel(planTier)} plan
+              </Text>
+              {isAtLimit && (
+                <View style={styles.limitUpgradeRow}>
+                  <Ionicons name="arrow-up-circle-outline" size={14} color="#C0152A" />
+                  <Text style={styles.limitUpgradeText}>
+                    Upgrade to Pro+ for up to 5 staff members
+                  </Text>
+                </View>
+              )}
+            </Card>
+
+            {/* Business ID sharing card */}
+            <Card padding="md" style={styles.businessIdCard}>
+              <View style={styles.businessIdHintRow}>
+                <Ionicons name="information-circle" size={18} color="#0047AB" />
+                <Text style={styles.businessIdHint}>Share this ID with staff so they can log in</Text>
+              </View>
+              <Text style={styles.businessId}>{publicId}</Text>
+              <Button label="Copy Business ID" variant="secondary" size="sm" onPress={() => void Clipboard.setStringAsync(publicId)} />
+            </Card>
+          </>
         }
         renderItem={({ item }) => (
           <StaffCard
@@ -642,6 +708,21 @@ function ManageStaffScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F4F6FB' },
   listContent: { padding: 16, paddingBottom: 32 },
+  // Staff limit indicator card
+  limitCard: { marginBottom: 10, borderWidth: 1, borderColor: '#DDE3F0' },
+  limitCardFull: { borderColor: '#C0152A', backgroundColor: '#FCEBEB' },
+  limitRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  limitLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  limitText: { fontSize: 14, fontWeight: '500', color: '#0047AB' },
+  limitTextFull: { color: '#C0152A' },
+  limitBadge: { backgroundColor: '#E6EEFF', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3 },
+  limitBadgeFull: { backgroundColor: '#FCEBEB', borderWidth: 1, borderColor: '#C0152A' },
+  limitBadgeText: { fontSize: 13, fontWeight: '700', color: '#0047AB' },
+  limitBadgeTextFull: { color: '#C0152A' },
+  limitPlan: { fontSize: 12, color: '#5A6A8A', marginTop: 4 },
+  limitUpgradeRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
+  limitUpgradeText: { fontSize: 12, color: '#C0152A', fontWeight: '500', flex: 1 },
+  // Business ID card
   businessIdCard: { backgroundColor: '#E6EEFF', borderColor: '#0047AB', marginBottom: 16 },
   businessIdHintRow: { flexDirection: 'row', alignItems: 'center' },
   businessIdHint: { marginLeft: 6, fontSize: 13, color: '#0047AB', flex: 1 },

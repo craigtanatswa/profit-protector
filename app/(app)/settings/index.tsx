@@ -58,6 +58,7 @@ import {
   removeBusinessLogo,
 } from '../../../src/lib/businessLogo'
 import { useSubscription } from '../../../src/hooks/useSubscription'
+import { formatPlanPrice, PLANS } from '../../../src/lib/plans'
 import Business from '../../../src/database/models/Business'
 
 // ---------------------------------------------------------------------------
@@ -1093,7 +1094,12 @@ function SettingsScreen() {
     daysRemainingInTrial,
     isTrialExpired,
     nextBillingDate,
+    planTier,
+    maxShopkeepers,
   } = useSubscription()
+
+  const currentPlan = PLANS[planTier]
+  const isProPlus = planTier === 'pro_plus'
 
   // Modal visibility
   const [editBizVisible, setEditBizVisible] = useState(false)
@@ -1368,37 +1374,56 @@ function SettingsScreen() {
 
         {/* ── Subscription (owner) ── */}
         {subscription?.status === 'active' || subscription?.status === 'grace' ? (
-          <View style={sub.activeCard}>
+          <View style={isProPlus ? sub.activeCardProPlus : sub.activeCard}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
               <View style={{ flex: 1, paddingRight: 8 }}>
-                <Text style={sub.activeTitle}>Profit Protector Pro</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                  <View style={sub.paidBadge}>
+                <Text style={isProPlus ? sub.activeTitleProPlus : sub.activeTitle}>
+                  Profit Protector {currentPlan.label}
+                </Text>
+                <Text style={isProPlus ? sub.activeTaglineProPlus : sub.activeTagline}>
+                  {currentPlan.tagline}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                  <View style={isProPlus ? sub.paidBadgeProPlus : sub.paidBadge}>
                     <Text style={sub.paidBadgeTxt}>Active</Text>
                   </View>
                   {subscription?.status === 'grace' ? (
-                    <Text style={sub.smallGreen}>Grace access</Text>
+                    <Text style={isProPlus ? sub.smallProPlus : sub.smallGreen}>Grace access</Text>
                   ) : null}
                 </View>
               </View>
-              <Ionicons name="shield-checkmark" size={32} color="#0A7A4B" />
+              <Ionicons
+                name="shield-checkmark"
+                size={32}
+                color={isProPlus ? '#7C3AED' : '#0A7A4B'}
+              />
             </View>
-            <View style={sub.divGreen} />
+            <View style={isProPlus ? sub.divProPlus : sub.divGreen} />
             <View style={sub.rowKV}>
-              <Text style={sub.k}>Next renewal</Text>
-              <Text style={sub.v}>
+              <Text style={isProPlus ? sub.kProPlus : sub.k}>Staff accounts</Text>
+              <Text style={isProPlus ? sub.vProPlus : sub.v}>
+                Up to {maxShopkeepers} staff member{maxShopkeepers === 1 ? '' : 's'}
+              </Text>
+            </View>
+            <View style={sub.rowKV}>
+              <Text style={isProPlus ? sub.kProPlus : sub.k}>Next renewal</Text>
+              <Text style={isProPlus ? sub.vProPlus : sub.v}>
                 {nextBillingDate != null && !Number.isNaN(nextBillingDate.getTime())
                   ? formatDate(nextBillingDate.getTime())
                   : '—'}
               </Text>
             </View>
             <View style={sub.rowKV}>
-              <Text style={sub.k}>Monthly</Text>
-              <Text style={sub.v}>$10.00 / month</Text>
+              <Text style={isProPlus ? sub.kProPlus : sub.k}>Monthly</Text>
+              <Text style={isProPlus ? sub.vProPlus : sub.v}>
+                {formatPlanPrice(planTier)} / month
+              </Text>
             </View>
             <View style={sub.rowKV}>
-              <Text style={sub.k}>Payment method</Text>
-              <Text style={sub.v}>{formatSubsBillingMethod(subscription.paymentMethod)}</Text>
+              <Text style={isProPlus ? sub.kProPlus : sub.k}>Payment method</Text>
+              <Text style={isProPlus ? sub.vProPlus : sub.v}>
+                {formatSubsBillingMethod(subscription.paymentMethod)}
+              </Text>
             </View>
           </View>
         ) : subscription?.status === 'trial' && !isTrialExpired ? (
@@ -1942,14 +1967,45 @@ const sub = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#0A7A4B',
   },
+  activeCardProPlus: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F3EEFF',
+    borderWidth: 1,
+    borderColor: '#7C3AED',
+  },
   activeTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#0A7A4B',
   },
+  activeTitleProPlus: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#5B21B6',
+  },
+  activeTagline: {
+    fontSize: 12,
+    color: '#3B6D11',
+    marginTop: 2,
+  },
+  activeTaglineProPlus: {
+    fontSize: 12,
+    color: '#6D28D9',
+    marginTop: 2,
+  },
   paidBadge: {
     alignSelf: 'flex-start',
     backgroundColor: '#0A7A4B',
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 10,
+  },
+  paidBadgeProPlus: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#7C3AED',
     borderRadius: 999,
     paddingVertical: 2,
     paddingHorizontal: 10,
@@ -1960,9 +2016,15 @@ const sub = StyleSheet.create({
     color: '#FFFFFF',
   },
   smallGreen: { fontSize: 12, color: '#3B6D11' },
+  smallProPlus: { fontSize: 12, color: '#6D28D9' },
   divGreen: {
     height: 1,
     backgroundColor: '#CDE5BD',
+    marginVertical: 12,
+  },
+  divProPlus: {
+    height: 1,
+    backgroundColor: '#DDD6FE',
     marginVertical: 12,
   },
   rowKV: {
@@ -1973,6 +2035,8 @@ const sub = StyleSheet.create({
   },
   k: { fontSize: 13, color: '#3B6D11', flexShrink: 1 },
   v: { fontSize: 13, fontWeight: '600', color: '#3B6D11' },
+  kProPlus: { fontSize: 13, color: '#6D28D9', flexShrink: 1 },
+  vProPlus: { fontSize: 13, fontWeight: '600', color: '#5B21B6' },
 
   trialCard: {
     marginHorizontal: 16,

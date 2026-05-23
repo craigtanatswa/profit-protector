@@ -4,6 +4,7 @@ import { AppState } from 'react-native'
 import { useAuthStore } from '../stores/authStore'
 import { useSubscriptionStore } from '../stores/subscriptionStore'
 import { fetchSubscription } from '../lib/subscription'
+import { getMaxShopkeepers, type PlanTier } from '../lib/plans'
 
 export function useSubscription() {
   const businessId = useAuthStore((s) => s.business?.id)
@@ -57,6 +58,9 @@ export function useSubscription() {
 
   const isActive = subscription?.status === 'active'
 
+  const planTier: PlanTier = subscription?.planTier ?? 'pro'
+  const maxShopkeepers = getMaxShopkeepers(planTier)
+
   const isTrialExpired =
     subscription?.status === 'expired' ||
     (subscription?.status === 'trial' && new Date(subscription.trialEnd) < new Date())
@@ -97,6 +101,8 @@ export function useSubscription() {
     daysRemainingInTrial,
     trialEndDate,
     nextBillingDate,
+    planTier,
+    maxShopkeepers,
     refetch,
   }
 }

@@ -1,15 +1,18 @@
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase'
 import type { InitiatePaymentResult, Payment, PollResult, Subscription } from '../types'
+import type { PlanTier } from './plans'
 
 const FUNCTION_BASE = `${SUPABASE_URL}/functions/v1`
 
 // ── Mapping helpers ────────────────────────────────────────────────────────
 
 function mapSubscription(data: Record<string, unknown>): Subscription {
+  const rawTier = data.plan_tier as string | null | undefined
   return {
     id: data.id as string,
     businessId: data.business_id as string,
     status: data.status as Subscription['status'],
+    planTier: rawTier === 'pro_plus' ? 'pro_plus' : 'pro',
     trialStart: data.trial_start as string,
     trialEnd: data.trial_end as string,
     currentPeriodStart: (data.current_period_start as string | null) ?? null,
@@ -129,12 +132,14 @@ export async function initiateEcocashPayment(params: {
   businessId: string
   phoneNumber: string
   authEmail: string
+  planTier?: PlanTier
 }): Promise<InitiatePaymentResult> {
   const signed = (await callFunction('paynow-initiate', {
     businessId: params.businessId,
     phoneNumber: params.phoneNumber,
     authEmail: params.authEmail,
     paymentMethod: 'ecocash',
+    planTier: params.planTier ?? 'pro',
   })) as unknown as SignedPayment
 
   if (!signed.success) {
@@ -170,12 +175,14 @@ export async function initiateOnemoneyPayment(params: {
   businessId: string
   phoneNumber: string
   authEmail: string
+  planTier?: PlanTier
 }): Promise<InitiatePaymentResult> {
   const signed = (await callFunction('paynow-initiate', {
     businessId: params.businessId,
     phoneNumber: params.phoneNumber,
     authEmail: params.authEmail,
     paymentMethod: 'onemoney',
+    planTier: params.planTier ?? 'pro',
   })) as unknown as SignedPayment
 
   if (!signed.success) {
@@ -212,11 +219,13 @@ export const initiateOneMoneyPayment = initiateOnemoneyPayment
 export async function initiateInnbucksPayment(params: {
   businessId: string
   authEmail: string
+  planTier?: PlanTier
 }): Promise<InitiatePaymentResult> {
   const signed = (await callFunction('paynow-initiate', {
     businessId: params.businessId,
     authEmail: params.authEmail,
     paymentMethod: 'innbucks',
+    planTier: params.planTier ?? 'pro',
   })) as unknown as SignedPayment
 
   if (!signed.success) {
@@ -256,11 +265,13 @@ export async function initiateInnbucksPayment(params: {
 export async function initiateCardPayment(params: {
   businessId: string
   authEmail: string
+  planTier?: PlanTier
 }): Promise<InitiatePaymentResult> {
   const signed = (await callFunction('paynow-initiate', {
     businessId: params.businessId,
     authEmail: params.authEmail,
     paymentMethod: 'card',
+    planTier: params.planTier ?? 'pro',
   })) as unknown as SignedPayment
 
   if (!signed.success) {

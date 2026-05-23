@@ -109,7 +109,7 @@ serve(async (req) => {
   // Look up the payment by the Paynow reference we set on initiation
   const { data: payment, error: fetchErr } = await supabase
     .from('payments')
-    .select('id, business_id, status')
+    .select('id, business_id, status, plan_tier')
     .eq('paynow_reference', reference)
     .maybeSingle()
 
@@ -145,8 +145,9 @@ serve(async (req) => {
     )
   }
 
+  const tier = payment.plan_tier === 'pro_plus' ? 'pro_plus' : 'pro'
   try {
-    await activateSubscription(supabase, payment.business_id)
+    await activateSubscription(supabase, payment.business_id, tier)
     console.log(
       JSON.stringify({
         tag: 'paynow_webhook_activated',

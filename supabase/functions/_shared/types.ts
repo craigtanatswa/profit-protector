@@ -9,12 +9,16 @@ export type SubscriptionStatus =
   | 'grace'
   | 'cancelled'
 
+export type PlanTier = 'pro' | 'pro_plus'
+
 export interface InitiateRequest {
   businessId: string
   paymentMethod: PaymentMethod
   phoneNumber?: string
   authEmail?: string
   amount?: number
+  /** Which plan tier the user is subscribing to. Defaults to 'pro'. */
+  planTier?: PlanTier
 }
 
 export interface PaynowFields {

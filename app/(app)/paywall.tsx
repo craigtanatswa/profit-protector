@@ -30,6 +30,7 @@ import {
 } from '../../src/lib/subscription'
 import { formatDate } from '../../src/lib/formatters'
 import type { InitiatePaymentResult } from '../../src/types'
+import { PLANS, formatPlanPrice, type PlanTier } from '../../src/lib/plans'
 
 // ── Theme tokens ────────────────────────────────────────────────────────────
 
@@ -176,6 +177,7 @@ interface MethodCardProps {
   iconName: keyof typeof Ionicons.glyphMap
   iconColor: string
   note?: string
+  price: string
   selected: boolean
   onPress: () => void
 }
@@ -185,6 +187,7 @@ function MethodCard({
   iconName,
   iconColor,
   note,
+  price,
   selected,
   onPress,
 }: MethodCardProps) {
@@ -203,7 +206,7 @@ function MethodCard({
         color={selected ? iconColor : C.textSecondary}
       />
       <Text style={styles.methodLabel}>{label}</Text>
-      <Text style={styles.methodPrice}>$10.00</Text>
+      <Text style={styles.methodPrice}>{price}</Text>
       {note != null ? <Text style={styles.methodNote}>{note}</Text> : null}
     </TouchableOpacity>
   )
@@ -211,11 +214,172 @@ function MethodCard({
 
 // ── Main screen ─────────────────────────────────────────────────────────────
 
+// ── Plan picker card ─────────────────────────────────────────────────────
+
+interface PlanCardProps {
+  tier: PlanTier
+  selected: boolean
+  onPress: () => void
+}
+
+function PlanCard({ tier, selected, onPress }: PlanCardProps) {
+  const plan = PLANS[tier]
+  const isProPlus = tier === 'pro_plus'
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.88}
+      style={[
+        planStyles.card,
+        selected ? planStyles.cardSelected : planStyles.cardUnselected,
+        isProPlus && planStyles.cardProPlus,
+      ]}
+    >
+      {isProPlus && (
+        <View style={planStyles.badge}>
+          <Text style={planStyles.badgeText}>Most Popular</Text>
+        </View>
+      )}
+      <View style={planStyles.row}>
+        <Text style={[planStyles.label, selected && planStyles.labelSelected]}>
+          {plan.label}
+        </Text>
+        {selected && (
+          <Ionicons name="checkmark-circle" size={20} color={C.primary} />
+        )}
+      </View>
+      <Text style={[planStyles.price, selected && planStyles.priceSelected]}>
+        {formatPlanPrice(tier)}
+        <Text style={planStyles.pricePer}> / month</Text>
+      </Text>
+      <Text style={planStyles.tagline}>{plan.tagline}</Text>
+      <View style={planStyles.divider} />
+      <View style={planStyles.featureRow}>
+        <Ionicons name="people-outline" size={14} color={selected ? C.primary : C.textSecondary} />
+        <Text style={[planStyles.featureText, selected && planStyles.featureTextSelected]}>
+          {plan.maxShopkeepers === 1
+            ? '1 staff account'
+            : `Up to ${plan.maxShopkeepers} staff accounts`}
+        </Text>
+      </View>
+      <View style={planStyles.featureRow}>
+        <Ionicons name="checkmark-outline" size={14} color={selected ? C.primary : C.textSecondary} />
+        <Text style={[planStyles.featureText, selected && planStyles.featureTextSelected]}>
+          All sales, stock & reports
+        </Text>
+      </View>
+      <View style={planStyles.featureRow}>
+        <Ionicons name="checkmark-outline" size={14} color={selected ? C.primary : C.textSecondary} />
+        <Text style={[planStyles.featureText, selected && planStyles.featureTextSelected]}>
+          Cloud sync & backup
+        </Text>
+      </View>
+    </TouchableOpacity>
+  )
+}
+
+const planStyles = StyleSheet.create({
+  card: {
+    flex: 1,
+    borderRadius: 14,
+    padding: 14,
+    position: 'relative',
+  },
+  cardUnselected: {
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.card,
+  },
+  cardSelected: {
+    borderWidth: 2,
+    borderColor: C.primary,
+    backgroundColor: C.primaryLight,
+  },
+  cardProPlus: {
+    borderWidth: 2,
+    borderColor: '#7C3AED',
+  },
+  badge: {
+    position: 'absolute',
+    top: -10,
+    alignSelf: 'center',
+    backgroundColor: '#7C3AED',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    zIndex: 1,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  label: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: C.textPrimary,
+  },
+  labelSelected: {
+    color: C.primary,
+  },
+  price: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: C.textPrimary,
+    marginTop: 6,
+  },
+  priceSelected: {
+    color: C.primary,
+  },
+  pricePer: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: C.textSecondary,
+  },
+  tagline: {
+    fontSize: 12,
+    color: C.textSecondary,
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: C.border,
+    marginBottom: 10,
+  },
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 5,
+  },
+  featureText: {
+    fontSize: 12,
+    color: C.textSecondary,
+    flex: 1,
+  },
+  featureTextSelected: {
+    color: C.primary,
+  },
+})
+
+// ── Main screen ──────────────────────────────────────────────────────────
+
 export default function PaywallScreen() {
   const business = useAuthStore((s) => s.business)
   const user = useAuthStore((s) => s.user)
   const { refetch, nextBillingDate } = useSubscription()
 
+  const [selectedPlan, setSelectedPlan] = useState<PlanTier>('pro')
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethodKey | null>(null)
   const [phoneNumber, setPhoneNumber] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -323,22 +487,26 @@ export default function PaywallScreen() {
           businessId: business.id,
           phoneNumber,
           authEmail,
+          planTier: selectedPlan,
         })
       } else if (selectedMethod === 'onemoney') {
         result = await initiateOneMoneyPayment({
           businessId: business.id,
           phoneNumber,
           authEmail,
+          planTier: selectedPlan,
         })
       } else if (selectedMethod === 'innbucks') {
         result = await initiateInnbucksPayment({
           businessId: business.id,
           authEmail,
+          planTier: selectedPlan,
         })
       } else if (selectedMethod === 'card') {
         result = await initiateCardPayment({
           businessId: business.id,
           authEmail,
+          planTier: selectedPlan,
         })
       } else {
         return
@@ -398,6 +566,8 @@ export default function PaywallScreen() {
 
   // ── Button computed state ────────────────────────────────────────────────
 
+  const planPrice = formatPlanPrice(selectedPlan)
+
   let payButtonLabel = 'Select a payment method'
   let payButtonDisabled = true
 
@@ -409,7 +579,7 @@ export default function PaywallScreen() {
       payButtonLabel = 'Enter your mobile number'
       payButtonDisabled = true
     } else {
-      payButtonLabel = `Pay $10.00 via ${METHOD_LABELS[selectedMethod]}`
+      payButtonLabel = `Pay ${planPrice} via ${METHOD_LABELS[selectedMethod]}`
       payButtonDisabled = false
     }
   }
@@ -456,13 +626,17 @@ export default function PaywallScreen() {
           <SuccessBubble />
           <Text style={styles.successTitle}>Payment Successful!</Text>
           <Text style={styles.successSubtitle}>
-            Your Profit Protector subscription is now active.
+            Your Profit Protector {PLANS[selectedPlan].label} subscription is now active.
           </Text>
 
           <Card style={styles.receiptCard} padding="md">
             <View style={styles.kvRow}>
+              <Text style={styles.kvKey}>Plan</Text>
+              <Text style={styles.kvValue}>Profit Protector {PLANS[selectedPlan].label}</Text>
+            </View>
+            <View style={styles.kvRow}>
               <Text style={styles.kvKey}>Amount paid</Text>
-              <Text style={styles.kvValue}>$10.00</Text>
+              <Text style={styles.kvValue}>{planPrice}</Text>
             </View>
             <View style={styles.kvRow}>
               <Text style={styles.kvKey}>Next renewal</Text>
@@ -580,6 +754,28 @@ export default function PaywallScreen() {
         {/* Payment state UI replaces method selection when paying */}
         {paymentState === 'idle' ? (
           <>
+            <Text style={styles.sectionLabel}>Choose your plan</Text>
+            <View style={[styles.methodGrid, { marginBottom: 8 }]}>
+              <View style={styles.methodRow}>
+                <PlanCard
+                  tier="pro"
+                  selected={selectedPlan === 'pro'}
+                  onPress={() => {
+                    setSelectedPlan('pro')
+                    setSelectedMethod(null)
+                  }}
+                />
+                <PlanCard
+                  tier="pro_plus"
+                  selected={selectedPlan === 'pro_plus'}
+                  onPress={() => {
+                    setSelectedPlan('pro_plus')
+                    setSelectedMethod(null)
+                  }}
+                />
+              </View>
+            </View>
+
             <Text style={styles.sectionLabel}>Choose how to pay</Text>
 
             <View style={styles.methodGrid}>
@@ -589,6 +785,7 @@ export default function PaywallScreen() {
                   label="EcoCash"
                   iconName="phone-portrait"
                   iconColor={C.success}
+                  price={planPrice}
                   selected={selectedMethod === 'ecocash'}
                   onPress={() => setSelectedMethod('ecocash')}
                 />
@@ -597,6 +794,7 @@ export default function PaywallScreen() {
                   label="OneMoney"
                   iconName="phone-portrait"
                   iconColor={C.primaryDark}
+                  price={planPrice}
                   selected={selectedMethod === 'onemoney'}
                   onPress={() => setSelectedMethod('onemoney')}
                 />
@@ -607,6 +805,7 @@ export default function PaywallScreen() {
                   label="InnBucks"
                   iconName="wallet"
                   iconColor={C.warning}
+                  price={planPrice}
                   selected={selectedMethod === 'innbucks'}
                   onPress={() => setSelectedMethod('innbucks')}
                 />
@@ -615,6 +814,7 @@ export default function PaywallScreen() {
                   label="Card"
                   iconName="card"
                   iconColor={C.primary}
+                  price={planPrice}
                   selected={selectedMethod === 'card'}
                   onPress={() => setSelectedMethod('card')}
                   note="zimswitch"

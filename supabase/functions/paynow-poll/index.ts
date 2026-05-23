@@ -52,10 +52,10 @@ serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-  // Fetch payment record to get business_id
+  // Fetch payment record to get business_id and plan tier
   const { data: paymentRecord, error: fetchErr } = await supabase
     .from('payments')
-    .select('id, business_id, status')
+    .select('id, business_id, status, plan_tier')
     .eq('id', paymentId)
     .maybeSingle()
 
@@ -110,10 +110,11 @@ serve(async (req) => {
     )
   }
 
-  // Activate subscription on successful payment
+  // Activate subscription on successful payment, preserving the plan tier
   if (isPaid && paymentRecord.business_id) {
+    const tier = paymentRecord.plan_tier === 'pro_plus' ? 'pro_plus' : 'pro'
     try {
-      await activateSubscription(supabase, paymentRecord.business_id)
+      await activateSubscription(supabase, paymentRecord.business_id, tier)
     } catch (e) {
       console.error(
         JSON.stringify({
