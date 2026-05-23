@@ -85,7 +85,7 @@ serve(async (req) => {
     return jsonResponse({ error: 'Invalid JSON body' }, 400)
   }
 
-  const { businessId, paymentMethod, phoneNumber, amount, authEmail, cardType } = body
+  const { businessId, paymentMethod, phoneNumber, amount, authEmail } = body
   const amountCents = amount ?? 1000
 
   if (!businessId || !paymentMethod) {
@@ -99,9 +99,6 @@ serve(async (req) => {
     if (!authEmail) {
       return jsonResponse({ error: 'Customer email required for card payments' }, 400)
     }
-    if (cardType !== 'zimswitch' && cardType !== 'vmc') {
-      return jsonResponse({ error: 'Missing or invalid cardType: zimswitch or vmc' }, 400)
-    }
   }
 
   if ((paymentMethod === 'ecocash' || paymentMethod === 'onemoney') && !phoneNumber) {
@@ -111,7 +108,7 @@ serve(async (req) => {
     )
   }
 
-  const storedPaymentMethod = paymentMethod === 'card' ? cardType! : paymentMethod
+  const storedPaymentMethod = paymentMethod === 'card' ? 'zimswitch' : paymentMethod
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
@@ -212,13 +209,10 @@ serve(async (req) => {
     })
   }
 
-  // ── Card (Zimswitch / Visa-Mastercard) ───────────────────────────────────
+  // ── Card (Zimswitch only) ────────────────────────────────────────────────
   // Uses the standard initiate endpoint for both test and live mode.
-  // This avoids the tokenization requirement of the express card endpoint.
-  //
-  // Test mode: authemail = merchant email so you can log in on Paynow's test
-  //   checkout page and click "TESTING: Faked Success" to simulate payment.
-  // Live mode: authemail = customer email for frictionless guest checkout.
+  // Test mode: authemail = merchant email (log in → "TESTING: Faked Success").
+  // Live mode: authemail = customer email for guest checkout.
   if (paymentMethod === 'card') {
     const cardAuthEmail = PAYNOW_TEST_MODE ? MERCHANT_EMAIL : authEmail!
 
@@ -240,8 +234,7 @@ serve(async (req) => {
       reference,
       submitUrl: PAYNOW_INITIATE_URL,
       submitParams: cardParams,
-      paymentMethod: cardType!,
-      cardType: cardType!,
+      paymentMethod: 'zimswitch',
     })
   }
 

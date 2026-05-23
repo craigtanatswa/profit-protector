@@ -256,13 +256,11 @@ export async function initiateInnbucksPayment(params: {
 export async function initiateCardPayment(params: {
   businessId: string
   authEmail: string
-  cardType: 'zimswitch' | 'vmc'
 }): Promise<InitiatePaymentResult> {
   const signed = (await callFunction('paynow-initiate', {
     businessId: params.businessId,
     authEmail: params.authEmail,
     paymentMethod: 'card',
-    cardType: params.cardType,
   })) as unknown as SignedPayment
 
   if (!signed.success) {
@@ -291,7 +289,7 @@ export async function initiateCardPayment(params: {
     paymentId: signed.paymentId,
     redirectUrl,
     pollUrl,
-    paymentMethod: params.cardType,
+    paymentMethod: 'zimswitch',
   }
 }
 

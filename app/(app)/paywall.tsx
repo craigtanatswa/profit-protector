@@ -50,7 +50,6 @@ const C = {
 }
 
 type PaymentMethodKey = 'ecocash' | 'onemoney' | 'innbucks' | 'card'
-type CardTypeKey = 'zimswitch' | 'vmc'
 type PaymentState = 'idle' | 'initiated' | 'polling' | 'success' | 'failed'
 
 const METHOD_LABELS: Record<PaymentMethodKey, string> = {
@@ -60,15 +59,10 @@ const METHOD_LABELS: Record<PaymentMethodKey, string> = {
   card: 'Card',
 }
 
-const CARD_TYPE_LABELS: Record<CardTypeKey, string> = {
-  zimswitch: 'Zimswitch',
-  vmc: 'Visa / Mastercard',
-}
-
-function formatMethodLabel(method: PaymentMethodKey | CardTypeKey | null | string): string {
+function formatMethodLabel(method: PaymentMethodKey | null | string): string {
   if (method == null) return '—'
   if (method in METHOD_LABELS) return METHOD_LABELS[method as PaymentMethodKey]
-  if (method in CARD_TYPE_LABELS) return CARD_TYPE_LABELS[method as CardTypeKey]
+  if (method === 'zimswitch') return 'Zimswitch'
   return String(method)
 }
 
@@ -233,8 +227,6 @@ export default function PaywallScreen() {
   const [innbucksExpires, setInnbucksExpires] = useState('')
   const [redirectUrl, setRedirectUrl] = useState('')
   const [showWebView, setShowWebView] = useState(false)
-  const [showCardTypeModal, setShowCardTypeModal] = useState(false)
-  const [selectedCardType, setSelectedCardType] = useState<CardTypeKey | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const scrollRef = useRef<ScrollView>(null)
   const scrollContentRef = useRef<View>(null)
@@ -311,56 +303,12 @@ export default function PaywallScreen() {
     setInnbucksExpires('')
     setRedirectUrl('')
     setShowWebView(false)
-    setShowCardTypeModal(false)
-    setSelectedCardType(null)
   }, [stopPolling])
-
-  async function processCardPayment(cardType: CardTypeKey) {
-    if (!business?.id) return
-    setShowCardTypeModal(false)
-    setSelectedCardType(cardType)
-    setIsLoading(true)
-    try {
-      const authEmail =
-        business.ownerEmail ?? `${business.phone}@profitprotector.app`
-
-      const result = await initiateCardPayment({
-        businessId: business.id,
-        authEmail,
-        cardType,
-      })
-
-      if (!result.success) {
-        Alert.alert(
-          'Payment Failed',
-          result.message ?? 'Could not initiate payment. Please try again.',
-        )
-        setSelectedCardType(null)
-        return
-      }
-
-      setPollUrl(result.pollUrl ?? '')
-      setPaymentId(result.paymentId ?? '')
-      setRedirectUrl(result.redirectUrl ?? '')
-      setShowWebView(true)
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Something went wrong'
-      Alert.alert('Error', msg)
-      setSelectedCardType(null)
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   // ── Pay handler ──────────────────────────────────────────────────────────
 
   async function handlePay() {
     if (!business?.id || !selectedMethod) return
-
-    if (selectedMethod === 'card') {
-      setShowCardTypeModal(true)
-      return
-    }
 
     setIsLoading(true)
     try {
@@ -386,6 +334,11 @@ export default function PaywallScreen() {
           businessId: business.id,
           authEmail,
         })
+      } else if (selectedMethod === 'card') {
+        result = await initiateCardPayment({
+          businessId: business.id,
+          authEmail,
+        })
       } else {
         return
       }
@@ -401,7 +354,10 @@ export default function PaywallScreen() {
       setPollUrl(result.pollUrl ?? '')
       setPaymentId(result.paymentId ?? '')
 
-      if (selectedMethod === 'innbucks') {
+      if (selectedMethod === 'card') {
+        setRedirectUrl(result.redirectUrl ?? '')
+        setShowWebView(true)
+      } else if (selectedMethod === 'innbucks') {
         setInnbucksCode(result.authorizationCode ?? '')
         setInnbucksDeepLink(result.deepLink ?? '')
         setInnbucksExpires(result.authorizationExpires ?? '')
@@ -452,76 +408,16 @@ export default function PaywallScreen() {
       payButtonLabel = 'Enter your mobile number'
       payButtonDisabled = true
     } else {
-      payButtonLabel = `Pay $10.00 via ${selectedMethod === 'card' ? 'Card' : METHOD_LABELS[selectedMethod]}`
+      payButtonLabel = `Pay $10.00 via ${METHOD_LABELS[selectedMethod]}`
       payButtonDisabled = false
     }
   }
-
-  const successMethodLabel = selectedCardType ?? selectedMethod
-
-  // ── Card type picker modal ───────────────────────────────────────────────
-
-  const cardTypeModal = (
-    <Modal
-      visible={showCardTypeModal}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setShowCardTypeModal(false)}
-    >
-      <View style={styles.cardModalOverlay}>
-        <View style={styles.cardModalContent}>
-          <Text style={styles.cardModalTitle}>Choose card type</Text>
-          <Text style={styles.cardModalSubtitle}>
-            Select how you would like to pay $10.00
-          </Text>
-
-          <TouchableOpacity
-            style={styles.cardModalOption}
-            activeOpacity={0.88}
-            onPress={() => void processCardPayment('zimswitch')}
-          >
-            <Ionicons name="card-outline" size={24} color={C.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardModalOptionTitle}>Zimswitch</Text>
-              <Text style={styles.cardModalOptionNote}>Local bank card</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={C.textSecondary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.cardModalOption}
-            activeOpacity={0.88}
-            onPress={() => void processCardPayment('vmc')}
-          >
-            <Ionicons name="card" size={24} color={C.primaryDark} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardModalOptionTitle}>Visa / Mastercard</Text>
-              <Text style={styles.cardModalOptionNote}>International or local card</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={C.textSecondary} />
-          </TouchableOpacity>
-
-          <View style={{ marginTop: 12 }}>
-            <Button
-              label="Cancel"
-              variant="ghost"
-              size="md"
-              fullWidth
-              onPress={() => setShowCardTypeModal(false)}
-            />
-          </View>
-        </View>
-      </View>
-    </Modal>
-  )
 
   // ── Card WebView fullscreen ──────────────────────────────────────────────
 
   if (showWebView) {
     return (
-      <>
-        {cardTypeModal}
-        <Modal visible animationType="slide" onRequestClose={handleWebViewReturn}>
+      <Modal visible animationType="slide" onRequestClose={handleWebViewReturn}>
         <SafeAreaView style={{ flex: 1, backgroundColor: C.primary }} edges={['top']}>
           <View style={styles.webHeader}>
             <Text style={styles.webHeaderTitle}>Secure Payment</Text>
@@ -547,7 +443,6 @@ export default function PaywallScreen() {
           />
         </SafeAreaView>
       </Modal>
-      </>
     )
   }
 
@@ -555,9 +450,7 @@ export default function PaywallScreen() {
 
   if (paymentState === 'success') {
     return (
-      <>
-        {cardTypeModal}
-        <View style={{ flex: 1, backgroundColor: C.background }}>
+      <View style={{ flex: 1, backgroundColor: C.background }}>
         <SafeAreaView edges={['top', 'bottom']} style={styles.successContainer}>
           <SuccessBubble />
           <Text style={styles.successTitle}>Payment Successful!</Text>
@@ -580,7 +473,7 @@ export default function PaywallScreen() {
             </View>
             <View style={styles.kvRow}>
               <Text style={styles.kvKey}>Payment via</Text>
-              <Text style={styles.kvValue}>{formatMethodLabel(successMethodLabel)}</Text>
+              <Text style={styles.kvValue}>{formatMethodLabel(selectedMethod)}</Text>
             </View>
           </Card>
 
@@ -595,7 +488,6 @@ export default function PaywallScreen() {
           </View>
         </SafeAreaView>
       </View>
-      </>
     )
   }
 
@@ -603,9 +495,7 @@ export default function PaywallScreen() {
 
   if (paymentState === 'failed') {
     return (
-      <>
-        {cardTypeModal}
-        <View style={{ flex: 1, backgroundColor: C.background }}>
+      <View style={{ flex: 1, backgroundColor: C.background }}>
         <SafeAreaView edges={['top', 'bottom']} style={styles.successContainer}>
           <Ionicons name="close-circle" size={64} color={C.danger} />
           <Text style={[styles.successTitle, { marginTop: 16 }]}>
@@ -627,16 +517,13 @@ export default function PaywallScreen() {
           </View>
         </SafeAreaView>
       </View>
-      </>
     )
   }
 
   // ── Main paywall ─────────────────────────────────────────────────────────
 
   return (
-    <>
-      {cardTypeModal}
-      <View style={{ flex: 1, backgroundColor: C.background }}>
+    <View style={{ flex: 1, backgroundColor: C.background }}>
       <SafeAreaView edges={['top']} style={styles.header}>
         <Ionicons
           name="shield-checkmark"
@@ -729,7 +616,7 @@ export default function PaywallScreen() {
                   iconColor={C.primary}
                   selected={selectedMethod === 'card'}
                   onPress={() => setSelectedMethod('card')}
-                  note="Zimswitch / Visa / Mastercard"
+                  note="zimswitch"
                 />
               </View>
             </View>
@@ -794,8 +681,8 @@ export default function PaywallScreen() {
                       color={C.primary}
                     />
                     <Text style={styles.infoRowText}>
-                      You will be redirected to a secure Paynow payment page to
-                      enter your card details.
+                      You will be redirected to Paynow to pay with your
+                      Zimswitch-enabled bank card.
                     </Text>
                   </View>
                 </Card>
@@ -924,7 +811,6 @@ export default function PaywallScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
-    </>
   )
 }
 
@@ -1173,50 +1059,5 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  cardModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(13, 27, 62, 0.45)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  cardModalContent: {
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 20,
-  },
-  cardModalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: C.textPrimary,
-    textAlign: 'center',
-  },
-  cardModalSubtitle: {
-    fontSize: 13,
-    color: C.textSecondary,
-    textAlign: 'center',
-    marginTop: 6,
-    marginBottom: 16,
-  },
-  cardModalOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    backgroundColor: C.background,
-  },
-  cardModalOptionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: C.textPrimary,
-  },
-  cardModalOptionNote: {
-    fontSize: 12,
-    color: C.textSecondary,
-    marginTop: 2,
   },
 })
