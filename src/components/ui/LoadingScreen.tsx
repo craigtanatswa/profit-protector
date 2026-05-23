@@ -34,7 +34,7 @@ export function LoadingScreen({ message = 'Loading...' }: LoadingScreenProps) {
     <View style={styles.container}>
       <StatusBar style="light" />
       <Animated.View style={{ transform: [{ scale: pulse }] }}>
-        <BrandLogo variant="full" color="white" width={120} height={120} />
+        <BrandLogo variant="mark" color="white" width={120} height={120} />
       </Animated.View>
       {message ? <Text style={styles.message}>{message}</Text> : null}
     </View>

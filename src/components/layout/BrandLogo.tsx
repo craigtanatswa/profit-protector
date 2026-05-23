@@ -2,7 +2,6 @@ import React from 'react'
 import { Image, View, type ImageStyle, type StyleProp } from 'react-native'
 
 const brandLogo = require('../../../assets/brand-logo.png')
-const brandLogoWhite = require('../../../assets/brand-logo-white.png')
 const logoMark = require('../../../assets/logo-mark.png')
 const logoMarkBlue = require('../../../assets/logo-mark-blue.png')
 
@@ -60,8 +59,8 @@ export function BrandLogo({
 
   const source =
     variant === 'full'
-      ? isWhite ? brandLogoWhite : brandLogo
-      : isWhite ? brandLogoWhite : logoMark
+      ? isWhite ? logoMarkBlue : brandLogo
+      : isWhite ? logoMarkBlue : logoMark
   const finalSize = aspectHeight
 
   return (
