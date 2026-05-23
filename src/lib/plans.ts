@@ -6,7 +6,7 @@ export interface PlanConfig {
   /** Display label used on badges / short references */
   shortLabel: string
   priceCents: number
-  /** Maximum number of active shopkeepers allowed under this plan */
+  /** Maximum number of non-deleted shopkeeper accounts allowed under this plan */
   maxShopkeepers: number
   tagline: string
 }

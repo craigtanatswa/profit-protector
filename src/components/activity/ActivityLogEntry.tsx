@@ -18,6 +18,7 @@ const ACTION_LABELS: Record<string, string> = {
   payment_recorded: 'Recorded payment',
   shopkeeper_added: 'Added staff member',
   shopkeeper_deactivated: 'Deactivated staff member',
+  shopkeeper_deleted: 'Deleted staff account',
   shopkeeper_password_changed: 'Changed staff password',
   device_approved: 'Approved device',
   device_denied: 'Denied device',

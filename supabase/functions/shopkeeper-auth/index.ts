@@ -59,6 +59,7 @@ serve(async (req) => {
         .eq('business_id', business.id)
         .eq('username', String(username).toLowerCase().trim())
         .eq('is_active', true)
+        .is('deleted_at', null)
         .single()
 
       if (!shopkeeper) {
@@ -166,6 +167,7 @@ serve(async (req) => {
         .select('*')
         .eq('id', payload.shopkeeperId)
         .eq('is_active', true)
+        .is('deleted_at', null)
         .single()
 
       if (!shopkeeper) return error('Account deactivated.')
@@ -210,6 +212,7 @@ serve(async (req) => {
         .select('*')
         .eq('id', shopkeeperId)
         .eq('is_active', true)
+        .is('deleted_at', null)
         .single()
 
       if (!shopkeeper) return error('Account deactivated.')
@@ -265,6 +268,7 @@ serve(async (req) => {
         .select('*')
         .eq('id', shopkeeperId)
         .eq('is_active', true)
+        .is('deleted_at', null)
         .single()
 
       if (!shopkeeper) return error('Account deactivated.')
@@ -322,6 +326,7 @@ serve(async (req) => {
         .select('*')
         .eq('id', shopkeeperId)
         .eq('is_active', true)
+        .is('deleted_at', null)
         .single()
 
       if (!shopkeeper) return error('Account deactivated.')
@@ -465,6 +470,7 @@ serve(async (req) => {
         .select('*')
         .eq('id', shopkeeperId)
         .eq('is_active', true)
+        .is('deleted_at', null)
         .single()
 
       if (!shopkeeper) return error('Account deactivated.')
@@ -534,6 +540,7 @@ serve(async (req) => {
         .select('id')
         .eq('business_id', business.id)
         .eq('username', String(username).toLowerCase().trim())
+        .is('deleted_at', null)
         .single()
 
       if (!shopkeeper) return json({ status: 'pending' })
@@ -572,6 +579,7 @@ serve(async (req) => {
         .eq('business_id', business.id)
         .eq('username', String(username).toLowerCase().trim())
         .eq('is_active', true)
+        .is('deleted_at', null)
         .single()
 
       if (!shopkeeper) {

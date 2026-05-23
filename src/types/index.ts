@@ -192,6 +192,7 @@ export type ActivityAction =
   | 'payment_recorded'
   | 'shopkeeper_added'
   | 'shopkeeper_deactivated'
+  | 'shopkeeper_deleted'
   | 'shopkeeper_password_changed'
   | 'device_approved'
   | 'device_denied'

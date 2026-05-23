@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { z } from 'zod'
 
 import { Badge, Button, Card, EmptyState, Input } from '../../../src/components/ui'
@@ -119,6 +119,7 @@ function AddShopkeeperModal({
   onClose: () => void
   onAdded: () => void
 }) {
+  const insets = useSafeAreaInsets()
   const business = useAuthStore((s) => s.business)
   const user = useAuthStore((s) => s.user)
   const [fullName, setFullName] = useState('')
@@ -143,6 +144,7 @@ function AddShopkeeperModal({
         .select('id')
         .eq('business_id', business.id)
         .eq('username', username.toLowerCase().trim())
+        .is('deleted_at', null)
         .maybeSingle()
       setAvailable(!data)
     }, 800)
@@ -192,6 +194,7 @@ function AddShopkeeperModal({
       .select('id')
       .eq('business_id', business.id)
       .eq('receipt_suffix', normalizedSuffix)
+      .is('deleted_at', null)
       .maybeSingle()
     if (suffixClash) {
       setErrors({ receiptSuffix: 'This receipt suffix is already used by another staff member' })
@@ -282,7 +285,7 @@ function AddShopkeeperModal({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.modalRoot}>
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <View style={styles.handle} />
           <Text style={styles.modalTitle}>Add Staff Member</Text>
           <Text style={styles.modalSubtitle}>Create login credentials for your staff</Text>
@@ -334,6 +337,7 @@ function DetailModal({
   onChanged: () => void
   onStaffUpdated?: (next: Shopkeeper) => void
 }) {
+  const insets = useSafeAreaInsets()
   const [devices, setDevices] = useState<StaffDevice[]>([])
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -382,6 +386,7 @@ function DetailModal({
       .eq('business_id', staff.businessId)
       .eq('receipt_suffix', normalized)
       .neq('id', staff.supabaseId)
+      .is('deleted_at', null)
       .maybeSingle()
     if (clash) {
       setReceiptSuffixErr('Another staff member already uses this suffix')
@@ -418,6 +423,51 @@ function DetailModal({
     } finally {
       setReceiptSuffixSaving(false)
     }
+  }
+
+  const deleteAccount = () => {
+    if (!staff) return
+    Alert.alert(
+      'Delete Staff Account?',
+      `${staff.fullName} will be removed from Manage Staff and will no longer be able to log in. Their past sales and activity history will be kept.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: async () => {
+            const deletedAt = new Date().toISOString()
+            const { error } = await supabase
+              .from('shopkeepers')
+              .update({ deleted_at: deletedAt, is_active: false })
+              .eq('id', staff.supabaseId)
+            if (error) {
+              Alert.alert('Could not delete account', error.message)
+              return
+            }
+            if (database) {
+              const db = database
+              try {
+                const record = await db.get<ShopkeeperModel>('shopkeepers').find(staff.id)
+                await db.write(async () => {
+                  await record.destroyPermanently()
+                })
+              } catch {
+                /* no local mirror row */
+              }
+            }
+            await logActivity({
+              action: 'shopkeeper_deleted',
+              entityType: 'shopkeeper',
+              entityId: staff.supabaseId,
+              entityName: staff.fullName,
+            })
+            onChanged()
+            onClose()
+          },
+        },
+      ],
+    )
   }
 
   const deactivate = () => {
@@ -466,7 +516,7 @@ function DetailModal({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.modalRoot}>
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <View style={styles.handle} />
           <Text style={styles.modalTitle}>{staff?.fullName}</Text>
           <Text style={styles.modalSubtitle}>@{staff?.username}</Text>
@@ -521,6 +571,7 @@ function DetailModal({
             {staff?.isActive ? (
               <SettingsRow destructive icon="person-remove-outline" label="Deactivate Staff Member" description="They will not be able to log in" onPress={deactivate} />
             ) : null}
+            <SettingsRow destructive icon="trash-outline" label="Delete Staff Account" description="Frees a staff slot; sales history is kept" onPress={deleteAccount} />
 
             {resetVisible ? (
               <Card padding="md" style={styles.resetCard}>
@@ -547,8 +598,8 @@ function ManageStaffScreen() {
   const [selected, setSelected] = useState<Shopkeeper | null>(null)
   const publicId = business?.publicId ?? (business?.id ? `pp-${business.id.slice(0, 8).toLowerCase()}` : '')
 
-  const activeStaffCount = staff.filter((s) => s.isActive).length
-  const isAtLimit = activeStaffCount >= maxShopkeepers
+  const staffAccountCount = staff.length
+  const isAtLimit = staffAccountCount >= maxShopkeepers
 
   function handleAddPress() {
     if (isAtLimit) {
@@ -575,6 +626,7 @@ function ManageStaffScreen() {
       .from('shopkeepers')
       .select('*')
       .eq('business_id', business.id)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
 
     if (data) {
@@ -591,6 +643,16 @@ function ManageStaffScreen() {
         updatedAt: new Date(row.updated_at ?? row.created_at).getTime(),
       }))
       setStaff(remoteStaff)
+
+      const remoteIds = new Set(data.map((row) => row.id))
+      const stale = records.filter((record) => !remoteIds.has(record.supabaseId))
+      if (stale.length > 0) {
+        await database.write(async () => {
+          for (const record of stale) {
+            await record.destroyPermanently()
+          }
+        })
+      }
     }
 
     const counts: Record<string, number> = {}
@@ -648,7 +710,7 @@ function ManageStaffScreen() {
                 </View>
                 <View style={[styles.limitBadge, isAtLimit && styles.limitBadgeFull]}>
                   <Text style={[styles.limitBadgeText, isAtLimit && styles.limitBadgeTextFull]}>
-                    {activeStaffCount} / {maxShopkeepers}
+                    {staffAccountCount} / {maxShopkeepers}
                   </Text>
                 </View>
               </View>
@@ -689,7 +751,7 @@ function ManageStaffScreen() {
             title="No staff added yet"
             subtitle="Add a staff member so they can log in and record sales using their own account"
             actionLabel="Add Staff Member"
-            onAction={() => setAddVisible(true)}
+            onAction={handleAddPress}
           />
         }
       />
@@ -707,7 +769,7 @@ function ManageStaffScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F4F6FB' },
-  listContent: { padding: 16, paddingBottom: 32 },
+  listContent: { padding: 16, paddingBottom: 24 },
   // Staff limit indicator card
   limitCard: { marginBottom: 10, borderWidth: 1, borderColor: '#DDE3F0' },
   limitCardFull: { borderColor: '#C0152A', backgroundColor: '#FCEBEB' },
@@ -739,7 +801,7 @@ const styles = StyleSheet.create({
   devicesText: { marginLeft: 4, fontSize: 12, color: '#5A6A8A' },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
-  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingBottom: 32, maxHeight: '90%' },
+  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, maxHeight: '90%' },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#DDE3F0', alignSelf: 'center', marginTop: 12, marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: '700', color: '#0D1B3E' },
   modalSubtitle: { fontSize: 13, color: '#5A6A8A', marginTop: 4, marginBottom: 16 },
