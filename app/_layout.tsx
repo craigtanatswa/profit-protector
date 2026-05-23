@@ -19,10 +19,6 @@ import {
 } from '../src/lib/shopkeeperAuth'
 import "../global.css"
 
-// Always clear the stored session on cold start in dev so the login screen
-// is shown by default — makes manual testing of login/register easy.
-const clearAuthOnColdStartDev = __DEV__
-
 /** Signed-in users stay on these (auth) screens until they navigate away — avoids kicking signup off Register after OTP before `createBusinessProfile`. */
 const AUTH_SCREENS_KEEP_WHEN_AUTHENTICATED = new Set([
   'register',
@@ -65,42 +61,44 @@ function AuthGate() {
 
   useEffect(() => {
     const bootstrap = async () => {
-      if (clearAuthOnColdStartDev) {
-        await supabase.auth.signOut()
-        setBusiness(null)
-        setUser(null)
-      }
-      await initializeAuth()
-      const { isAuthenticated: ownerAuthenticated } = useAuthStore.getState()
-      if (ownerAuthenticated) {
-        await clearStoredShopkeeperSession()
-        setActiveRole('owner')
-        setShopkeeperSession(null)
-      } else {
-        const staffSession = await getStoredShopkeeperSession()
-        if (staffSession) {
-          setUser(null)
-          setBusiness({
-            id: staffSession.businessId,
-            name: staffSession.businessName,
-            ownerName: staffSession.shopkeeper.fullName,
-            phone: '',
-            businessType: '',
-            currency: 'USD',
-            zigRatePerUsd: 1,
-            recoveryEmailVerified: false,
-          })
-          setActiveRole('shopkeeper')
-          setShopkeeperSession(staffSession)
+      try {
+        await initializeAuth()
+        const { isAuthenticated: ownerAuthenticated } = useAuthStore.getState()
+        if (ownerAuthenticated) {
+          await clearStoredShopkeeperSession()
+          setActiveRole('owner')
+          setShopkeeperSession(null)
+        } else {
+          const staffSession = await getStoredShopkeeperSession()
+          if (staffSession) {
+            setUser(null)
+            setBusiness({
+              id: staffSession.businessId,
+              name: staffSession.businessName,
+              ownerName: staffSession.shopkeeper.fullName,
+              phone: '',
+              businessType: '',
+              currency: 'USD',
+              zigRatePerUsd: 1,
+              recoveryEmailVerified: false,
+            })
+            setActiveRole('shopkeeper')
+            setShopkeeperSession(staffSession)
+          }
         }
+      } finally {
+        await hydrateOnboarding()
       }
-      await hydrateOnboarding()
     }
     void bootstrap()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null)
+      (event, session) => {
+        void (async () => {
+          const { handleOwnerAuthStateChange } = await import('../src/lib/sessionPersistence')
+          const nextSession = await handleOwnerAuthStateChange(event, session)
+          setUser(nextSession?.user ?? null)
+        })()
       },
     )
 
@@ -146,12 +144,11 @@ function AuthGate() {
       if (!hasCompletedOnboarding) {
         void markCompletedSyncedWithAuth()
       }
-      if (
-        (inAuth && !keepAuthShell) ||
-        (inOnboarding && !keepOnboardingShell)
-      ) {
-        router.replace('/(app)')
-      }
+      const inApp = first === '(app)'
+      if (inApp) return
+      if (inAuth && keepAuthShell) return
+      if (inOnboarding && keepOnboardingShell) return
+      router.replace('/(app)')
       return
     }
 

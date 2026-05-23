@@ -641,7 +641,7 @@ async function generateToken(payload: object): Promise<string> {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
   const body = btoa(JSON.stringify({
     ...payload,
-    exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    exp: Date.now() + 24 * 60 * 60 * 1000,
     iat: Date.now(),
   }))
   const signature = await signHmac(`${header}.${body}`, SESSION_SECRET)

@@ -4,6 +4,10 @@ import { supabase } from '../lib/supabase'
 import { refreshOwnerProductsFromSupabase, syncAll, syncInventoryFast } from '../lib/sync'
 import { fetchBusinessRowForUser, businessInfoFromRemoteRow } from '../lib/businessRemote'
 import { ensureLocalWatermelonForSession, businessInfoFromLocalWatermelon } from '../lib/ensureLocalWatermelon'
+import {
+  clearOwnerSessionLogin,
+  enforceOwnerSessionMaxAge,
+} from '../lib/sessionPersistence'
 import type { SyncStatus } from '../lib/sync'
 import type { DeviceApprovalRequest, ShopkeeperSession, UserRole } from '../types'
 
@@ -119,6 +123,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       /* session may already be invalid after server-side user deletion */
     }
+    await clearOwnerSessionLogin()
     set({
       user: null,
       business: null,
@@ -140,7 +145,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const {
         data: { session },
       } = await supabase.auth.getSession()
-      if (session?.user) {
+      const sessionValid = await enforceOwnerSessionMaxAge(session)
+      if (sessionValid && session?.user) {
         set({ user: session.user, isAuthenticated: true })
         const { data: biz, error: bizErr } = await fetchBusinessRowForUser(session.user.id)
         if (!bizErr && biz) {

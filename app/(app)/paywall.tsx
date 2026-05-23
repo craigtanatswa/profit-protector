@@ -213,6 +213,7 @@ function MethodCard({
 
 export default function PaywallScreen() {
   const business = useAuthStore((s) => s.business)
+  const user = useAuthStore((s) => s.user)
   const { refetch, nextBillingDate } = useSubscription()
 
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethodKey | null>(null)
@@ -313,7 +314,7 @@ export default function PaywallScreen() {
     setIsLoading(true)
     try {
       const authEmail =
-        business.ownerEmail ?? `${business.phone}@profitprotector.app`
+        user?.email ?? business.recoveryEmail ?? `${business.phone}@profitprotector.app`
 
       let result: InitiatePaymentResult
 
