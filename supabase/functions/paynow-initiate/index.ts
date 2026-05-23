@@ -17,10 +17,17 @@ const RESULT_URL = Deno.env.get('PAYNOW_RESULT_URL') ?? ''
 const MERCHANT_EMAIL = Deno.env.get('PAYNOW_MERCHANT_EMAIL')!
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+// When true: card authemail is set to the merchant account so you can log in
+// and use "TESTING: Faked Success" on Paynow's test checkout page.
+// When false (live): customer authEmail is used for a frictionless guest checkout.
+const PAYNOW_TEST_MODE =
+  (Deno.env.get('PAYNOW_TEST_MODE') ?? '').toLowerCase() === 'true'
 
 const PAYNOW_EXPRESS_URL = 'https://www.paynow.co.zw/interface/remotetransaction'
 const PAYNOW_INITIATE_URL = 'https://www.paynow.co.zw/interface/initiatetransaction'
+// Express checkout (EcoCash/InnBucks) accepts deep links; card payments require https://
 const RETURN_URL = 'profitprotector://payment/result'
+const CARD_RETURN_URL = `${SUPABASE_URL}/functions/v1/paynow-card-complete`
 const ADDITIONAL_INFO = 'Profit Protector Monthly Subscription'
 const AMOUNT_STRING = '10.00'
 
@@ -37,38 +44,19 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-async function expressHash(
-  reference: string,
-  authEmail: string,
-  phone: string,
-  method: string,
-): Promise<string> {
-  return sha512(
-    INTEGRATION_ID +
-      reference +
-      AMOUNT_STRING +
-      ADDITIONAL_INFO +
-      RETURN_URL +
-      RESULT_URL +
-      authEmail +
-      phone +
-      method +
-      'Message' +
-      INTEGRATION_KEY,
-  )
-}
-
-async function initiateHash(reference: string): Promise<string> {
-  return sha512(
-    INTEGRATION_ID +
-      reference +
-      AMOUNT_STRING +
-      ADDITIONAL_INFO +
-      RETURN_URL +
-      RESULT_URL +
-      'Message' +
-      INTEGRATION_KEY,
-  )
+/**
+ * Computes a Paynow hash from a params object using the same algorithm as
+ * the official PHP SDK: concatenate all field VALUES in insertion order
+ * (skip the hash field itself if present), then append the Integration Key.
+ * This guarantees the hash always matches the POST body being submitted.
+ */
+async function buildHash(params: Record<string, string>): Promise<string> {
+  const payload =
+    Object.entries(params)
+      .filter(([k]) => k.toLowerCase() !== 'hash')
+      .map(([, v]) => v)
+      .join('') + INTEGRATION_KEY
+  return sha512(payload)
 }
 
 serve(async (req) => {
@@ -97,7 +85,7 @@ serve(async (req) => {
     return jsonResponse({ error: 'Invalid JSON body' }, 400)
   }
 
-  const { businessId, paymentMethod, phoneNumber, amount } = body
+  const { businessId, paymentMethod, phoneNumber, amount, authEmail, cardType } = body
   const amountCents = amount ?? 1000
 
   if (!businessId || !paymentMethod) {
@@ -107,12 +95,23 @@ serve(async (req) => {
     )
   }
 
+  if (paymentMethod === 'card') {
+    if (!authEmail) {
+      return jsonResponse({ error: 'Customer email required for card payments' }, 400)
+    }
+    if (cardType !== 'zimswitch' && cardType !== 'vmc') {
+      return jsonResponse({ error: 'Missing or invalid cardType: zimswitch or vmc' }, 400)
+    }
+  }
+
   if ((paymentMethod === 'ecocash' || paymentMethod === 'onemoney') && !phoneNumber) {
     return jsonResponse(
       { error: 'Phone number required for mobile money payments' },
       400,
     )
   }
+
+  const storedPaymentMethod = paymentMethod === 'card' ? cardType! : paymentMethod
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
@@ -138,7 +137,7 @@ serve(async (req) => {
     .insert({
       business_id: businessId,
       amount_cents: amountCents,
-      payment_method: paymentMethod,
+      payment_method: storedPaymentMethod,
       status: 'pending',
       merchant_trace: merchantTrace,
     })
@@ -164,76 +163,85 @@ serve(async (req) => {
   // ── EcoCash / OneMoney ────────────────────────────────────────────────────
   if (paymentMethod === 'ecocash' || paymentMethod === 'onemoney') {
     const phone = phoneNumber!
-    const hash = await expressHash(reference, MERCHANT_EMAIL, phone, paymentMethod)
+    const expressParams: Record<string, string> = {
+      id: INTEGRATION_ID,
+      reference,
+      amount: AMOUNT_STRING,
+      additionalinfo: ADDITIONAL_INFO,
+      returnurl: RETURN_URL,
+      resulturl: RESULT_URL,
+      authemail: MERCHANT_EMAIL,
+      phone,
+      method: paymentMethod,
+      status: 'Message',
+    }
+    expressParams.hash = await buildHash(expressParams)
 
     return jsonResponse({
       success: true,
       paymentId: payment.id,
       reference,
       submitUrl: PAYNOW_EXPRESS_URL,
-      submitParams: {
-        id: INTEGRATION_ID,
-        reference,
-        amount: AMOUNT_STRING,
-        additionalinfo: ADDITIONAL_INFO,
-        returnurl: RETURN_URL,
-        resulturl: RESULT_URL,
-        authemail: MERCHANT_EMAIL,
-        phone,
-        method: paymentMethod,
-        status: 'Message',
-        hash,
-      },
+      submitParams: expressParams,
       paymentMethod,
     })
   }
 
   // ── InnBucks ───────────────────────────────────────────────────────────────
   if (paymentMethod === 'innbucks') {
-    const hash = await expressHash(reference, MERCHANT_EMAIL, '', 'innbucks')
+    const innbucksParams: Record<string, string> = {
+      id: INTEGRATION_ID,
+      reference,
+      amount: AMOUNT_STRING,
+      additionalinfo: ADDITIONAL_INFO,
+      returnurl: RETURN_URL,
+      resulturl: RESULT_URL,
+      authemail: MERCHANT_EMAIL,
+      method: 'innbucks',
+      status: 'Message',
+    }
+    innbucksParams.hash = await buildHash(innbucksParams)
 
     return jsonResponse({
       success: true,
       paymentId: payment.id,
       reference,
       submitUrl: PAYNOW_EXPRESS_URL,
-      submitParams: {
-        id: INTEGRATION_ID,
-        reference,
-        amount: AMOUNT_STRING,
-        additionalinfo: ADDITIONAL_INFO,
-        returnurl: RETURN_URL,
-        resulturl: RESULT_URL,
-        authemail: MERCHANT_EMAIL,
-        method: 'innbucks',
-        status: 'Message',
-        hash,
-      },
+      submitParams: innbucksParams,
       paymentMethod: 'innbucks',
     })
   }
 
-  // ── Card / web redirect ───────────────────────────────────────────────────
+  // ── Card (Zimswitch / Visa-Mastercard) ───────────────────────────────────
+  // Uses the standard initiate endpoint for both test and live mode.
+  // This avoids the tokenization requirement of the express card endpoint.
+  //
+  // Test mode: authemail = merchant email so you can log in on Paynow's test
+  //   checkout page and click "TESTING: Faked Success" to simulate payment.
+  // Live mode: authemail = customer email for frictionless guest checkout.
   if (paymentMethod === 'card') {
-    const hash = await initiateHash(reference)
+    const cardAuthEmail = PAYNOW_TEST_MODE ? MERCHANT_EMAIL : authEmail!
+
+    const cardParams: Record<string, string> = {
+      id: INTEGRATION_ID,
+      reference,
+      amount: AMOUNT_STRING,
+      additionalinfo: ADDITIONAL_INFO,
+      returnurl: CARD_RETURN_URL,
+      resulturl: RESULT_URL,
+      authemail: cardAuthEmail,
+      status: 'Message',
+    }
+    cardParams.hash = await buildHash(cardParams)
 
     return jsonResponse({
       success: true,
       paymentId: payment.id,
       reference,
       submitUrl: PAYNOW_INITIATE_URL,
-      submitParams: {
-        id: INTEGRATION_ID,
-        reference,
-        amount: AMOUNT_STRING,
-        additionalinfo: ADDITIONAL_INFO,
-        returnurl: RETURN_URL,
-        resulturl: RESULT_URL,
-        authemail: MERCHANT_EMAIL,
-        status: 'Message',
-        hash,
-      },
-      paymentMethod: 'card',
+      submitParams: cardParams,
+      paymentMethod: cardType!,
+      cardType: cardType!,
     })
   }
 

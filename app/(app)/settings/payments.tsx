@@ -62,6 +62,10 @@ function methodLabel(method: string): string {
     case 'innbucks':
       return 'InnBucks'
     case 'card':
+      return 'Card'
+    case 'zimswitch':
+      return 'Zimswitch'
+    case 'vmc':
       return 'Visa / Mastercard'
     default:
       return method

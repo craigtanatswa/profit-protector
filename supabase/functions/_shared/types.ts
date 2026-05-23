@@ -1,4 +1,6 @@
-export type PaymentMethod = 'ecocash' | 'onemoney' | 'innbucks' | 'card'
+export type PaymentMethod = 'ecocash' | 'onemoney' | 'innbucks' | 'card' | 'zimswitch' | 'vmc'
+
+export type CardType = 'zimswitch' | 'vmc'
 
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'cancelled'
 
@@ -13,7 +15,8 @@ export interface InitiateRequest {
   businessId: string
   paymentMethod: PaymentMethod
   phoneNumber?: string
-  authEmail: string
+  authEmail?: string
+  cardType?: CardType
   amount?: number
 }
 

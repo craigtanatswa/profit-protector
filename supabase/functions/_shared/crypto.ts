@@ -11,3 +11,23 @@ export async function sha512(message: string): Promise<string> {
     .join('')
     .toUpperCase()
 }
+
+/**
+ * Build a Paynow outbound hash by concatenating field values in the given
+ * key order, then appending the integration key. Only keys present in `fields`
+ * are included — this keeps the hash aligned with the actual POST body.
+ */
+export async function paynowOutboundHash(
+  fields: Record<string, string>,
+  fieldOrder: string[],
+  integrationKey: string,
+): Promise<string> {
+  let payload = ''
+  for (const key of fieldOrder) {
+    if (key in fields && key !== 'hash') {
+      payload += fields[key]
+    }
+  }
+  payload += integrationKey
+  return sha512(payload)
+}
