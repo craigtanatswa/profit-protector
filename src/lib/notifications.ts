@@ -9,7 +9,7 @@ import * as Notifications from 'expo-notifications'
 import * as Device from 'expo-device'
 import * as SecureStore from 'expo-secure-store'
 import { router } from 'expo-router'
-import { Platform } from 'react-native'
+import { AppState, Platform } from 'react-native'
 
 import { database } from '../database'
 import { Q } from '@nozbe/watermelondb'
@@ -17,7 +17,7 @@ import type ProductModel from '../database/models/Product'
 import WMBusiness from '../database/models/Business'
 import { getPersonalisation, normalizeBusinessType } from './appPersonalisation'
 import { shouldScheduleOsLocalBusinessAlerts } from './notificationDeliveryMode'
-import { requestLowStockRemotePushIfOwner, requestStaffSaleRemotePushIfOwner } from './expoPushRemote'
+import { requestLowStockRemotePushIfOwner } from './expoPushRemote'
 
 // ---------------------------------------------------------------------------
 // Android notification channels
@@ -209,7 +209,7 @@ export async function sendLowStockNotification(params: {
   })
 }
 
-/** Local + remote notification for the business owner when staff completes a sale. */
+/** In-app banner when the owner app receives a staff sale via Realtime (push is server-side). */
 export async function notifyOwnerStaffSale(params: {
   businessId: string
   receiptNumber: string
@@ -239,13 +239,6 @@ export async function notifyOwnerStaffSale(params: {
       color: '#0047AB',
       ...(Platform.OS === 'android' ? { channelId: 'staff-sales' } : {}),
     },
-  })
-
-  // Push to any other owner devices (e.g. owner has two phones, or tablet + phone)
-  void requestStaffSaleRemotePushIfOwner({
-    businessId: params.businessId,
-    title,
-    body,
   })
 }
 
@@ -366,12 +359,20 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
 // Notification handlers — call from app/(app)/_layout.tsx
 // ---------------------------------------------------------------------------
 
+function shouldShowStaffSaleOsAlert(
+  data: Record<string, unknown> | undefined,
+): boolean {
+  if (data?.type !== 'staff_sale') return shouldScheduleOsLocalBusinessAlerts()
+  // Foreground: Realtime shows the in-app banner; suppress duplicate OS alert from server push.
+  return AppState.currentState !== 'active'
+}
+
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const raw = notification.request.content
       .data as Record<string, unknown> | undefined
     const showOs =
-      isLowStockNotificationData(raw) || shouldScheduleOsLocalBusinessAlerts()
+      isLowStockNotificationData(raw) || shouldShowStaffSaleOsAlert(raw)
     return {
       shouldShowAlert: showOs,
       shouldPlaySound: showOs,

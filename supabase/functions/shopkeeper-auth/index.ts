@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { sendOwnerPushInternal } from '../_shared/owner_push.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -420,6 +421,29 @@ serve(async (req) => {
             p_qty: Math.floor(qty),
           })
           if (stockErr) return error(stockErr.message)
+        }
+
+        const staffLabel =
+          typeof shopkeeper.full_name === 'string' && shopkeeper.full_name.trim().length > 0
+            ? shopkeeper.full_name.trim()
+            : 'Staff'
+        const receipt = row.receipt_number.trim() || 'Sale'
+        const totalCents = Number(row.total_cents)
+        const totalPart =
+          Number.isFinite(totalCents) ? ` · $${(totalCents / 100).toFixed(2)}` : ''
+        const title = '🛒 Staff Sale Recorded'
+        const pushBody = `${staffLabel} completed ${receipt}${totalPart}`
+
+        try {
+          await sendOwnerPushInternal({
+            businessId: bizId,
+            title,
+            body: pushBody,
+            data: { type: 'staff_sale', screen: 'sales' },
+            androidChannel: 'staff-sales',
+          })
+        } catch (pushErr) {
+          console.warn('[shopkeeper-auth] staff sale push failed:', pushErr)
         }
       }
 

@@ -10,10 +10,8 @@ import { FOREGROUND_INVENTORY_POLL_MS } from '../lib/syncPoll'
 
 /**
  * Owner fast path: Realtime on `sales` + `products`, plus foreground polling.
- * Staff sale INSERTs run **full sync** and **line-item product refresh in parallel** (same
- * urgency as pulling the sale): sync reconciles sales/items locally while refresh retries
- * until `sale_items` and post-decrement `products` rows are visible — mirroring how sales
- * appear as soon as the row exists, not only after a slow sequential pipeline.
+ * Staff sale INSERTs run **full sync** and show an in-app banner; Expo Push is sent
+ * server-side from `shopkeeper-auth` `push_sale` so owners are notified when the app is closed.
  *
  * SQL: `sales_realtime_publication.sql`, `products_realtime_publication.sql`.
  */
