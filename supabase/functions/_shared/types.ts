@@ -19,6 +19,13 @@ export interface InitiateRequest {
   amount?: number
   /** Which plan tier the user is subscribing to. Defaults to 'pro'. */
   planTier?: PlanTier
+  /**
+   * When true, this is a mid-cycle upgrade from Pro → Pro+.
+   * The server computes the prorated charge and ignores any client-provided `amount`.
+   * If the prorated charge is < $0.50, the upgrade is applied immediately at no charge.
+   * paymentMethod is optional for the free-upgrade path.
+   */
+  isUpgrade?: boolean
 }
 
 export interface PaynowFields {

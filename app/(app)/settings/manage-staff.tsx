@@ -605,8 +605,11 @@ function ManageStaffScreen() {
     if (isAtLimit) {
       Alert.alert(
         'Staff limit reached',
-        `Your Profit Protector ${planLabel(planTier)} plan allows up to ${maxShopkeepers} staff member${maxShopkeepers === 1 ? '' : 's'}. Upgrade to Pro+ to add up to 5 staff members.`,
-        [{ text: 'OK' }],
+        `Your ${planLabel(planTier)} plan allows up to ${maxShopkeepers} staff member${maxShopkeepers === 1 ? '' : 's'}. Upgrade to Pro+ to add up to 5 staff members.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Upgrade to Pro+', onPress: () => router.push('/(app)/settings/upgrade-plan') },
+        ],
       )
       return
     }
@@ -717,12 +720,17 @@ function ManageStaffScreen() {
               <Text style={styles.limitPlan}>
                 Profit Protector {planLabel(planTier)} plan
               </Text>
-              {isAtLimit && (
+              {planTier === 'pro' && isAtLimit && (
                 <View style={styles.limitUpgradeRow}>
-                  <Ionicons name="arrow-up-circle-outline" size={14} color="#C0152A" />
-                  <Text style={styles.limitUpgradeText}>
-                    Upgrade to Pro+ for up to 5 staff members
-                  </Text>
+                  <TouchableOpacity
+                    onPress={() => router.push('/(app)/settings/upgrade-plan')}
+                    style={styles.limitUpgradeBtn}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="arrow-up-circle-outline" size={14} color="#FFFFFF" />
+                    <Text style={styles.limitUpgradeBtnText}>Upgrade to Pro+</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.limitUpgradeHint}>for up to 5 staff members</Text>
                 </View>
               )}
             </Card>
@@ -782,8 +790,18 @@ const styles = StyleSheet.create({
   limitBadgeText: { fontSize: 13, fontWeight: '700', color: '#0047AB' },
   limitBadgeTextFull: { color: '#C0152A' },
   limitPlan: { fontSize: 12, color: '#5A6A8A', marginTop: 4 },
-  limitUpgradeRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
-  limitUpgradeText: { fontSize: 12, color: '#C0152A', fontWeight: '500', flex: 1 },
+  limitUpgradeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+  limitUpgradeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#7C3AED',
+  },
+  limitUpgradeBtnText: { fontSize: 12, color: '#FFFFFF', fontWeight: '600' },
+  limitUpgradeHint: { fontSize: 12, color: '#C0152A', fontWeight: '500', flex: 1 },
   // Business ID card
   businessIdCard: { backgroundColor: '#E6EEFF', borderColor: '#0047AB', marginBottom: 16 },
   businessIdHintRow: { flexDirection: 'row', alignItems: 'center' },

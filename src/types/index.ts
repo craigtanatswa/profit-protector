@@ -143,6 +143,10 @@ export interface InitiatePaymentResult {
   authorizationExpires?: string
   deepLink?: string
   message?: string
+  /** True when the server applied a mid-cycle upgrade at no charge (proration < $0.50). */
+  freeUpgrade?: boolean
+  /** The prorated amount charged in cents (only set for upgrade flows). */
+  chargeCents?: number
 }
 
 export interface PollResult {

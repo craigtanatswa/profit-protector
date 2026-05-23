@@ -5,10 +5,15 @@
 // secret Integration Key, and returns the signed parameters for the mobile
 // client to POST directly to Paynow. The Integration Key never leaves the
 // server; the client submits the pre-signed payload.
+//
+// When isUpgrade=true the function computes server-side proration for a
+// Pro → Pro+ mid-cycle upgrade.  If the charge is < $0.50 it upgrades the
+// subscription directly and returns { success:true, freeUpgrade:true }.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sha512 } from '../_shared/crypto.ts'
+import { upgradeSubscriptionTier } from '../_shared/subscription.ts'
 import type { InitiateRequest, PlanTier } from '../_shared/types.ts'
 
 const INTEGRATION_ID = Deno.env.get('PAYNOW_INTEGRATION_ID') ?? ''
@@ -81,42 +86,26 @@ serve(async (req) => {
     return jsonResponse({ error: 'Server misconfiguration' }, 500)
   }
 
-  let body: InitiateRequest
+  let body: InitiateRequest & { isUpgrade?: boolean }
   try {
-    body = (await req.json()) as InitiateRequest
+    body = (await req.json()) as InitiateRequest & { isUpgrade?: boolean }
   } catch {
     return jsonResponse({ error: 'Invalid JSON body' }, 400)
   }
 
   const { businessId, paymentMethod, phoneNumber, amount, authEmail } = body
+  const isUpgrade = body.isUpgrade === true
   const rawTier = (body.planTier as string | undefined) ?? 'pro'
   const planTier: PlanTier = rawTier === 'pro_plus' ? 'pro_plus' : 'pro'
-  const plan = PLAN_PRICES[planTier]
-  const amountCents = amount ?? plan.cents
-  const AMOUNT_STRING = plan.amountString
-  const ADDITIONAL_INFO = plan.label + ' Monthly Subscription'
 
-  if (!businessId || !paymentMethod) {
-    return jsonResponse(
-      { error: 'Missing required fields: businessId, paymentMethod' },
-      400,
-    )
+  if (!businessId) {
+    return jsonResponse({ error: 'Missing required field: businessId' }, 400)
   }
 
-  if (paymentMethod === 'card') {
-    if (!authEmail) {
-      return jsonResponse({ error: 'Customer email required for card payments' }, 400)
-    }
+  // paymentMethod is only required for paid flows (non-free upgrades will be handled below)
+  if (!isUpgrade && !paymentMethod) {
+    return jsonResponse({ error: 'Missing required field: paymentMethod' }, 400)
   }
-
-  if ((paymentMethod === 'ecocash' || paymentMethod === 'onemoney') && !phoneNumber) {
-    return jsonResponse(
-      { error: 'Phone number required for mobile money payments' },
-      400,
-    )
-  }
-
-  const storedPaymentMethod = paymentMethod === 'card' ? 'zimswitch' : paymentMethod
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
@@ -135,15 +124,106 @@ serve(async (req) => {
     return jsonResponse({ error: 'Business not found' }, 404)
   }
 
+  // ── Upgrade path ─────────────────────────────────────────────────────────
+  let finalAmountCents: number
+  let finalAmountString: string
+  let finalAdditionalInfo: string
+  let proratedCreditCents = 0
+
+  if (isUpgrade) {
+    const { data: currentSub, error: subErr } = await supabase
+      .from('subscriptions')
+      .select('status, plan_tier, current_period_start, current_period_end')
+      .eq('business_id', businessId)
+      .maybeSingle()
+
+    if (subErr || !currentSub) {
+      console.error(JSON.stringify({ tag: 'paynow_initiate_upgrade_fetch_sub', error: String(subErr) }))
+      return jsonResponse({ error: 'Could not fetch subscription details.' }, 500)
+    }
+
+    if (currentSub.status !== 'active' && currentSub.status !== 'grace') {
+      return jsonResponse({ error: 'You need an active subscription to upgrade.' }, 400)
+    }
+
+    if (currentSub.plan_tier === 'pro_plus') {
+      return jsonResponse({ error: 'You are already on the Pro+ plan.' }, 400)
+    }
+
+    if (!currentSub.current_period_start || !currentSub.current_period_end) {
+      return jsonResponse({ error: 'Subscription period data not available.' }, 400)
+    }
+
+    // Server-side proration — never trust the client amount for upgrades
+    const nowMs = Date.now()
+    const startMs = Date.parse(currentSub.current_period_start as string)
+    const endMs = Date.parse(currentSub.current_period_end as string)
+    const totalMs = Math.max(1, endMs - startMs)
+    const remainingMs = Math.max(0, endMs - nowMs)
+    const fraction = remainingMs / totalMs
+
+    const proCents = PLAN_PRICES.pro.cents          // 1000
+    const prosPlusCents = PLAN_PRICES.pro_plus.cents // 1500
+    const creditCents = Math.floor(fraction * proCents)
+    const newCostCents = Math.ceil(fraction * prosPlusCents)
+    const chargeCents = Math.max(0, newCostCents - creditCents)
+
+    // Free upgrade — proration is less than $0.50, apply immediately
+    if (chargeCents < 50) {
+      try {
+        await upgradeSubscriptionTier(supabase, businessId, 'pro_plus', 0)
+      } catch (e) {
+        console.error(JSON.stringify({ tag: 'paynow_initiate_free_upgrade', error: String(e) }))
+        return jsonResponse({ error: 'Failed to apply free upgrade.' }, 500)
+      }
+      console.log(JSON.stringify({ tag: 'paynow_initiate_free_upgrade_applied', businessId, chargeCents }))
+      return jsonResponse({ success: true, freeUpgrade: true, chargeCents: 0 })
+    }
+
+    // Paid upgrade — validate payment method now
+    if (!paymentMethod) {
+      return jsonResponse({ error: 'Payment method required for this upgrade.' }, 400)
+    }
+
+    finalAmountCents = chargeCents
+    finalAmountString = (chargeCents / 100).toFixed(2)
+    finalAdditionalInfo = 'Profit Protector Pro+ Upgrade'
+    proratedCreditCents = creditCents
+  } else {
+    // Normal renewal — use plan price (ignore client-supplied amount override in production)
+    const plan = PLAN_PRICES[planTier]
+    finalAmountCents = amount ?? plan.cents
+    finalAmountString = plan.amountString
+    finalAdditionalInfo = plan.label + ' Monthly Subscription'
+  }
+
+  // ── Validate payment method specifics ─────────────────────────────────────
+  if (paymentMethod === 'card') {
+    if (!authEmail) {
+      return jsonResponse({ error: 'Customer email required for card payments' }, 400)
+    }
+  }
+
+  if ((paymentMethod === 'ecocash' || paymentMethod === 'onemoney') && !phoneNumber) {
+    return jsonResponse(
+      { error: 'Phone number required for mobile money payments' },
+      400,
+    )
+  }
+
+  const storedPaymentMethod = paymentMethod === 'card' ? 'zimswitch' : paymentMethod
+
   const merchantTrace = crypto.randomUUID().replace(/-/g, '').slice(0, 32)
 
   const { data: payment, error: insertErr } = await supabase
     .from('payments')
     .insert({
       business_id: businessId,
-      amount_cents: amountCents,
+      amount_cents: finalAmountCents,
       payment_method: storedPaymentMethod,
-      plan_tier: planTier,
+      plan_tier: isUpgrade ? 'pro_plus' : planTier,
+      is_upgrade: isUpgrade,
+      proration_credit_cents: proratedCreditCents,
       status: 'pending',
       merchant_trace: merchantTrace,
     })
@@ -172,8 +252,8 @@ serve(async (req) => {
     const expressParams: Record<string, string> = {
       id: INTEGRATION_ID,
       reference,
-      amount: AMOUNT_STRING,
-      additionalinfo: ADDITIONAL_INFO,
+      amount: finalAmountString,
+      additionalinfo: finalAdditionalInfo,
       returnurl: RETURN_URL,
       resulturl: RESULT_URL,
       authemail: MERCHANT_EMAIL,
@@ -190,6 +270,7 @@ serve(async (req) => {
       submitUrl: PAYNOW_EXPRESS_URL,
       submitParams: expressParams,
       paymentMethod,
+      chargeCents: finalAmountCents,
     })
   }
 
@@ -198,8 +279,8 @@ serve(async (req) => {
     const innbucksParams: Record<string, string> = {
       id: INTEGRATION_ID,
       reference,
-      amount: AMOUNT_STRING,
-      additionalinfo: ADDITIONAL_INFO,
+      amount: finalAmountString,
+      additionalinfo: finalAdditionalInfo,
       returnurl: RETURN_URL,
       resulturl: RESULT_URL,
       authemail: MERCHANT_EMAIL,
@@ -215,6 +296,7 @@ serve(async (req) => {
       submitUrl: PAYNOW_EXPRESS_URL,
       submitParams: innbucksParams,
       paymentMethod: 'innbucks',
+      chargeCents: finalAmountCents,
     })
   }
 
@@ -228,8 +310,8 @@ serve(async (req) => {
     const cardParams: Record<string, string> = {
       id: INTEGRATION_ID,
       reference,
-      amount: AMOUNT_STRING,
-      additionalinfo: ADDITIONAL_INFO,
+      amount: finalAmountString,
+      additionalinfo: finalAdditionalInfo,
       returnurl: CARD_RETURN_URL,
       resulturl: RESULT_URL,
       authemail: cardAuthEmail,
@@ -244,6 +326,7 @@ serve(async (req) => {
       submitUrl: PAYNOW_INITIATE_URL,
       submitParams: cardParams,
       paymentMethod: 'zimswitch',
+      chargeCents: finalAmountCents,
     })
   }
 

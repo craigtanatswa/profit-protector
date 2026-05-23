@@ -4,7 +4,7 @@ import { AppState } from 'react-native'
 import { useAuthStore } from '../stores/authStore'
 import { useSubscriptionStore } from '../stores/subscriptionStore'
 import { fetchSubscription } from '../lib/subscription'
-import { getMaxShopkeepers, type PlanTier } from '../lib/plans'
+import { getMaxShopkeepers, PLANS, type PlanTier } from '../lib/plans'
 
 export function useSubscription() {
   const businessId = useAuthStore((s) => s.business?.id)
@@ -78,6 +78,29 @@ export function useSubscription() {
     ? new Date(subscription.nextBillingDate)
     : null
 
+  /** Whether the business can upgrade from Pro → Pro+ right now. */
+  const canUpgrade = isActive && planTier === 'pro'
+
+  /**
+   * Proration breakdown for a Pro → Pro+ mid-cycle upgrade.
+   * All amounts in cents. Null if the upgrade is not applicable.
+   */
+  const upgradeProration = (() => {
+    if (!canUpgrade || !subscription?.currentPeriodStart || !subscription?.currentPeriodEnd) return null
+    const nowMs = Date.now()
+    const startMs = Date.parse(subscription.currentPeriodStart)
+    const endMs = Date.parse(subscription.currentPeriodEnd)
+    const totalMs = Math.max(1, endMs - startMs)
+    const remainingMs = Math.max(0, endMs - nowMs)
+    const daysRemaining = Math.ceil(remainingMs / 86400000)
+    const totalDays = Math.round(totalMs / 86400000)
+    const fraction = remainingMs / totalMs
+    const creditCents = Math.floor(fraction * PLANS.pro.priceCents)
+    const prosPlusCostCents = Math.ceil(fraction * PLANS.pro_plus.priceCents)
+    const chargeCents = Math.max(0, prosPlusCostCents - creditCents)
+    return { daysRemaining, totalDays, creditCents, prosPlusCostCents, chargeCents, isFree: chargeCents < 50 }
+  })()
+
   const canUseApp = (() => {
     // Optimistic allow while the first fetch hasn't completed yet — avoids a
     // paywall flash on cold start before we know the subscription state.
@@ -103,6 +126,8 @@ export function useSubscription() {
     nextBillingDate,
     planTier,
     maxShopkeepers,
+    canUpgrade,
+    upgradeProration,
     refetch,
   }
 }

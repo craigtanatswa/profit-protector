@@ -2,7 +2,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { activateSubscription } from '../_shared/subscription.ts'
+import { activateSubscription, upgradeSubscriptionTier } from '../_shared/subscription.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -52,10 +52,10 @@ serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-  // Fetch payment record to get business_id and plan tier
+  // Fetch payment record to get business_id, plan tier, and upgrade metadata
   const { data: paymentRecord, error: fetchErr } = await supabase
     .from('payments')
-    .select('id, business_id, status, plan_tier')
+    .select('id, business_id, status, plan_tier, is_upgrade, amount_cents')
     .eq('id', paymentId)
     .maybeSingle()
 
@@ -110,17 +110,22 @@ serve(async (req) => {
     )
   }
 
-  // Activate subscription on successful payment, preserving the plan tier
+  // Activate or upgrade subscription on successful payment
   if (isPaid && paymentRecord.business_id) {
     const tier = paymentRecord.plan_tier === 'pro_plus' ? 'pro_plus' : 'pro'
     try {
-      await activateSubscription(supabase, paymentRecord.business_id, tier)
+      if (paymentRecord.is_upgrade) {
+        await upgradeSubscriptionTier(supabase, paymentRecord.business_id, tier, paymentRecord.amount_cents ?? 0)
+      } else {
+        await activateSubscription(supabase, paymentRecord.business_id, tier)
+      }
     } catch (e) {
       console.error(
         JSON.stringify({
           tag: 'paynow_poll_activate_subscription',
           paymentId,
           businessId: paymentRecord.business_id,
+          isUpgrade: paymentRecord.is_upgrade,
           error: String(e),
         }),
       )

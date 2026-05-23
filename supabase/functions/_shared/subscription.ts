@@ -13,8 +13,8 @@ const PLAN_PRICE_CENTS: Record<PlanTier, number> = {
 
 /**
  * Marks a business subscription as active for the next 30-day period.
- * Called after a successful payment is confirmed either via poll or webhook.
- * Persists the plan tier so the app knows how many shopkeepers are allowed.
+ * Called after a successful NEW subscription payment (renewal).
+ * Resets current_period_start/end to a fresh 30-day window.
  */
 export async function activateSubscription(
   supabase: SupabaseClient,
@@ -41,6 +41,36 @@ export async function activateSubscription(
   if (error) {
     console.error(
       JSON.stringify({ tag: 'activate_subscription_error', businessId, planTier, error: String(error) }),
+    )
+    throw error
+  }
+}
+
+/**
+ * Upgrades a subscription's plan tier mid-cycle WITHOUT resetting the billing window.
+ * The existing current_period_end / next_billing_date are preserved so the user keeps
+ * the time they already paid for. Only the tier and last-payment metadata change.
+ */
+export async function upgradeSubscriptionTier(
+  supabase: SupabaseClient,
+  businessId: string,
+  planTier: PlanTier,
+  proratedAmountCents: number,
+): Promise<void> {
+  const { error } = await supabase
+    .from('subscriptions')
+    .update({
+      plan_tier: planTier,
+      last_payment_at: new Date().toISOString(),
+      last_payment_amount_cents: proratedAmountCents,
+      updated_at: new Date().toISOString(),
+      // current_period_start, current_period_end, next_billing_date intentionally unchanged
+    })
+    .eq('business_id', businessId)
+
+  if (error) {
+    console.error(
+      JSON.stringify({ tag: 'upgrade_subscription_tier_error', businessId, planTier, error: String(error) }),
     )
     throw error
   }

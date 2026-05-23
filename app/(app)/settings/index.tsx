@@ -1096,6 +1096,7 @@ function SettingsScreen() {
     nextBillingDate,
     planTier,
     maxShopkeepers,
+    canUpgrade,
   } = useSubscription()
 
   const currentPlan = PLANS[planTier]
@@ -1425,6 +1426,16 @@ function SettingsScreen() {
                 {formatSubsBillingMethod(subscription.paymentMethod)}
               </Text>
             </View>
+            {canUpgrade && (
+              <TouchableOpacity
+                onPress={() => router.push('/(app)/settings/upgrade-plan')}
+                style={sub.upgradeBtn}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="arrow-up-circle-outline" size={16} color="#7C3AED" />
+                <Text style={sub.upgradeBtnText}>Upgrade to Pro+</Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : subscription?.status === 'trial' && !isTrialExpired ? (
           <View style={sub.trialCard}>
@@ -2087,6 +2098,25 @@ const sub = StyleSheet.create({
     fontSize: 14,
     color: '#5A6A8A',
     lineHeight: 20,
+  },
+
+  upgradeBtn: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#F3EEFF',
+    borderWidth: 1,
+    borderColor: '#D4B8FF',
+  },
+  upgradeBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#7C3AED',
   },
 })
 

@@ -3,7 +3,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sha512 } from '../_shared/crypto.ts'
-import { activateSubscription } from '../_shared/subscription.ts'
+import { activateSubscription, upgradeSubscriptionTier } from '../_shared/subscription.ts'
 
 const INTEGRATION_KEY = Deno.env.get('PAYNOW_INTEGRATION_KEY') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
@@ -109,7 +109,7 @@ serve(async (req) => {
   // Look up the payment by the Paynow reference we set on initiation
   const { data: payment, error: fetchErr } = await supabase
     .from('payments')
-    .select('id, business_id, status, plan_tier')
+    .select('id, business_id, status, plan_tier, is_upgrade, amount_cents')
     .eq('paynow_reference', reference)
     .maybeSingle()
 
@@ -147,10 +147,14 @@ serve(async (req) => {
 
   const tier = payment.plan_tier === 'pro_plus' ? 'pro_plus' : 'pro'
   try {
-    await activateSubscription(supabase, payment.business_id, tier)
+    if (payment.is_upgrade) {
+      await upgradeSubscriptionTier(supabase, payment.business_id, tier, payment.amount_cents ?? 0)
+    } else {
+      await activateSubscription(supabase, payment.business_id, tier)
+    }
     console.log(
       JSON.stringify({
-        tag: 'paynow_webhook_activated',
+        tag: payment.is_upgrade ? 'paynow_webhook_upgraded' : 'paynow_webhook_activated',
         paymentId: payment.id,
         businessId: payment.business_id,
       }),
@@ -161,6 +165,7 @@ serve(async (req) => {
         tag: 'paynow_webhook_activate_subscription',
         paymentId: payment.id,
         businessId: payment.business_id,
+        isUpgrade: payment.is_upgrade,
         error: String(e),
       }),
     )

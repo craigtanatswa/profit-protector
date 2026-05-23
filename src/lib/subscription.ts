@@ -72,6 +72,10 @@ interface SignedPayment {
   submitUrl: string
   submitParams: Record<string, string>
   paymentMethod: string
+  /** Prorated amount charged in cents (upgrade flows only) */
+  chargeCents?: number
+  /** True when the server applied a free upgrade (proration < $0.50) */
+  freeUpgrade?: boolean
   error?: string
 }
 
@@ -133,6 +137,7 @@ export async function initiateEcocashPayment(params: {
   phoneNumber: string
   authEmail: string
   planTier?: PlanTier
+  isUpgrade?: boolean
 }): Promise<InitiatePaymentResult> {
   const signed = (await callFunction('paynow-initiate', {
     businessId: params.businessId,
@@ -140,7 +145,12 @@ export async function initiateEcocashPayment(params: {
     authEmail: params.authEmail,
     paymentMethod: 'ecocash',
     planTier: params.planTier ?? 'pro',
+    isUpgrade: params.isUpgrade ?? false,
   })) as unknown as SignedPayment
+
+  if (signed.freeUpgrade) {
+    return { success: true, freeUpgrade: true, chargeCents: 0 }
+  }
 
   if (!signed.success) {
     return { success: false, message: signed.error ?? 'Payment initiation failed' }
@@ -162,12 +172,14 @@ export async function initiateEcocashPayment(params: {
   const pollUrl = fields.get('pollurl') ?? ''
   persistPollUrl(signed.paymentId, pollUrl)
 
+  const amountDisplay = signed.chargeCents ? `$${(signed.chargeCents / 100).toFixed(2)}` : '$10.00'
   return {
     success: true,
     paymentId: signed.paymentId,
     pollUrl,
     paymentMethod: 'ecocash',
-    instructions: `A payment request of $10.00 has been sent to ${params.phoneNumber}. Check your phone and enter your EcoCash PIN to complete payment.`,
+    chargeCents: signed.chargeCents,
+    instructions: `A payment request of ${amountDisplay} has been sent to ${params.phoneNumber}. Check your phone and enter your EcoCash PIN to complete payment.`,
   }
 }
 
@@ -176,6 +188,7 @@ export async function initiateOnemoneyPayment(params: {
   phoneNumber: string
   authEmail: string
   planTier?: PlanTier
+  isUpgrade?: boolean
 }): Promise<InitiatePaymentResult> {
   const signed = (await callFunction('paynow-initiate', {
     businessId: params.businessId,
@@ -183,7 +196,12 @@ export async function initiateOnemoneyPayment(params: {
     authEmail: params.authEmail,
     paymentMethod: 'onemoney',
     planTier: params.planTier ?? 'pro',
+    isUpgrade: params.isUpgrade ?? false,
   })) as unknown as SignedPayment
+
+  if (signed.freeUpgrade) {
+    return { success: true, freeUpgrade: true, chargeCents: 0 }
+  }
 
   if (!signed.success) {
     return { success: false, message: signed.error ?? 'Payment initiation failed' }
@@ -205,12 +223,14 @@ export async function initiateOnemoneyPayment(params: {
   const pollUrl = fields.get('pollurl') ?? ''
   persistPollUrl(signed.paymentId, pollUrl)
 
+  const amountDisplay = signed.chargeCents ? `$${(signed.chargeCents / 100).toFixed(2)}` : '$10.00'
   return {
     success: true,
     paymentId: signed.paymentId,
     pollUrl,
     paymentMethod: 'onemoney',
-    instructions: `A payment request of $10.00 has been sent to ${params.phoneNumber}. Check your phone and enter your OneMoney PIN to complete payment.`,
+    chargeCents: signed.chargeCents,
+    instructions: `A payment request of ${amountDisplay} has been sent to ${params.phoneNumber}. Check your phone and enter your OneMoney PIN to complete payment.`,
   }
 }
 
@@ -220,13 +240,19 @@ export async function initiateInnbucksPayment(params: {
   businessId: string
   authEmail: string
   planTier?: PlanTier
+  isUpgrade?: boolean
 }): Promise<InitiatePaymentResult> {
   const signed = (await callFunction('paynow-initiate', {
     businessId: params.businessId,
     authEmail: params.authEmail,
     paymentMethod: 'innbucks',
     planTier: params.planTier ?? 'pro',
+    isUpgrade: params.isUpgrade ?? false,
   })) as unknown as SignedPayment
+
+  if (signed.freeUpgrade) {
+    return { success: true, freeUpgrade: true, chargeCents: 0 }
+  }
 
   if (!signed.success) {
     return { success: false, message: signed.error ?? 'Payment initiation failed' }
@@ -255,6 +281,7 @@ export async function initiateInnbucksPayment(params: {
     paymentId: signed.paymentId,
     pollUrl,
     paymentMethod: 'innbucks',
+    chargeCents: signed.chargeCents,
     authorizationCode: authCode,
     authorizationExpires: authExpires,
     deepLink: `com.innbucks.customer://purchase?paymentToken=${authCode}`,
@@ -266,13 +293,19 @@ export async function initiateCardPayment(params: {
   businessId: string
   authEmail: string
   planTier?: PlanTier
+  isUpgrade?: boolean
 }): Promise<InitiatePaymentResult> {
   const signed = (await callFunction('paynow-initiate', {
     businessId: params.businessId,
     authEmail: params.authEmail,
     paymentMethod: 'card',
     planTier: params.planTier ?? 'pro',
+    isUpgrade: params.isUpgrade ?? false,
   })) as unknown as SignedPayment
+
+  if (signed.freeUpgrade) {
+    return { success: true, freeUpgrade: true, chargeCents: 0 }
+  }
 
   if (!signed.success) {
     return { success: false, message: signed.error ?? 'Payment initiation failed' }
@@ -301,7 +334,31 @@ export async function initiateCardPayment(params: {
     redirectUrl,
     pollUrl,
     paymentMethod: 'zimswitch',
+    chargeCents: signed.chargeCents,
   }
+}
+
+/**
+ * Confirms a free plan upgrade (prorated charge < $0.50).
+ * Calls paynow-initiate with isUpgrade=true; the server verifies the
+ * proration is still < $0.50 and upgrades the subscription directly.
+ */
+export async function confirmFreeUpgrade(businessId: string): Promise<InitiatePaymentResult> {
+  const data = (await callFunction('paynow-initiate', {
+    businessId,
+    paymentMethod: 'ecocash', // placeholder — server won't reach Paynow for free upgrades
+    planTier: 'pro_plus',
+    isUpgrade: true,
+  })) as unknown as SignedPayment
+
+  if (data.freeUpgrade) {
+    return { success: true, freeUpgrade: true, chargeCents: 0 }
+  }
+  if (!data.success) {
+    return { success: false, message: data.error ?? 'Upgrade failed' }
+  }
+  // If proration turned out >= $0.50, tell the caller to proceed with payment
+  return { success: false, message: 'Payment required — please select a payment method.' }
 }
 
 export async function pollPaymentStatus(paymentId: string, pollUrl: string): Promise<PollResult> {

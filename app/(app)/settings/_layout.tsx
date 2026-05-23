@@ -28,6 +28,7 @@ export default function SettingsLayout() {
         options={{ title: 'Terms of Service', headerShown: false }}
       />
       <Stack.Screen name="payments" options={{ title: 'Payment History', headerShown: false }} />
+      <Stack.Screen name="upgrade-plan" options={{ title: 'Upgrade Plan', headerShown: false, presentation: 'modal' }} />
     </Stack>
   )
 }
