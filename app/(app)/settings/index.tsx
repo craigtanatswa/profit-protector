@@ -1629,17 +1629,22 @@ function SettingsScreen() {
               }
               value={
                 business?.recoveryEmail != null && business.recoveryEmail.trim() !== ''
-                  ? maskEmail(business.recoveryEmail.trim())
+                  ? undefined
                   : 'Not set'
               }
               showChevron={false}
               rightElement={
                 business?.recoveryEmail != null && business.recoveryEmail.trim() !== '' ? (
-                  <Badge
-                    variant={business.recoveryEmailVerified ? 'success' : 'warning'}
-                    label={business.recoveryEmailVerified ? 'Verified' : 'Unverified'}
-                    size="sm"
-                  />
+                  <View style={s.recoveryEmailRight}>
+                    <Text style={s.recoveryEmailValue} numberOfLines={1}>
+                      {maskEmail(business.recoveryEmail.trim())}
+                    </Text>
+                    <Badge
+                      variant={business.recoveryEmailVerified ? 'success' : 'warning'}
+                      label={business.recoveryEmailVerified ? 'Verified' : 'Unverified'}
+                      size="sm"
+                    />
+                  </View>
                 ) : undefined
               }
               onPress={() => setAddEmailVisible(true)}
@@ -1888,6 +1893,18 @@ const s = StyleSheet.create({
   statValue: { fontSize: 20, fontWeight: '700', color: '#0D1B3E' },
   statLabel: { fontSize: 11, color: '#5A6A8A', marginTop: 2, textAlign: 'center' },
   statDivider: { width: 1, height: 36, backgroundColor: '#DDE3F0' },
+
+  recoveryEmailRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
+  },
+  recoveryEmailValue: {
+    fontSize: 14,
+    color: '#5A6A8A',
+    flexShrink: 1,
+  },
 
   businessIdRight: {
     flexDirection: 'row',

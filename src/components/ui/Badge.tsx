@@ -48,7 +48,7 @@ export function Badge({ label, variant, size = 'md' }: BadgeProps) {
 const styles = StyleSheet.create({
   badge: {
     borderRadius: 20,
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
   },
   label: {
     fontWeight: '500',
