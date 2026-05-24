@@ -21,6 +21,7 @@
         "foregroundImage": "./assets/logo-mark.png",
         "backgroundColor": "#FFFFFF"
       },
+      "softwareKeyboardLayoutMode": "resize",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.craigtanatswa.profitprotector",

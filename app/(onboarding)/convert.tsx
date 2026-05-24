@@ -9,17 +9,11 @@ import {
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 
-import { Button, Input, OTPInput } from '../../src/components/ui'
+import { Button, Input } from '../../src/components/ui'
 import { AnimatedRow } from '../../src/components/onboarding/AnimatedRow'
 import { OnboardingScreenLayout } from '../../src/components/onboarding/OnboardingScreenLayout'
 import { useOnboardingStore } from '../../src/stores/onboardingStore'
 import type { BusinessType, MainChallenge } from '../../src/stores/onboardingStore'
-import { getPersonalisation } from '../../src/lib/appPersonalisation'
-import { createBusinessProfile } from '../../src/lib/createAccount'
-import { buildSupabaseEmailFromPhone } from '../../src/lib/authIdentity'
-import { sendPhoneOtp, verifySignupOtp } from '../../src/lib/phoneOTP'
-import { supabase } from '../../src/lib/supabase'
-import { useAuthStore } from '../../src/stores/authStore'
 
 interface Pair {
   bad: string
@@ -81,40 +75,16 @@ export default function ConvertScreen() {
   const ownerName = useOnboardingStore((s) => s.ownerName)
   const setBusinessName = useOnboardingStore((s) => s.setBusinessName)
   const setOwnerName = useOnboardingStore((s) => s.setOwnerName)
-  const completeOnboarding = useOnboardingStore((s) => s.completeOnboarding)
-
-  const setBusiness = useAuthStore((s) => s.setBusiness)
-  const setUser = useAuthStore((s) => s.setUser)
+  const setSignupCredentials = useOnboardingStore((s) => s.setSignupCredentials)
 
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [smsCode, setSmsCode] = useState('')
-  const [otpGatePassed, setOtpGatePassed] = useState(false)
   const [agreed, setAgreed] = useState(false)
-  const [loading, setLoading] = useState(false)
 
   const pairList = useMemo(() => pairsForChallenge(mainChallenge), [mainChallenge])
 
-  const currency =
-    businessType != null
-      ? getPersonalisation(businessType).currencyDefault
-      : 'usd'
-
-  const slBusinessType = businessType ?? 'other'
-
-  /** Shared create path; used after SMS verify (auto) and from the footer button (retry). */
-  const attemptCreateAccount = async (opts?: {
-    bypassOtpGate?: boolean
-  }): Promise<void> => {
-    const bypassOtp = opts?.bypassOtpGate === true
-    if (!bypassOtp && !otpGatePassed) {
-      Alert.alert(
-        'Verify your phone',
-        'Send the SMS code and tap Verify SMS code before creating your account.',
-      )
-      return
-    }
+  const submit = async () => {
     if ((businessName?.trim().length ?? 0) < 2) {
       Alert.alert('Business name', 'Please enter your business name (at least 2 characters).')
       return
@@ -144,35 +114,8 @@ export default function ConvertScreen() {
       return
     }
 
-    setLoading(true)
-    try {
-      const result = await createBusinessProfile({
-        businessName: businessName.trim(),
-        ownerName: ownerName.trim(),
-        phone: ph,
-        businessType: slBusinessType,
-        currency,
-      })
-
-      if (!result.success) {
-        Alert.alert('Registration Failed', result.error)
-        return
-      }
-
-      await completeOnboarding()
-      setBusiness(result.business)
-      setUser(result.user)
-
-      router.replace('/(app)')
-    } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Something went wrong.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const submit = async () => {
-    await attemptCreateAccount()
+    setSignupCredentials(ph, password)
+    router.push('/(onboarding)/verify-phone')
   }
 
   return (
@@ -182,12 +125,10 @@ export default function ConvertScreen() {
         <View style={styles.footerSection}>
           <Button
             variant="primary"
-            label="Create my account — it's free"
+            label="Create my account"
             onPress={submit}
             size="lg"
             fullWidth
-            loading={loading}
-            disabled={loading || !otpGatePassed}
           />
           <TouchableOpacity
             style={styles.loginRow}
@@ -254,11 +195,7 @@ export default function ConvertScreen() {
         label="Phone Number"
         placeholder="e.g. 0771234567"
         value={phone}
-        onChangeText={(t) => {
-          setPhone(t)
-          setOtpGatePassed(false)
-          setSmsCode('')
-        }}
+        onChangeText={setPhone}
         keyboardType="phone-pad"
         hint="This will be your login number — we will send a verification code by SMS"
         leftIcon={<Ionicons name="call-outline" size={18} color="#5A6A8A" />}
@@ -270,10 +207,7 @@ export default function ConvertScreen() {
         label="Password"
         placeholder="••••••••"
         value={password}
-        onChangeText={(t) => {
-          setPassword(t)
-          setOtpGatePassed(false)
-        }}
+        onChangeText={setPassword}
         secureTextEntry
         hint="Minimum 6 characters"
       />
@@ -294,16 +228,7 @@ export default function ConvertScreen() {
 
       <TouchableOpacity
         style={styles.legalRow}
-        onPress={() => {
-          setAgreed((prev) => {
-            const next = !prev
-            if (!next) {
-              setOtpGatePassed(false)
-              setSmsCode('')
-            }
-            return next
-          })
-        }}
+        onPress={() => setAgreed((prev) => !prev)}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: agreed }}
       >
@@ -326,84 +251,6 @@ export default function ConvertScreen() {
           <Text style={styles.linkSmall}>Privacy Policy</Text>
         </TouchableOpacity>
       </View>
-
-      <View style={styles.gap} />
-
-      <Text style={styles.smsSectionTitle}>Verify your phone number</Text>
-      <Text style={styles.smsSectionHint}>
-        After agreeing above, send the code to your phone and enter it below. Your account is created automatically when the code is verified.
-      </Text>
-      <Button
-        variant="secondary"
-        label="Send SMS verification code"
-        onPress={async () => {
-          const raw = phone.trim()
-          if (!/^07\d{8}$/.test(raw)) {
-            Alert.alert('Phone number', 'Enter a valid 10-digit number starting with 07 first.')
-            return
-          }
-          setLoading(true)
-          try {
-            const sent = await sendPhoneOtp(raw)
-            if (!sent.success) {
-              Alert.alert('SMS', sent.error ?? 'Could not send code.')
-              return
-            }
-            setOtpGatePassed(false)
-            setSmsCode('')
-            Alert.alert('Code sent', 'Check your messages for the 4-digit code.')
-          } finally {
-            setLoading(false)
-          }
-        }}
-        disabled={loading || !agreed}
-        loading={loading}
-        fullWidth
-      />
-
-      <View style={styles.gapSm} />
-
-      <OTPInput value={smsCode} onChange={setSmsCode} disabled={loading} length={4} />
-
-      <Button
-        variant="secondary"
-        label="Verify SMS code"
-        onPress={async () => {
-          const raw = phone.trim()
-          if (smsCode.trim().length !== 4) {
-            Alert.alert('Enter code', 'Enter the 4-digit verification code from SMS.')
-            return
-          }
-          setLoading(true)
-          try {
-            const vr = await verifySignupOtp(raw, smsCode.trim(), password)
-            if (!vr.success) {
-              Alert.alert('Verification failed', vr.error ?? 'Invalid code.')
-              return
-            }
-            const email = buildSupabaseEmailFromPhone(raw)
-            const { error: siErr } = await supabase.auth.signInWithPassword({
-              email,
-              password,
-            })
-            if (siErr) {
-              Alert.alert('Signup incomplete', siErr.message)
-              return
-            }
-            setOtpGatePassed(true)
-          } finally {
-            setLoading(false)
-          }
-          await attemptCreateAccount({ bypassOtpGate: true })
-        }}
-        disabled={loading || !agreed || smsCode.trim().length !== 4}
-        loading={loading}
-        fullWidth
-      />
-
-      {otpGatePassed && (
-        <Text style={styles.phoneVerifiedBadge}>Phone verified — finishing your account…</Text>
-      )}
     </OnboardingScreenLayout>
   )
 }
@@ -478,28 +325,6 @@ const styles = StyleSheet.create({
   },
   gap: {
     height: 16,
-  },
-  gapSm: {
-    height: 10,
-  },
-  smsSectionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#0D1B3E',
-    marginBottom: 6,
-  },
-  smsSectionHint: {
-    fontSize: 13,
-    color: '#5A6A8A',
-    marginBottom: 12,
-    lineHeight: 18,
-  },
-  phoneVerifiedBadge: {
-    fontSize: 13,
-    color: '#0A7A4B',
-    fontWeight: '600',
-    marginTop: 10,
-    marginBottom: 4,
   },
   footerSection: {
     marginTop: 4,

@@ -49,12 +49,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
+  Dimensions,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -62,7 +68,7 @@ import { Ionicons } from '@expo/vector-icons'
 
 import { Button, Input, OTPInput } from '../../src/components/ui'
 import { EmailVerificationModal } from '../../src/components/auth/EmailVerificationModal'
-import { BrandLogo, KeyboardAvoidingWrapper, ScreenHeader } from '../../src/components/layout'
+import { BrandLogo, ScreenHeader } from '../../src/components/layout'
 import { database } from '../../src/database'
 import Business from '../../src/database/models/Business'
 import { supabase } from '../../src/lib/supabase'
@@ -327,6 +333,62 @@ export default function RegisterScreen() {
   } | null>(null)
   /** OTP entry on step 3; successful verify signs in before preferences + createBusinessProfile (step 4). */
   const [smsOtp, setSmsOtp] = useState('')
+  const scrollRef = useRef<ScrollView>(null)
+  const scrollContentRef = useRef<View>(null)
+  const otpBlockRef = useRef<View>(null)
+  const keyboardPaddingRef = useRef(0)
+  const [keyboardPadding, setKeyboardPadding] = useState(0)
+  const insets = useSafeAreaInsets()
+  const headerKeyboardOffset = insets.top + 56
+
+  const scrollOtpIntoView = useCallback(() => {
+    const otp = otpBlockRef.current
+    const content = scrollContentRef.current
+    if (!otp || !content) return
+
+    const kh = keyboardPaddingRef.current
+    otp.measureInWindow((_ox, oy, _ow, oh) => {
+      content.measureInWindow((_cx, cy) => {
+        const relativeTop = oy - cy
+        const windowHeight = Dimensions.get('window').height
+        const visibleBottom = windowHeight - kh - headerKeyboardOffset
+        const otpBottom = oy + oh
+        const overlap = otpBottom - visibleBottom + 24
+        const extraScroll = overlap > 0 ? overlap : 0
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, relativeTop - 48 + extraScroll),
+          animated: true,
+        })
+      })
+    })
+  }, [headerKeyboardOffset])
+
+  useEffect(() => {
+    if (currentStep !== 3 || resumeRegistration) return
+    const t = setTimeout(scrollOtpIntoView, 250)
+    return () => clearTimeout(t)
+  }, [currentStep, resumeRegistration, scrollOtpIntoView])
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      const kh = e.endCoordinates.height
+      keyboardPaddingRef.current = kh
+      setKeyboardPadding(kh)
+      if (currentStep === 3 && !resumeRegistration) {
+        setTimeout(scrollOtpIntoView, Platform.OS === 'ios' ? 80 : 200)
+      }
+    })
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      keyboardPaddingRef.current = 0
+      setKeyboardPadding(0)
+    })
+    return () => {
+      showSub.remove()
+      hideSub.remove()
+    }
+  }, [currentStep, resumeRegistration, scrollOtpIntoView])
 
   const {
     control,
@@ -812,7 +874,14 @@ export default function RegisterScreen() {
           We sent a verification code to{' '}
           <Text style={styles.smsPhone}>{getValues('phone') || 'your number'}</Text>. Enter the 4-digit code below.
         </Text>
-        <OTPInput value={smsOtp} onChange={setSmsOtp} disabled={isLoading} length={4} />
+        <OTPInput
+          value={smsOtp}
+          onChange={setSmsOtp}
+          disabled={isLoading}
+          length={4}
+          containerStyle={styles.otpInput}
+          onFocus={scrollOtpIntoView}
+        />
         <Text style={styles.smsHint}>Did not receive it? Wait up to a minute or tap Resend.</Text>
       </>
     )
@@ -922,13 +991,41 @@ export default function RegisterScreen() {
         leftAction={{ icon: 'arrow-back', onPress: goBack }}
       />
 
-      <KeyboardAvoidingWrapper>
-        <View style={styles.content}>
-          <View style={styles.brandMark}>
-            <BrandLogo variant="full" width={72} height={72} />
-          </View>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={headerKeyboardOffset}
+      >
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scroll}
+          contentContainerStyle={[
+            currentStep === 1 && styles.scrollContentGrow,
+            {
+              paddingBottom:
+                Math.max(insets.bottom, 12) +
+                (Platform.OS === 'android' ? keyboardPadding : 0) +
+                (keyboardPadding > 0 ? 64 : 24),
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          showsVerticalScrollIndicator={keyboardPadding > 0 || currentStep >= 2}
+          nestedScrollEnabled
+        >
+          <View
+            ref={scrollContentRef}
+            collapsable={false}
+            style={[styles.content, currentStep === 1 && styles.contentGrow]}
+          >
+          {currentStep !== 3 ? (
+            <View style={styles.brandMark}>
+              <BrandLogo variant="full" width={72} height={72} />
+            </View>
+          ) : null}
           {/* Progress */}
-          <View style={styles.progressWrapper}>
+          <View style={[styles.progressWrapper, currentStep === 3 && styles.progressWrapperCompact]}>
             <ProgressIndicator currentStep={currentStep} />
           </View>
 
@@ -940,12 +1037,22 @@ export default function RegisterScreen() {
           <View style={styles.fields}>
             {currentStep === 1 && renderStep1Business()}
             {currentStep === 2 && renderStep2OwnerAndCredentials()}
-            {currentStep === 3 && renderStep3Sms()}
+            {currentStep === 3 && (
+              <View style={styles.verifySection}>
+                <View ref={otpBlockRef} collapsable={false}>
+                  {renderStep3Sms()}
+                </View>
+              </View>
+            )}
             {currentStep === 4 && renderStep4Preferences()}
           </View>
 
-          {/* Push button to bottom */}
-          <View style={styles.spacer} />
+          {/* Push button to bottom — only stretch on step 1 so steps 2–4 scroll freely */}
+          {currentStep === 1 ? (
+            <View style={styles.spacer} />
+          ) : (
+            <View style={styles.step3BottomGap} />
+          )}
 
           {/* Primary action */}
           {currentStep === 3 ? (
@@ -997,7 +1104,8 @@ export default function RegisterScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </KeyboardAvoidingWrapper>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <EmailVerificationModal
         visible={pendingRecoveryVerify != null}
@@ -1019,11 +1127,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8F9FA',
   },
-  content: {
+  keyboardAvoid: {
+    flex: 1,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContentGrow: {
     flexGrow: 1,
+  },
+  content: {
     paddingHorizontal: 24,
     paddingTop: 24,
     paddingBottom: 32,
+  },
+  contentGrow: {
+    flexGrow: 1,
   },
   brandMark: {
     alignItems: 'center',
@@ -1033,6 +1152,9 @@ const styles = StyleSheet.create({
   // Progress indicator
   progressWrapper: {
     marginBottom: 32,
+  },
+  progressWrapperCompact: {
+    marginBottom: 16,
   },
   progressRow: {
     flexDirection: 'row',
@@ -1091,11 +1213,18 @@ const styles = StyleSheet.create({
   fields: {
     gap: 16,
   },
+  verifySection: {
+    width: '100%',
+  },
+  otpInput: {
+    marginVertical: 16,
+    paddingHorizontal: 8,
+  },
   smsLead: {
     fontSize: 15,
     color: '#4A5568',
     lineHeight: 22,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   smsPhone: {
     fontWeight: '600',
@@ -1104,10 +1233,14 @@ const styles = StyleSheet.create({
   smsHint: {
     fontSize: 13,
     color: '#718096',
-    marginTop: 8,
+    marginTop: 12,
+    paddingHorizontal: 4,
   },
   step3Actions: {
     gap: 12,
+  },
+  step3BottomGap: {
+    height: 24,
   },
   fieldLabel: {
     fontSize: 14,

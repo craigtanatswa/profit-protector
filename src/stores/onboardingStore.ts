@@ -23,6 +23,9 @@ export interface OnboardingState {
   mainChallenge: MainChallenge | null
   businessName: string
   ownerName: string
+  /** Set on convert screen before navigating to verify-phone; cleared after signup. */
+  signupPhone: string
+  signupPassword: string
   hasCompletedOnboarding: boolean
   hydrated: boolean
 
@@ -31,6 +34,8 @@ export interface OnboardingState {
   setMainChallenge: (challenge: MainChallenge) => void
   setBusinessName: (name: string) => void
   setOwnerName: (name: string) => void
+  setSignupCredentials: (phone: string, password: string) => void
+  clearSignupCredentials: () => void
   completeOnboarding: () => Promise<void>
   resetOnboarding: () => void
   hydrateFromStorage: () => Promise<void>
@@ -44,6 +49,8 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   mainChallenge: null,
   businessName: '',
   ownerName: '',
+  signupPhone: '',
+  signupPassword: '',
   hasCompletedOnboarding: false,
   hydrated: false,
 
@@ -52,6 +59,11 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   setMainChallenge: (challenge) => set({ mainChallenge: challenge }),
   setBusinessName: (name) => set({ businessName: name }),
   setOwnerName: (name) => set({ ownerName: name }),
+
+  setSignupCredentials: (phone, password) =>
+    set({ signupPhone: phone, signupPassword: password }),
+
+  clearSignupCredentials: () => set({ signupPhone: '', signupPassword: '' }),
 
   completeOnboarding: async () => {
     await SecureStore.setItemAsync(ONBOARDING_COMPLETED_KEY, 'true')
@@ -65,6 +77,8 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
       mainChallenge: null,
       businessName: '',
       ownerName: '',
+      signupPhone: '',
+      signupPassword: '',
     }),
 
   hydrateFromStorage: async () => {

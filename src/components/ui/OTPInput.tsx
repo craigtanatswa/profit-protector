@@ -7,6 +7,8 @@ import {
   Text,
   TextInput,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native'
 
 const SCREEN_WIDTH = Dimensions.get('window').width
@@ -20,6 +22,8 @@ export interface OTPInputProps {
   autoFocus?: boolean
   error?: string
   disabled?: boolean
+  containerStyle?: StyleProp<ViewStyle>
+  onFocus?: () => void
 }
 
 export function OTPInput({
@@ -29,6 +33,8 @@ export function OTPInput({
   autoFocus = true,
   error,
   disabled = false,
+  containerStyle,
+  onFocus,
 }: OTPInputProps) {
   const inputRef = useRef<TextInput>(null)
   const [focused, setFocused] = useState(false)
@@ -69,7 +75,7 @@ export function OTPInput({
   )
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, containerStyle]}>
       {/*
         Full-size transparent input over the boxes so touches go straight to
         the native field (reliable after app resume). A 1x1 + Pressable focus
@@ -112,7 +118,10 @@ export function OTPInput({
           maxLength={length}
           editable={!disabled}
           autoFocus={autoFocus}
-          onFocus={() => setFocused(true)}
+          onFocus={() => {
+            setFocused(true)
+            onFocus?.()
+          }}
           onBlur={() => setFocused(false)}
           showSoftInputOnFocus
           style={styles.overlayInput}
@@ -132,6 +141,9 @@ export function OTPInput({
 const styles = StyleSheet.create({
   wrap: {
     alignItems: 'center',
+    width: '100%',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
   },
   row: {
     position: 'relative',
