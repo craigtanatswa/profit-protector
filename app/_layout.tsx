@@ -29,7 +29,7 @@ const AUTH_SCREENS_KEEP_WHEN_AUTHENTICATED = new Set([
 ])
 
 /** Stay on convert while authenticated so signup finishes before entering the app. */
-const ONBOARDING_SCREENS_KEEP_WHEN_AUTHENTICATED = new Set(['convert', 'verify-phone'])
+const ONBOARDING_SCREENS_KEEP_WHEN_AUTHENTICATED = new Set(['convert'])
 
 function AuthGate() {
   const router = useRouter()

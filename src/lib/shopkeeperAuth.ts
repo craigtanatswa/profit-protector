@@ -18,12 +18,6 @@ import {
   type SupabaseSaleRow,
 } from './sync'
 import { getLocalCalendarMonthBoundsIso } from './calendarMonth'
-import {
-  clearShopkeeperSessionLogin,
-  ensureShopkeeperSessionLoginTimestamp,
-  isShopkeeperSessionExpired,
-  recordShopkeeperSessionLogin,
-} from './sessionPersistence'
 import { isSessionSupersededResponse } from './activeSession'
 import { wmRaw } from './watermelonRaw'
 
@@ -486,7 +480,6 @@ async function persistShopkeeperSession(session: ShopkeeperSession): Promise<voi
   await SecureStore.setItemAsync(SK.skUpdatedAt, String(sk.updatedAt))
   await SecureStore.setItemAsync(SK.skReceiptSuffix, sk.receiptSuffix ?? '')
   await SecureStore.deleteItemAsync(LEGACY_SESSION_KEY).catch(() => {})
-  await recordShopkeeperSessionLogin()
 }
 
 function assembleSession(parts: Record<string, string | null>): ShopkeeperSession | null {
@@ -693,12 +686,6 @@ export async function getStoredShopkeeperSession(): Promise<ShopkeeperSession | 
       if (!session) return null
     }
 
-    await ensureShopkeeperSessionLoginTimestamp(session.sessionToken)
-    if (await isShopkeeperSessionExpired()) {
-      await clearShopkeeperSession()
-      return null
-    }
-
     const data = await callShopkeeperAuth({
       action: 'verify_token',
       sessionToken: session.sessionToken,
@@ -751,8 +738,6 @@ export async function verifyShopkeeperSessionActive(): Promise<boolean> {
   const session = await readSessionFromKeys()
   if (!session?.sessionToken) return false
 
-  if (await isShopkeeperSessionExpired()) return false
-
   try {
     const data = await callShopkeeperAuth({
       action: 'verify_token',
@@ -766,7 +751,6 @@ export async function verifyShopkeeperSessionActive(): Promise<boolean> {
 
 export async function clearShopkeeperSession(): Promise<void> {
   const bizId = await SecureStore.getItemAsync(SK.businessId)
-  await clearShopkeeperSessionLogin()
   await secureStoreRemoveLarge(TOKEN_STORAGE_KEY)
   await Promise.all(
     SCALAR_SESSION_KEYS.map((k) => SecureStore.deleteItemAsync(k).catch(() => {})),

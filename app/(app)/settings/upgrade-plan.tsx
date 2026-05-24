@@ -113,6 +113,7 @@ function MethodCard({
 
 export default function UpgradePlanScreen() {
   const business = useAuthStore((s) => s.business)
+  const user = useAuthStore((s) => s.user)
   const { subscription, upgradeProration, canUpgrade, refetch } = useSubscription()
 
   const [state, setState] = useState<UpgradeState>('idle')
@@ -129,7 +130,7 @@ export default function UpgradePlanScreen() {
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const authEmail = business?.ownerEmail ?? business?.recoveryEmail ?? 'noreply@profitprotector.app'
+  const authEmail = user?.email ?? business?.recoveryEmail ?? 'noreply@profitprotector.app'
   const businessId = business?.id ?? ''
 
   const proration = upgradeProration
@@ -314,7 +315,7 @@ export default function UpgradePlanScreen() {
             <Text style={[styles.successCardLabel, { marginTop: 6 }]}>Monthly price</Text>
             <Text style={styles.successCardValue}>$15.00</Text>
           </View>
-          <Button label="Done" onPress={() => router.back()} style={{ marginTop: 24 }} />
+          <View style={{ marginTop: 24 }}><Button label="Done" onPress={() => router.back()} /></View>
         </ScrollView>
       </SafeAreaView>
     )
@@ -370,7 +371,7 @@ export default function UpgradePlanScreen() {
           <Ionicons name="close-circle" size={56} color={C.danger} />
           <Text style={styles.failedTitle}>Upgrade Failed</Text>
           <Text style={styles.failedMsg}>{errorMsg}</Text>
-          <Button label="Try Again" onPress={() => setState('idle')} style={{ marginTop: 24 }} />
+          <View style={{ marginTop: 24 }}><Button label="Try Again" onPress={() => setState('idle')} /></View>
         </View>
       </SafeAreaView>
     )
@@ -463,13 +464,14 @@ export default function UpgradePlanScreen() {
 
           {isFree ? (
             /* Free upgrade — single confirm button */
-            <Button
-              label="Confirm Free Upgrade to Pro+"
-              onPress={handleFreeUpgrade}
-              loading={state === 'confirming'}
-              disabled={state === 'confirming'}
-              style={styles.upgradeBtn}
-            />
+            <View style={styles.upgradeBtn}>
+              <Button
+                label="Confirm Free Upgrade to Pro+"
+                onPress={handleFreeUpgrade}
+                loading={state === 'confirming'}
+                disabled={state === 'confirming'}
+              />
+            </View>
           ) : (
             /* Paid upgrade — payment method selection */
             <>
@@ -503,11 +505,12 @@ export default function UpgradePlanScreen() {
                 </Text>
               )}
 
-              <Button
-                label={`Pay ${chargeDisplay} — Upgrade to Pro+`}
-                onPress={() => void handlePay()}
-                style={styles.upgradeBtn}
-              />
+              <View style={styles.upgradeBtn}>
+                <Button
+                  label={`Pay ${chargeDisplay} — Upgrade to Pro+`}
+                  onPress={() => void handlePay()}
+                />
+              </View>
             </>
           )}
         </ScrollView>
