@@ -7,7 +7,8 @@
     "start:online": "expo start",
     "android": "expo start --offline --android",
     "ios": "expo start --offline --ios",
-    "web": "expo start --offline --web"
+    "web": "expo start --offline --web",
+    "generate:adaptive-icon": "node scripts/generate-adaptive-icon.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -15,7 +16,6 @@
     "@nozbe/watermelondb": "^0.28.0",
     "@nozbe/with-observables": "^1.6.0",
     "@react-native-community/datetimepicker": "8.4.4",
-    "@react-native-google-signin/google-signin": "^16.1.2",
     "@supabase/supabase-js": "^2.103.0",
     "expo": "~54.0.33",
     "expo-application": "~7.0.8",
@@ -52,6 +52,7 @@
     "@babel/plugin-proposal-decorators": "^7.29.0",
     "@types/react": "~19.1.0",
     "babel-preset-expo": "~54.0.10",
+    "sharp": "^0.34.5",
     "typescript": "~5.9.2"
   },
   "private": true

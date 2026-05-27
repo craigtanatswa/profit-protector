@@ -18,7 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
+        "foregroundImage": "./assets/adaptive-icon-foreground.png",
         "backgroundColor": "#FFFFFF"
       },
       "softwareKeyboardLayoutMode": "resize",
@@ -47,11 +47,10 @@
           "mode": "production"
         }
       ],
-      "@react-native-google-signin/google-signin",
       "expo-web-browser"
     ],
     "extra": {
-      "devClearAuthOnLaunch": true,
+      "devClearAuthOnLaunch": false,
       "router": {},
       "eas": {
         "projectId": "7d484eb1-5d23-40e3-ad04-681d1285b6c5"
