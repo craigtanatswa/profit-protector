@@ -37,6 +37,7 @@ import {
   pullShopkeeperCloudSnapshotFast,
 } from '../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../src/lib/activityLogger'
+import { formatPlanPrice } from '../../src/lib/plans'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1011,7 +1012,7 @@ export default function DashboardScreen() {
                 activeOpacity={0.85}
                 style={styles.trialBannerChip}
               >
-                <Text style={styles.trialBannerChipTxt}>Subscribe $10/mo</Text>
+                <Text style={styles.trialBannerChipTxt}>Subscribe {formatPlanPrice('pro')}/mo</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -29,6 +29,7 @@ import {
   initiateOnemoneyPayment,
   pollPaymentStatus,
 } from '../../../src/lib/subscription'
+import { formatPlanPrice } from '../../../src/lib/plans'
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -313,7 +314,7 @@ export default function UpgradePlanScreen() {
             <Text style={styles.successCardLabel}>Next renewal</Text>
             <Text style={styles.successCardValue}>{nextBillingDate}</Text>
             <Text style={[styles.successCardLabel, { marginTop: 6 }]}>Monthly price</Text>
-            <Text style={styles.successCardValue}>$15.00</Text>
+            <Text style={styles.successCardValue}>{formatPlanPrice('pro_plus')}</Text>
           </View>
           <View style={{ marginTop: 24 }}><Button label="Done" onPress={() => router.back()} /></View>
         </ScrollView>
@@ -451,7 +452,7 @@ export default function UpgradePlanScreen() {
             <View style={styles.prorationDivider} />
             <View style={styles.prorationRow}>
               <Text style={styles.prorationLabel}>Future monthly renewals</Text>
-              <Text style={styles.prorationValue}>$15.00 / mo</Text>
+              <Text style={styles.prorationValue}>{formatPlanPrice('pro_plus')} / mo</Text>
             </View>
             <Text style={styles.prorationRenewal}>Next renewal: {nextBillingDate}</Text>
           </Card>

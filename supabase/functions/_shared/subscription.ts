@@ -7,8 +7,8 @@ export type PlanTier = 'pro' | 'pro_plus'
 const SUBSCRIPTION_DURATION_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
 const PLAN_PRICE_CENTS: Record<PlanTier, number> = {
-  pro: 1000,
-  pro_plus: 1500,
+  pro: 500,
+  pro_plus: 1000,
 }
 
 /**

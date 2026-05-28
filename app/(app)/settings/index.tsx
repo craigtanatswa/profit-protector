@@ -1456,7 +1456,7 @@ function SettingsScreen() {
             <Text style={sub.trialLine}>{daysRemainingInTrial} days remaining</Text>
             <View style={{ marginTop: 12 }}>
               <Button
-                label="Subscribe now — $10/mo"
+                label={`Subscribe now — ${formatPlanPrice('pro')}/mo`}
                 variant="primary"
                 size="sm"
                 fullWidth

@@ -16,7 +16,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
     tier: 'pro',
     label: 'Pro',
     shortLabel: 'Pro',
-    priceCents: 1000,
+    priceCents: 500,
     maxShopkeepers: 1,
     tagline: 'Perfect for sole traders',
   },
@@ -24,7 +24,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
     tier: 'pro_plus',
     label: 'Pro+',
     shortLabel: 'Pro+',
-    priceCents: 1500,
+    priceCents: 1000,
     maxShopkeepers: 5,
     tagline: 'For businesses with staff',
   },
@@ -39,7 +39,7 @@ export function getPlanPriceCents(tier: PlanTier): number {
   return PLANS[tier]?.priceCents ?? PLANS.pro.priceCents
 }
 
-/** Formats a plan tier's price as a dollar string, e.g. "$10.00" */
+/** Formats a plan tier's price as a dollar string, e.g. "$5.00" */
 export function formatPlanPrice(tier: PlanTier): string {
   const cents = getPlanPriceCents(tier)
   return `$${(cents / 100).toFixed(2)}`

@@ -1,6 +1,7 @@
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase'
 import type { InitiatePaymentResult, Payment, PollResult, Subscription } from '../types'
 import type { PlanTier } from './plans'
+import { formatPlanPrice } from './plans'
 
 const FUNCTION_BASE = `${SUPABASE_URL}/functions/v1`
 
@@ -172,7 +173,7 @@ export async function initiateEcocashPayment(params: {
   const pollUrl = fields.get('pollurl') ?? ''
   persistPollUrl(signed.paymentId, pollUrl)
 
-  const amountDisplay = signed.chargeCents ? `$${(signed.chargeCents / 100).toFixed(2)}` : '$10.00'
+  const amountDisplay = signed.chargeCents ? `$${(signed.chargeCents / 100).toFixed(2)}` : formatPlanPrice('pro')
   return {
     success: true,
     paymentId: signed.paymentId,
@@ -223,7 +224,7 @@ export async function initiateOnemoneyPayment(params: {
   const pollUrl = fields.get('pollurl') ?? ''
   persistPollUrl(signed.paymentId, pollUrl)
 
-  const amountDisplay = signed.chargeCents ? `$${(signed.chargeCents / 100).toFixed(2)}` : '$10.00'
+  const amountDisplay = signed.chargeCents ? `$${(signed.chargeCents / 100).toFixed(2)}` : formatPlanPrice('pro')
   return {
     success: true,
     paymentId: signed.paymentId,

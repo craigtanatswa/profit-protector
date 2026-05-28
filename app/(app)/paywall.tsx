@@ -734,7 +734,7 @@ export default function PaywallScreen() {
 
             <Text style={styles.expiredBody}>
               To keep accessing Profit Protector and all your business data,
-              subscribe for just $10 per month.
+              subscribe for just {formatPlanPrice('pro')} per month.
             </Text>
 
             {[
