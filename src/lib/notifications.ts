@@ -291,6 +291,40 @@ export async function notifyOwnerStaffStockAdjustment(params: {
   })
 }
 
+/** In-app banner when the owner app receives a staff stock receive via Realtime. */
+export async function notifyOwnerStaffStockReceived(params: {
+  businessId: string
+  staffLabel: string
+  productName: string
+  qty: number
+  unit?: string
+}): Promise<void> {
+  await setupAndroidChannels()
+
+  const { status } = await Notifications.getPermissionsAsync()
+  if (status !== 'granted') return
+
+  const unit = params.unit?.trim() || 'units'
+  const qtyLabel = `+${params.qty} ${unit}`
+  const title = '📦 Staff Stock Received'
+  const body = `${params.staffLabel} received ${qtyLabel} of ${params.productName}`
+
+  await deliverBizLocalNotification({
+    content: {
+      title,
+      body,
+      data: {
+        type: 'staff_stock_received',
+        screen: 'activity_log',
+      },
+      sound: 'default',
+      priority: Notifications.AndroidNotificationPriority.HIGH,
+      color: '#0A7A4B',
+      ...(Platform.OS === 'android' ? { channelId: 'staff-inventory' } : {}),
+    },
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Batch low stock digest — once per local calendar day per business (owners)
 // ---------------------------------------------------------------------------
@@ -423,6 +457,13 @@ function shouldShowStaffStockAdjustmentOsAlert(
   return AppState.currentState !== 'active'
 }
 
+function shouldShowStaffStockReceivedOsAlert(
+  data: Record<string, unknown> | undefined,
+): boolean {
+  if (data?.type !== 'staff_stock_received') return shouldScheduleOsLocalBusinessAlerts()
+  return AppState.currentState !== 'active'
+}
+
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const raw = notification.request.content
@@ -430,7 +471,8 @@ Notifications.setNotificationHandler({
     const showOs =
       isLowStockNotificationData(raw) ||
       shouldShowStaffSaleOsAlert(raw) ||
-      shouldShowStaffStockAdjustmentOsAlert(raw)
+      shouldShowStaffStockAdjustmentOsAlert(raw) ||
+      shouldShowStaffStockReceivedOsAlert(raw)
     return {
       shouldShowAlert: showOs,
       shouldPlaySound: showOs,

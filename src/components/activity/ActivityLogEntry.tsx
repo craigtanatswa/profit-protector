@@ -83,10 +83,17 @@ function stockQtyMeta(log: ActivityLog): { text: string; color: string; bgColor:
 }
 
 function stockReasonLabel(log: ActivityLog): string | null {
-  if (log.action !== 'stock_adjusted') return null
-  const reason = log.details?.reason
-  if (reason == null || String(reason).trim().length === 0) return null
-  return String(reason)
+  if (log.action === 'stock_adjusted') {
+    const reason = log.details?.reason
+    if (reason == null || String(reason).trim().length === 0) return null
+    return String(reason)
+  }
+  if (log.action === 'stock_received') {
+    const supplier = log.details?.supplier
+    if (supplier == null || String(supplier).trim().length === 0) return null
+    return String(supplier)
+  }
+  return null
 }
 
 function stockIconInfo(log: ActivityLog): {

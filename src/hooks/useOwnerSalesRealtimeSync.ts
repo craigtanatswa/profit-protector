@@ -3,7 +3,7 @@ import { AppState } from 'react-native'
 
 import { useAuthStore } from '../stores/authStore'
 import { supabase } from '../lib/supabase'
-import { notifyOwnerStaffSale, notifyOwnerStaffStockAdjustment } from '../lib/notifications'
+import { notifyOwnerStaffSale, notifyOwnerStaffStockAdjustment, notifyOwnerStaffStockReceived } from '../lib/notifications'
 import { refreshOwnerProductsForRemoteSale } from '../lib/sync'
 
 import { FOREGROUND_INVENTORY_POLL_MS } from '../lib/syncPoll'
@@ -14,6 +14,7 @@ import { FOREGROUND_INVENTORY_POLL_MS } from '../lib/syncPoll'
  * server-side from `shopkeeper-auth` `push_sale` so owners are notified when the app is closed.
  * Staff stock adjustments use `push_stock_adjustment` (server push + activity log) with the
  * same in-app banner via `activity_logs` Realtime when the publication is enabled.
+ * Staff stock receives use `push_stock_received` with the same pattern.
  *
  * SQL: `sales_realtime_publication.sql`, `products_realtime_publication.sql`,
  * `activity_logs_realtime.sql`.
@@ -114,31 +115,52 @@ export function useOwnerSalesRealtimeSync() {
           void (async () => {
             await triggerSync(businessId)
 
-            if (payload.new.action !== 'stock_adjusted') return
             if (payload.new.actor_role !== 'shopkeeper') return
 
+            const action = payload.new.action
             const detailsRaw = payload.new.details
-            let qtyChange = 0
-            let unit: string | undefined
-            if (detailsRaw != null && typeof detailsRaw === 'object' && !Array.isArray(detailsRaw)) {
-              const d = detailsRaw as Record<string, unknown>
-              qtyChange = Number(d.qtyChange)
-              if (d.unit != null) unit = String(d.unit)
-            }
-
             const productName = String(payload.new.entity_name ?? 'product')
             const staffLabel =
               String(payload.new.actor_name ?? '').trim().length > 0
                 ? String(payload.new.actor_name)
                 : 'Staff'
 
-            await notifyOwnerStaffStockAdjustment({
-              businessId,
-              staffLabel,
-              productName,
-              qtyChange: Number.isFinite(qtyChange) ? qtyChange : 0,
-              unit,
-            })
+            if (action === 'stock_adjusted') {
+              let qtyChange = 0
+              let unit: string | undefined
+              if (detailsRaw != null && typeof detailsRaw === 'object' && !Array.isArray(detailsRaw)) {
+                const d = detailsRaw as Record<string, unknown>
+                qtyChange = Number(d.qtyChange)
+                if (d.unit != null) unit = String(d.unit)
+              }
+
+              await notifyOwnerStaffStockAdjustment({
+                businessId,
+                staffLabel,
+                productName,
+                qtyChange: Number.isFinite(qtyChange) ? qtyChange : 0,
+                unit,
+              })
+              return
+            }
+
+            if (action === 'stock_received') {
+              let qty = 0
+              let unit: string | undefined
+              if (detailsRaw != null && typeof detailsRaw === 'object' && !Array.isArray(detailsRaw)) {
+                const d = detailsRaw as Record<string, unknown>
+                qty = Number(d.qty)
+                if (d.unit != null) unit = String(d.unit)
+              }
+
+              await notifyOwnerStaffStockReceived({
+                businessId,
+                staffLabel,
+                productName,
+                qty: Number.isFinite(qty) ? qty : 0,
+                unit,
+              })
+            }
           })()
         },
       )

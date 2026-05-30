@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native'
 import { z } from 'zod'
+import * as Crypto from 'expo-crypto'
 
 import { KeyboardAvoidingWrapper, ScreenHeader } from '../../../src/components/layout'
 import { ProductPickerModal } from '../../../src/components/inventory/ProductPickerModal'
@@ -29,8 +30,8 @@ import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
 import { getProductById } from '../../../src/hooks/useProducts'
 import {
-  pushShopkeeperProductPatchesRemote,
-  enqueuePendingShopkeeperProductSync,
+  pushShopkeeperStockReceivedRemote,
+  enqueuePendingShopkeeperStockReceived,
   flushPendingShopkeeperOutbound,
 } from '../../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../../src/lib/activityLogger'
@@ -207,6 +208,9 @@ export default function PurchaseScreen() {
       const newQty = prevQty + qty
 
       const updatedMs = Date.now()
+      const movementId = Crypto.randomUUID()
+      const purchaseCreatedMs = values.purchaseDate || Date.now()
+      const supplierName = values.supplierName?.trim() ?? ''
 
       await database.write(async () => {
         // Update product stock
@@ -220,23 +224,28 @@ export default function PurchaseScreen() {
 
         // Create stock movement
         await database!.get<StockMovementModel>('stock_movements').create((m) => {
+          m._raw.id = movementId
           m.businessId = business.id
           m.productId = values.productId
           m.productNameSnapshot = productRecord.name
           m.action = 'purchase'
           m.qtyChange = qty
           m.reason = values.notes ?? ''
-          m.supplier = values.supplierName ?? ''
-          wmRaw(m).created_at = values.purchaseDate || Date.now()
+          m.supplier = supplierName
+          wmRaw(m).created_at = purchaseCreatedMs
         })
       })
 
-      await logActivity({
+      const activityLogId = await logActivity({
         action: 'stock_received',
         entityType: 'stock_movement',
         entityId: values.productId,
         entityName: productRecord.name,
-        details: { qty },
+        details: {
+          qty,
+          unit: productRecord.unit,
+          ...(supplierName ? { supplier: supplierName } : {}),
+        },
       })
 
       if (activeRole === 'owner') {
@@ -247,22 +256,64 @@ export default function PurchaseScreen() {
       } else if (activeRole === 'shopkeeper') {
         const tok = useAuthStore.getState().shopkeeperSession?.sessionToken
         const skId = useAuthStore.getState().shopkeeperSession?.shopkeeper.id
-        const patch: Parameters<typeof pushShopkeeperProductPatchesRemote>[1][0] = {
+        const productPatch: {
+          product_id: string
+          stock_qty: number
+          updated_at: string
+          cost_price_cents?: number
+        } = {
           product_id: values.productId,
           stock_qty: newQty,
           updated_at: new Date(updatedMs).toISOString(),
         }
         if (values.updateCostPrice && costCents !== null) {
-          patch.cost_price_cents = costCents
+          productPatch.cost_price_cents = costCents
+        }
+        const receivedPayload = {
+          product_patch: productPatch,
+          stock_movement: {
+            id: movementId,
+            business_id: business.id,
+            product_id: values.productId,
+            product_name_snapshot: productRecord.name,
+            action: 'purchase',
+            qty_change: qty,
+            reason: values.notes ?? '',
+            supplier: supplierName,
+            created_at: new Date(purchaseCreatedMs).toISOString(),
+          },
+          activity_log: {
+            id: activityLogId ?? Crypto.randomUUID(),
+            action: 'stock_received' as const,
+            entity_type: 'stock_movement' as const,
+            entity_id: values.productId,
+            entity_name: productRecord.name,
+            details: {
+              qty,
+              unit: productRecord.unit,
+              ...(supplierName ? { supplier: supplierName } : {}),
+            },
+            created_at: new Date(purchaseCreatedMs).toISOString(),
+          },
         }
         void (async () => {
           if (!tok || !skId) return
           try {
             await flushPendingShopkeeperOutbound(tok, business.id, skId)
-            const ok = await pushShopkeeperProductPatchesRemote(tok, [patch])
-            if (!ok) await enqueuePendingShopkeeperProductSync(business.id, [values.productId])
+            const ok = await pushShopkeeperStockReceivedRemote(tok, receivedPayload)
+            if (!ok) {
+              await enqueuePendingShopkeeperStockReceived(
+                business.id,
+                movementId,
+                receivedPayload.activity_log.id,
+              )
+            }
           } catch {
-            await enqueuePendingShopkeeperProductSync(business.id, [values.productId])
+            await enqueuePendingShopkeeperStockReceived(
+              business.id,
+              movementId,
+              receivedPayload.activity_log.id,
+            )
           }
         })()
       }

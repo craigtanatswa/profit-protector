@@ -243,7 +243,9 @@ export default function AppLayout() {
       const navigateHref =
         screen === 'sales' || nType === 'staff_sale'
           ? '/(app)/sales'
-          : screen === 'activity_log' || nType === 'staff_stock_adjustment'
+          : screen === 'activity_log' ||
+              nType === 'staff_stock_adjustment' ||
+              nType === 'staff_stock_received'
             ? '/(app)/settings/activity-log'
           : screen === 'inventory'
             ? '/(app)/inventory'

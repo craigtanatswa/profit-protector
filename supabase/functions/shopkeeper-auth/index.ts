@@ -694,6 +694,163 @@ serve(async (req) => {
       return json({ status: 'ok' })
     }
 
+    if (action === 'push_stock_received') {
+      const payload = await verifyToken(sessionToken)
+      if (!payload) {
+        return error('Session expired. Please log in again.')
+      }
+
+      const shopkeeperId = String(payload.shopkeeperId)
+      const bizId = String(payload.businessId)
+      const deviceIdFromToken = String(payload.deviceId)
+
+      const { data: shopkeeper } = await supabase
+        .from('shopkeepers')
+        .select('*')
+        .eq('id', shopkeeperId)
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .single()
+
+      if (!shopkeeper) return error('Account deactivated.')
+
+      const { data: device } = await supabase
+        .from('shopkeeper_devices')
+        .select('is_approved')
+        .eq('shopkeeper_id', shopkeeperId)
+        .eq('device_id', deviceIdFromToken)
+        .single()
+
+      if (!device?.is_approved) return error('Device no longer approved.')
+
+      const sessionCheckReceive = await assertActiveShopkeeperSession(supabase, payload)
+      if (sessionCheckReceive === 'superseded') return sessionSuperseded()
+
+      const productPatch = body.product_patch as Record<string, unknown> | undefined
+      const movementRaw = body.stock_movement as Record<string, unknown> | undefined
+      const activityRaw = body.activity_log as Record<string, unknown> | undefined
+
+      if (!productPatch || !movementRaw || !activityRaw) {
+        return error('Missing stock received payload.')
+      }
+
+      const productId = String(productPatch.product_id ?? '')
+      const stockQty = Number(productPatch.stock_qty)
+      const updatedAt =
+        productPatch.updated_at != null && String(productPatch.updated_at).length > 0
+          ? String(productPatch.updated_at)
+          : new Date().toISOString()
+
+      if (!productId || !Number.isFinite(stockQty)) {
+        return error('Invalid product patch.')
+      }
+
+      const movementId = String(movementRaw.id ?? '')
+      const qtyChange = Number(movementRaw.qty_change)
+      if (!movementId || !Number.isFinite(qtyChange) || qtyChange <= 0) {
+        return error('Invalid stock movement.')
+      }
+
+      const activityId = String(activityRaw.id ?? '')
+      if (!activityId) return error('Invalid activity log.')
+
+      const updateRow: Record<string, unknown> = {
+        stock_qty: Math.floor(stockQty),
+        updated_at: updatedAt,
+      }
+      if (
+        productPatch.cost_price_cents !== undefined &&
+        productPatch.cost_price_cents !== null &&
+        String(productPatch.cost_price_cents) !== ''
+      ) {
+        const c = Number(productPatch.cost_price_cents)
+        if (Number.isFinite(c)) updateRow.cost_price_cents = Math.round(c)
+      }
+
+      const { error: upErr } = await supabase
+        .from('products')
+        .update(updateRow)
+        .eq('id', productId)
+        .eq('business_id', bizId)
+      if (upErr) return error(upErr.message)
+
+      const movementRow = {
+        id: movementId,
+        business_id: bizId,
+        product_id: productId,
+        product_name_snapshot: String(movementRaw.product_name_snapshot ?? ''),
+        action: 'purchase',
+        qty_change: qtyChange,
+        reason:
+          movementRaw.reason == null || String(movementRaw.reason).length === 0
+            ? null
+            : String(movementRaw.reason),
+        supplier: movementRaw.supplier == null ? '' : String(movementRaw.supplier),
+        created_at: String(movementRaw.created_at ?? updatedAt),
+      }
+
+      const { error: movErr } = await supabase
+        .from('stock_movements')
+        .upsert(movementRow, { onConflict: 'id' })
+      if (movErr) return error(movErr.message)
+
+      const staffName =
+        typeof shopkeeper.full_name === 'string' && shopkeeper.full_name.trim().length > 0
+          ? shopkeeper.full_name.trim()
+          : 'Staff'
+
+      const entityName = String(activityRaw.entity_name ?? movementRow.product_name_snapshot)
+      const detailsRaw = activityRaw.details
+      const details =
+        detailsRaw != null && typeof detailsRaw === 'object' && !Array.isArray(detailsRaw)
+          ? detailsRaw
+          : { qty: qtyChange }
+
+      const { error: logErr } = await supabase.from('activity_logs').upsert(
+        {
+          id: activityId,
+          business_id: bizId,
+          actor_id: shopkeeperId,
+          actor_name: staffName,
+          actor_role: 'shopkeeper',
+          action: 'stock_received',
+          entity_type: 'stock_movement',
+          entity_id: String(activityRaw.entity_id ?? productId),
+          entity_name: entityName,
+          details,
+          created_at: String(activityRaw.created_at ?? movementRow.created_at),
+        },
+        { onConflict: 'id' },
+      )
+      if (logErr) return error(logErr.message)
+
+      const unit =
+        details != null &&
+        typeof details === 'object' &&
+        'unit' in details &&
+        String((details as Record<string, unknown>).unit ?? '').length > 0
+          ? String((details as Record<string, unknown>).unit)
+          : 'units'
+      const qtyLabel = `+${qtyChange} ${unit}`
+      const productLabel = entityName.trim() || 'product'
+      const title = '📦 Staff Stock Received'
+      const pushBody = `${staffName} received ${qtyLabel} of ${productLabel}`
+
+      try {
+        await sendOwnerPushInternal({
+          businessId: bizId,
+          title,
+          body: pushBody,
+          data: { type: 'staff_stock_received', screen: 'activity_log', productId },
+          androidChannel: 'staff-inventory',
+        })
+      } catch (pushErr) {
+        console.warn('[shopkeeper-auth] staff stock received push failed:', pushErr)
+      }
+
+      return json({ status: 'ok' })
+    }
+
     if (action === 'check_approval_status') {
       const { data: business } = await supabase
         .from('businesses')

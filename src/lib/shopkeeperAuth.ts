@@ -277,6 +277,33 @@ export async function pushShopkeeperStockAdjustmentRemote(
   return data.status === 'ok'
 }
 
+export type ShopkeeperStockReceivedPushPayload = {
+  product_patch: ShopkeeperProductPatchPayload
+  stock_movement: ShopkeeperStockMovementPushRow
+  activity_log: {
+    id: string
+    action: 'stock_received'
+    entity_type: 'stock_movement'
+    entity_id: string
+    entity_name: string
+    details: { qty: number; unit?: string; supplier?: string }
+    created_at: string
+  }
+}
+
+/** Push stock received + movement + activity log; notifies owner server-side. */
+export async function pushShopkeeperStockReceivedRemote(
+  sessionToken: string,
+  payload: ShopkeeperStockReceivedPushPayload,
+): Promise<boolean> {
+  const data = await callShopkeeperAuth({
+    action: 'push_stock_received',
+    sessionToken,
+    ...payload,
+  })
+  return data.status === 'ok'
+}
+
 // ---------------------------------------------------------------------------
 // Offline-first outbound queue (sales + product stock snapshots)
 // ---------------------------------------------------------------------------
@@ -296,6 +323,10 @@ type PendingStockAdjustment = {
 
 function pendingAdjustmentsKey(businessId: string): string {
   return `pp_sk_pending_adjustments_${businessId}`
+}
+
+function pendingReceivedKey(businessId: string): string {
+  return `pp_sk_pending_received_${businessId}`
 }
 
 async function readPendingAdjustments(key: string): Promise<PendingStockAdjustment[]> {
@@ -402,6 +433,29 @@ async function removePendingShopkeeperStockAdjustment(
   movementId: string,
 ): Promise<void> {
   const key = pendingAdjustmentsKey(businessId)
+  const items = (await readPendingAdjustments(key)).filter((x) => x.movementId !== movementId)
+  await writePendingAdjustments(key, items)
+}
+
+/** Queue a staff stock receive for retry when `push_stock_received` could not reach the server. */
+export async function enqueuePendingShopkeeperStockReceived(
+  businessId: string,
+  movementId: string,
+  activityLogId: string,
+): Promise<void> {
+  const key = pendingReceivedKey(businessId)
+  const items = await readPendingAdjustments(key)
+  if (!items.some((x) => x.movementId === movementId)) {
+    items.push({ movementId, activityLogId })
+  }
+  await writePendingAdjustments(key, items)
+}
+
+async function removePendingShopkeeperStockReceived(
+  businessId: string,
+  movementId: string,
+): Promise<void> {
+  const key = pendingReceivedKey(businessId)
   const items = (await readPendingAdjustments(key)).filter((x) => x.movementId !== movementId)
   await writePendingAdjustments(key, items)
 }
@@ -534,6 +588,91 @@ async function buildShopkeeperStockAdjustmentPayloadFromLocal(
   }
 }
 
+async function buildShopkeeperStockReceivedPayloadFromLocal(
+  movementId: string,
+  activityLogId: string,
+  shopkeeperId: string,
+): Promise<ShopkeeperStockReceivedPushPayload | null> {
+  if (!database) return null
+  try {
+    const movement = await database.get<StockMovementModel>('stock_movements').find(movementId)
+    if (movement.action !== 'purchase') return null
+
+    const product = await database.get<ProductModel>('products').find(movement.productId)
+    const updatedMs = wmRaw(product).updated_at as number
+    const movementMs =
+      movement.createdAt instanceof Date ? movement.createdAt.getTime() : Date.now()
+
+    let details: { qty: number; unit?: string; supplier?: string } = {
+      qty: movement.qtyChange,
+      unit: product.unit,
+      supplier: movement.supplier || undefined,
+    }
+    let entityName = movement.productNameSnapshot || product.name
+    let createdAt = new Date(movementMs).toISOString()
+
+    const patch: ShopkeeperProductPatchPayload = {
+      product_id: product.id,
+      stock_qty: product.stockQty,
+      updated_at: new Date(updatedMs).toISOString(),
+    }
+    if (product.costPriceCents != null) {
+      patch.cost_price_cents = product.costPriceCents
+    }
+
+    try {
+      const log = await database.get<ActivityLogModel>('activity_logs').find(activityLogId)
+      if (log.action === 'stock_received' && log.actorId === shopkeeperId) {
+        entityName = log.entityName || entityName
+        createdAt = new Date(log.createdAt.getTime()).toISOString()
+        if (log.details) {
+          try {
+            const parsed = JSON.parse(log.details) as Record<string, unknown>
+            details = {
+              qty: Number(parsed.qty ?? movement.qtyChange),
+              unit: parsed.unit != null ? String(parsed.unit) : product.unit,
+              supplier:
+                parsed.supplier != null
+                  ? String(parsed.supplier)
+                  : movement.supplier || undefined,
+            }
+          } catch {
+            /* keep movement-derived details */
+          }
+        }
+      }
+    } catch {
+      /* activity log optional for rebuild */
+    }
+
+    return {
+      product_patch: patch,
+      stock_movement: {
+        id: movement.id,
+        business_id: movement.businessId,
+        product_id: movement.productId,
+        product_name_snapshot: movement.productNameSnapshot || product.name,
+        action: 'purchase',
+        qty_change: movement.qtyChange,
+        reason: movement.reason || null,
+        supplier: movement.supplier ?? '',
+        created_at: new Date(movementMs).toISOString(),
+      },
+      activity_log: {
+        id: activityLogId,
+        action: 'stock_received',
+        entity_type: 'stock_movement',
+        entity_id: movement.productId,
+        entity_name: entityName,
+        details,
+        created_at: createdAt,
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
 /**
  * Retry queued staff sales and product stock snapshots. Call after each sale/adjustment
  * and from `useAutoSync` while online — keeps Supabase `sales`, `products`, and
@@ -568,6 +707,21 @@ export async function flushPendingShopkeeperOutbound(
     }
     const ok = await pushShopkeeperStockAdjustmentRemote(sessionToken, payload)
     if (ok) await removePendingShopkeeperStockAdjustment(businessId, pending.movementId)
+  }
+
+  const pendingReceived = await readPendingAdjustments(pendingReceivedKey(businessId))
+  for (const pending of pendingReceived) {
+    const payload = await buildShopkeeperStockReceivedPayloadFromLocal(
+      pending.movementId,
+      pending.activityLogId,
+      shopkeeperId,
+    )
+    if (!payload) {
+      await removePendingShopkeeperStockReceived(businessId, pending.movementId)
+      continue
+    }
+    const ok = await pushShopkeeperStockReceivedRemote(sessionToken, payload)
+    if (ok) await removePendingShopkeeperStockReceived(businessId, pending.movementId)
   }
 
   const productIds = await readStringIdList(pendingProductSyncKey(businessId))
