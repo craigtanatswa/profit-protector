@@ -526,7 +526,13 @@ function QuickActionsSection({ isShopkeeper }: { isShopkeeper: boolean }) {
 // Low stock section
 // ---------------------------------------------------------------------------
 
-function LowStockSection({ products }: { products: Product[] }) {
+function LowStockSection({
+  products,
+  isShopkeeper,
+}: {
+  products: Product[]
+  isShopkeeper: boolean
+}) {
   if (products.length === 0) return null
 
   const visible = products.slice(0, 3)
@@ -572,17 +578,19 @@ function LowStockSection({ products }: { products: Product[] }) {
                     : `Only ${product.stockQty} ${product.unit} left`}
                 </Text>
               </View>
-              <TouchableOpacity
-                onPress={() =>
-                  router.push({
-                    pathname: '/(app)/inventory/purchase',
-                    params: { productId: product.id },
-                  })
-                }
-                style={styles.orderBtn}
-              >
-                <Text style={styles.orderBtnText}>Order +</Text>
-              </TouchableOpacity>
+              {!isShopkeeper ? (
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(app)/inventory/purchase',
+                      params: { productId: product.id },
+                    })
+                  }
+                  style={styles.orderBtn}
+                >
+                  <Text style={styles.orderBtnText}>Order +</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </Card>
         )
@@ -1130,7 +1138,7 @@ export default function DashboardScreen() {
           <QuickActionsSection isShopkeeper={isShopkeeper} />
 
           {/* Low stock */}
-          <LowStockSection products={lowStockProducts} />
+          <LowStockSection products={lowStockProducts} isShopkeeper={isShopkeeper} />
 
           {/* Recent sales */}
           <RecentSalesSection recentSales={recentSales} />
