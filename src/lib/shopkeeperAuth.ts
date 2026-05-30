@@ -733,6 +733,20 @@ export async function getStoredShopkeeperSession(): Promise<ShopkeeperSession | 
   }
 }
 
+/** Returns the sessionId embedded in a shopkeeper JWT, if present. */
+export function shopkeeperSessionIdFromToken(sessionToken: string): string | null {
+  try {
+    const parts = sessionToken.split('.')
+    if (parts.length < 2) return null
+    const payload = JSON.parse(atob(parts[1])) as { sessionId?: unknown }
+    return typeof payload.sessionId === 'string' && payload.sessionId.length > 0
+      ? payload.sessionId
+      : null
+  } catch {
+    return null
+  }
+}
+
 /** Returns true when the server reports this shopkeeper session was replaced. */
 export async function verifyShopkeeperSessionActive(): Promise<boolean> {
   const session = await readSessionFromKeys()

@@ -8,7 +8,7 @@ import {
   SESSION_SUPERSEDED_MESSAGE,
 } from '../lib/activeSession'
 import { supabase } from '../lib/supabase'
-import { clearShopkeeperSession as clearStoredShopkeeperSession, verifyShopkeeperSessionActive } from '../lib/shopkeeperAuth'
+import { clearShopkeeperSession as clearStoredShopkeeperSession, shopkeeperSessionIdFromToken, verifyShopkeeperSessionActive } from '../lib/shopkeeperAuth'
 import { useAuthStore } from '../stores/authStore'
 
 const CHECK_INTERVAL_MS = 30_000
@@ -23,6 +23,7 @@ export function useActiveSessionGuard() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const isLoading = useAuthStore((s) => s.isLoading)
   const userId = useAuthStore((s) => s.user?.id)
+  const shopkeeperSession = useAuthStore((s) => s.shopkeeperSession)
   const kickingRef = useRef(false)
 
   useEffect(() => {
@@ -63,6 +64,16 @@ export function useActiveSessionGuard() {
       }
     }
 
+    async function checkShopkeeperSupersededBySessionId(remoteSessionId: unknown) {
+      if (typeof remoteSessionId !== 'string' || remoteSessionId.length === 0) return
+      const token = shopkeeperSession?.sessionToken
+      if (!token) return
+      const localId = shopkeeperSessionIdFromToken(token)
+      if (localId && localId !== remoteSessionId) {
+        await forceLogout()
+      }
+    }
+
     async function checkSession() {
       if (AppState.currentState !== 'active') return
 
@@ -93,6 +104,7 @@ export function useActiveSessionGuard() {
     }, CHECK_INTERVAL_MS)
 
     let ownerChannel: ReturnType<typeof supabase.channel> | undefined
+    let shopkeeperChannel: ReturnType<typeof supabase.channel> | undefined
     if (activeRole === 'owner' && isAuthenticated && userId) {
       ownerChannel = supabase
         .channel(`owner_active_sess_${userId}_${Math.random().toString(36).slice(2, 9)}`)
@@ -115,12 +127,40 @@ export function useActiveSessionGuard() {
         })
     }
 
+    const shopkeeperId = shopkeeperSession?.shopkeeper.id
+    if (activeRole === 'shopkeeper' && shopkeeperId) {
+      shopkeeperChannel = supabase
+        .channel(`sk_active_sess_${shopkeeperId}_${Math.random().toString(36).slice(2, 9)}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'shopkeeper_active_sessions',
+            filter: `shopkeeper_id=eq.${shopkeeperId}`,
+          },
+          (payload: { new: Record<string, unknown> }) => {
+            void checkShopkeeperSupersededBySessionId(payload.new?.session_id)
+          },
+        )
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.warn(
+              '[activeSession] Shopkeeper Realtime unavailable — run shopkeeper_active_sessions_realtime.sql',
+            )
+          }
+        })
+    }
+
     return () => {
       onAppState.remove()
       clearInterval(interval)
       if (ownerChannel) {
         void supabase.removeChannel(ownerChannel)
       }
+      if (shopkeeperChannel) {
+        void supabase.removeChannel(shopkeeperChannel)
+      }
     }
-  }, [activeRole, isAuthenticated, isLoading, userId])
+  }, [activeRole, isAuthenticated, isLoading, userId, shopkeeperSession?.sessionToken, shopkeeperSession?.shopkeeper.id])
 }
