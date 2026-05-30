@@ -1,5 +1,5 @@
 import { Q } from '@nozbe/watermelondb'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { database } from '../database'
 import ActivityLogModel from '../database/models/ActivityLog'
@@ -30,27 +30,46 @@ function mapLog(log: ActivityLogModel): ActivityLog {
   }
 }
 
+/**
+ * Live subscription to activity_logs — updates when sync or Realtime merges new rows.
+ */
 export function useActivityLog(businessId: string) {
   const [logs, setLogs] = useState<ActivityLog[]>([])
   const [isLoading, setIsLoading] = useState(false)
-
-  const refetch = useCallback(async () => {
-    if (!businessId || !database) {
-      setLogs([])
-      return
-    }
-    setIsLoading(true)
-    const rows = await database
-      .get<ActivityLogModel>('activity_logs')
-      .query(Q.where('business_id', businessId), Q.sortBy('created_at', Q.desc))
-      .fetch()
-    setLogs(rows.map(mapLog))
-    setIsLoading(false)
-  }, [businessId])
+  const prevBusinessIdRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
-    void refetch()
-  }, [refetch])
+    if (!businessId || !database) {
+      setLogs([])
+      setIsLoading(false)
+      prevBusinessIdRef.current = undefined
+      return
+    }
+
+    const businessChanged = prevBusinessIdRef.current !== businessId
+    prevBusinessIdRef.current = businessId
+    if (businessChanged) setIsLoading(true)
+
+    const subscription = database
+      .get<ActivityLogModel>('activity_logs')
+      .query(Q.where('business_id', businessId), Q.sortBy('created_at', Q.desc))
+      .observe()
+      .subscribe({
+        next: (records) => {
+          setLogs(records.map(mapLog))
+          setIsLoading(false)
+        },
+        error: () => {
+          setIsLoading(false)
+        },
+      })
+
+    return () => subscription.unsubscribe()
+  }, [businessId])
+
+  const refetch = useCallback(() => {
+    /* observe() handles updates; kept for call-site compatibility */
+  }, [])
 
   return { logs, isLoading, refetch }
 }

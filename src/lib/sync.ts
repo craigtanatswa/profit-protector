@@ -1157,6 +1157,47 @@ async function syncPaymentRecords(
 // Activity Logs sync (immutable)
 // ---------------------------------------------------------------------------
 
+const ACTIVITY_LOGS_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
+
+/** Fast path: write a remote activity_logs row into WatermelonDB (e.g. owner Realtime). */
+export async function mergeRemoteActivityLogIntoWatermelon(
+  remote: Record<string, unknown>,
+): Promise<boolean> {
+  if (!database) return false
+  const db = database
+  const id = String(remote.id ?? '')
+  if (!id) return false
+
+  try {
+    await db.get<ActivityLog>('activity_logs').find(id)
+    return false
+  } catch {
+    /* create below */
+  }
+
+  await db.write(async () => {
+    await db.get<ActivityLog>('activity_logs').create((r) => {
+      r._raw.id = id
+      r.businessId = String(remote.business_id ?? '')
+      r.actorId = String(remote.actor_id ?? '')
+      r.actorName = String(remote.actor_name ?? '')
+      r.actorRole = String(remote.actor_role ?? '')
+      r.action = String(remote.action ?? '')
+      r.entityType = String(remote.entity_type ?? '')
+      r.entityId = remote.entity_id != null ? String(remote.entity_id) : ''
+      r.entityName = remote.entity_name != null ? String(remote.entity_name) : ''
+      r.details =
+        remote.details != null
+          ? typeof remote.details === 'string'
+            ? remote.details
+            : JSON.stringify(remote.details)
+          : ''
+      wmRaw(r).created_at = new Date(String(remote.created_at ?? Date.now())).getTime()
+    })
+  })
+  return true
+}
+
 async function syncActivityLogs(
   businessId: string,
   lastSyncedAt: number,
@@ -1190,10 +1231,12 @@ async function syncActivityLogs(
       if (!error) pushed = localRecords.length
     }
 
+    const logsLookbackAt =
+      lastSyncedAt > 0 ? Math.max(0, lastSyncedAt - ACTIVITY_LOGS_LOOKBACK_MS) : 0
     const logsPull = withPullTimeFilter(
       supabase.from('activity_logs').select('*').eq('business_id', businessId),
       'created_at',
-      lastSyncedAt,
+      logsLookbackAt,
     )
     const { data: remoteRecords, error: pullError } = await logsPull.order('created_at', {
       ascending: true,

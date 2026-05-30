@@ -4,7 +4,7 @@ import { AppState } from 'react-native'
 import { useAuthStore } from '../stores/authStore'
 import { supabase } from '../lib/supabase'
 import { notifyOwnerStaffSale, notifyOwnerStaffStockAdjustment, notifyOwnerStaffStockReceived } from '../lib/notifications'
-import { refreshOwnerProductsForRemoteSale } from '../lib/sync'
+import { mergeRemoteActivityLogIntoWatermelon, refreshOwnerProductsForRemoteSale } from '../lib/sync'
 
 import { FOREGROUND_INVENTORY_POLL_MS } from '../lib/syncPoll'
 
@@ -113,7 +113,8 @@ export function useOwnerSalesRealtimeSync() {
         },
         (payload: { new: Record<string, unknown> }) => {
           void (async () => {
-            await triggerSync(businessId)
+            await mergeRemoteActivityLogIntoWatermelon(payload.new)
+            void triggerSync(businessId)
 
             if (payload.new.actor_role !== 'shopkeeper') return
 

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
+import { useFocusEffect } from '@react-navigation/native'
 import { useRouter } from 'expo-router'
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import {
   FlatList,
   StyleSheet,
@@ -27,6 +28,14 @@ export default function ActivityLogScreen() {
   const { logs } = useActivityLog(business?.id ?? '')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  const triggerSync = useAuthStore((s) => s.triggerSync)
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!business?.id) return
+      void triggerSync(business.id)
+    }, [business?.id, triggerSync]),
+  )
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
