@@ -38,7 +38,22 @@ const STOCK_DANGER_BG = '#FCEBEB'
 
 export function activityLogTitle(log: ActivityLog): string {
   const label = ACTION_LABELS[log.action] ?? log.action.replace(/_/g, ' ')
-  return log.entityName ? `${label}: ${log.entityName}` : label
+  if (log.entityName) return `${label}: ${log.entityName}`
+  return label
+}
+
+function isStaffInventoryLog(log: ActivityLog): boolean {
+  return (
+    log.actorRole === 'shopkeeper' &&
+    (log.action === 'stock_adjusted' || log.action === 'stock_received')
+  )
+}
+
+export function staffDisplayName(log: ActivityLog): string {
+  const fromDetails =
+    log.details?.staffName != null ? String(log.details.staffName).trim() : ''
+  const name = (log.actorName?.trim() || fromDetails).trim()
+  return name.length > 0 ? name : 'Staff member'
 }
 
 function timeLabel(ms: number) {
@@ -117,6 +132,7 @@ function stockIconInfo(log: ActivityLog): {
 
 export function ActivityLogEntry({ log }: { log: ActivityLog }) {
   const isStaff = log.actorRole === 'shopkeeper'
+  const staffInventory = isStaffInventoryLog(log)
   const qtyMeta = stockQtyMeta(log)
   const reasonLabel = stockReasonLabel(log)
   const stockIcon = stockIconInfo(log)
@@ -146,8 +162,20 @@ export function ActivityLogEntry({ log }: { log: ActivityLog }) {
         <View style={styles.content}>
           <View style={styles.titleRow}>
             <Text style={styles.title}>{activityLogTitle(log)}</Text>
-            <Badge label={isStaff ? `Staff · ${log.actorName}` : 'Owner'} variant={isStaff ? 'warning' : 'info'} size="sm" />
+            {!staffInventory ? (
+              <Badge
+                label={isStaff ? `Staff · ${log.actorName}` : 'Owner'}
+                variant={isStaff ? 'warning' : 'info'}
+                size="sm"
+              />
+            ) : null}
           </View>
+          {staffInventory ? (
+            <View style={styles.staffRow}>
+              <Ionicons name="person-circle-outline" size={14} color="#B45309" />
+              <Text style={styles.staffName}>{staffDisplayName(log)}</Text>
+            </View>
+          ) : null}
           {qtyMeta ? (
             <View style={styles.qtyRow}>
               <Text style={[styles.qtyChange, { color: qtyMeta.color }]}>{qtyMeta.text}</Text>
@@ -177,6 +205,8 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   title: { flex: 1, fontSize: 14, fontWeight: '600', color: '#0D1B3E' },
+  staffRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  staffName: { fontSize: 13, fontWeight: '600', color: '#B45309' },
   qtyRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   qtyChange: { fontSize: 14, fontWeight: '700' },
   reason: { fontSize: 12, color: '#5A6A8A', flexShrink: 1 },

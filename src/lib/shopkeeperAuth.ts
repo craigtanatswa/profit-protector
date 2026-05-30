@@ -259,7 +259,7 @@ export type ShopkeeperStockAdjustmentPushPayload = {
     entity_type: 'stock_movement'
     entity_id: string
     entity_name: string
-    details: { qtyChange: number; reason: string; unit?: string }
+    details: { qtyChange: number; reason: string; unit?: string; staffName?: string }
     created_at: string
   }
 }
@@ -286,7 +286,7 @@ export type ShopkeeperStockReceivedPushPayload = {
     entity_type: 'stock_movement'
     entity_id: string
     entity_name: string
-    details: { qty: number; unit?: string; supplier?: string }
+    details: { qty: number; unit?: string; supplier?: string; staffName?: string }
     created_at: string
   }
 }
@@ -526,7 +526,7 @@ async function buildShopkeeperStockAdjustmentPayloadFromLocal(
     const movementMs =
       movement.createdAt instanceof Date ? movement.createdAt.getTime() : Date.now()
 
-    let details: { qtyChange: number; reason: string; unit?: string } = {
+    let details: { qtyChange: number; reason: string; unit?: string; staffName?: string } = {
       qtyChange: movement.qtyChange,
       reason: movement.reason ?? '',
       unit: product.unit,
@@ -546,6 +546,8 @@ async function buildShopkeeperStockAdjustmentPayloadFromLocal(
               qtyChange: Number(parsed.qtyChange ?? movement.qtyChange),
               reason: String(parsed.reason ?? movement.reason),
               unit: parsed.unit != null ? String(parsed.unit) : product.unit,
+              staffName:
+                parsed.staffName != null ? String(parsed.staffName) : undefined,
             }
           } catch {
             /* keep movement-derived details */
@@ -603,7 +605,7 @@ async function buildShopkeeperStockReceivedPayloadFromLocal(
     const movementMs =
       movement.createdAt instanceof Date ? movement.createdAt.getTime() : Date.now()
 
-    let details: { qty: number; unit?: string; supplier?: string } = {
+    let details: { qty: number; unit?: string; supplier?: string; staffName?: string } = {
       qty: movement.qtyChange,
       unit: product.unit,
       supplier: movement.supplier || undefined,
@@ -635,6 +637,8 @@ async function buildShopkeeperStockReceivedPayloadFromLocal(
                 parsed.supplier != null
                   ? String(parsed.supplier)
                   : movement.supplier || undefined,
+              staffName:
+                parsed.staffName != null ? String(parsed.staffName) : undefined,
             }
           } catch {
             /* keep movement-derived details */

@@ -332,12 +332,23 @@ export default function AdjustStockScreen() {
           })
       })
 
+      const staffName =
+        activeRole === 'shopkeeper'
+          ? useAuthStore.getState().shopkeeperSession?.shopkeeper.fullName?.trim() || 'Staff'
+          : undefined
+      const adjustmentDetails = {
+        qtyChange,
+        reason: reasonString,
+        unit: selectedProduct.unit,
+        ...(staffName ? { staffName } : {}),
+      }
+
       const activityLogId = await logActivity({
         action: 'stock_adjusted',
         entityType: 'stock_movement',
         entityId: selectedProduct.id,
         entityName: selectedProduct.name,
-        details: { qtyChange, reason: reasonString, unit: selectedProduct.unit },
+        details: adjustmentDetails,
       })
 
       if (activeRole === 'owner') {
@@ -371,7 +382,7 @@ export default function AdjustStockScreen() {
             entity_type: 'stock_movement' as const,
             entity_id: selectedProduct.id,
             entity_name: selectedProduct.name,
-            details: { qtyChange, reason: reasonString, unit: selectedProduct.unit },
+            details: adjustmentDetails,
             created_at: new Date(adjustmentCreatedMs).toISOString(),
           },
         }

@@ -12,7 +12,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { ActivityLogEntry, activityLogTitle } from '../../../src/components/activity/ActivityLogEntry'
+import { ActivityLogEntry, activityLogTitle, staffDisplayName } from '../../../src/components/activity/ActivityLogEntry'
 import { ScreenHeader } from '../../../src/components/layout'
 import { EmptyState } from '../../../src/components/ui'
 import { useActivityLog } from '../../../src/hooks/useActivityLog'
@@ -46,9 +46,11 @@ export default function ActivityLogScreen() {
       return [
         activityLogTitle(log),
         log.actorName,
+        staffDisplayName(log),
         log.entityName ?? '',
         log.action,
         log.entityType,
+        log.details?.staffName != null ? String(log.details.staffName) : '',
       ].some((value) => value.toLowerCase().includes(needle))
     })
   }, [filter, logs, query])

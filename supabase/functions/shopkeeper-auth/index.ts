@@ -639,10 +639,11 @@ serve(async (req) => {
 
       const entityName = String(activityRaw.entity_name ?? movementRow.product_name_snapshot)
       const detailsRaw = activityRaw.details
-      const details =
+      const baseDetails =
         detailsRaw != null && typeof detailsRaw === 'object' && !Array.isArray(detailsRaw)
-          ? detailsRaw
+          ? (detailsRaw as Record<string, unknown>)
           : { qtyChange, reason: movementRow.reason ?? '' }
+      const details = { ...baseDetails, staffName }
 
       const { error: logErr } = await supabase.from('activity_logs').upsert(
         {
@@ -801,10 +802,11 @@ serve(async (req) => {
 
       const entityName = String(activityRaw.entity_name ?? movementRow.product_name_snapshot)
       const detailsRaw = activityRaw.details
-      const details =
+      const baseDetails =
         detailsRaw != null && typeof detailsRaw === 'object' && !Array.isArray(detailsRaw)
-          ? detailsRaw
+          ? (detailsRaw as Record<string, unknown>)
           : { qty: qtyChange }
+      const details = { ...baseDetails, staffName }
 
       const { error: logErr } = await supabase.from('activity_logs').upsert(
         {

@@ -236,16 +236,23 @@ export default function PurchaseScreen() {
         })
       })
 
+      const staffName =
+        activeRole === 'shopkeeper'
+          ? useAuthStore.getState().shopkeeperSession?.shopkeeper.fullName?.trim() || 'Staff'
+          : undefined
+      const receivedDetails = {
+        qty,
+        unit: productRecord.unit,
+        ...(supplierName ? { supplier: supplierName } : {}),
+        ...(staffName ? { staffName } : {}),
+      }
+
       const activityLogId = await logActivity({
         action: 'stock_received',
         entityType: 'stock_movement',
         entityId: values.productId,
         entityName: productRecord.name,
-        details: {
-          qty,
-          unit: productRecord.unit,
-          ...(supplierName ? { supplier: supplierName } : {}),
-        },
+        details: receivedDetails,
       })
 
       if (activeRole === 'owner') {
@@ -288,11 +295,7 @@ export default function PurchaseScreen() {
             entity_type: 'stock_movement' as const,
             entity_id: values.productId,
             entity_name: productRecord.name,
-            details: {
-              qty,
-              unit: productRecord.unit,
-              ...(supplierName ? { supplier: supplierName } : {}),
-            },
+            details: receivedDetails,
             created_at: new Date(purchaseCreatedMs).toISOString(),
           },
         }
