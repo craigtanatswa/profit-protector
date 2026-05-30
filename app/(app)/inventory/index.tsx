@@ -273,7 +273,7 @@ export default function InventoryScreen() {
         }}
       />
 
-      {/* Action row: sort + receive stock + adjust */}
+      {/* Action row: sort + receive stock + add product + adjust */}
       <View style={styles.actionRow}>
         <TouchableOpacity
           style={styles.actionRowSort}
@@ -293,6 +293,17 @@ export default function InventoryScreen() {
             <Ionicons name="arrow-down-circle-outline" size={16} color="#0047AB" style={{ marginRight: 6 }} />
             <Text style={styles.receiveStockText}>Receive Stock</Text>
           </TouchableOpacity>
+
+          {!isShopkeeper ? (
+            <TouchableOpacity
+              style={styles.addProductBtn}
+              onPress={navigateToAdd}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="cube-outline" size={16} color="#0047AB" style={{ marginRight: 6 }} />
+              <Text style={styles.addProductText}>Add Product</Text>
+            </TouchableOpacity>
+          ) : null}
 
           <TouchableOpacity
             style={styles.adjustBtn}
@@ -476,6 +487,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   receiveStockText: {
+    fontSize: 13,
+    color: '#0047AB',
+    fontWeight: '600',
+  },
+  addProductBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E6EEFF',
+    borderWidth: 1,
+    borderColor: '#0047AB',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  addProductText: {
     fontSize: 13,
     color: '#0047AB',
     fontWeight: '600',
