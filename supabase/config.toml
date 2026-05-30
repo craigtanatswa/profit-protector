@@ -75,3 +75,13 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/paynow-webhook/deno.json"
 entrypoint = "./functions/paynow-webhook/index.ts"
+
+[functions.active-session]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/active-session/index.ts"
+
+[functions.shopkeeper-auth]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/shopkeeper-auth/index.ts"

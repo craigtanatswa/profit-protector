@@ -10,6 +10,46 @@ import { corsHeaders, jsonResponse } from '../_shared/cors.ts'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
+type SupabaseAdmin = ReturnType<typeof createClient>
+
+async function upsertOwnerSession(
+  admin: SupabaseAdmin,
+  userId: string,
+  deviceId: string,
+  deviceName: string | null,
+  revokeOtherDevices: boolean,
+): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
+  const sessionId = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  const { error } = await admin.from('owner_active_sessions').upsert(
+    {
+      user_id: userId,
+      device_id: deviceId,
+      device_name: deviceName,
+      session_id: sessionId,
+      last_seen_at: now,
+    },
+    { onConflict: 'user_id' },
+  )
+
+  if (error) {
+    console.error(JSON.stringify({ tag: 'active_session_upsert', userId, error: String(error) }))
+    return { ok: false, error: 'Failed to register active session' }
+  }
+
+  if (revokeOtherDevices) {
+    const { error: signOutErr } = await admin.auth.admin.signOut(userId, 'others')
+    if (signOutErr) {
+      console.warn(
+        JSON.stringify({ tag: 'active_session_signout_others', userId, error: String(signOutErr) }),
+      )
+    }
+  }
+
+  return { ok: true, sessionId }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -54,27 +94,51 @@ serve(async (req) => {
       return jsonResponse({ error: 'deviceId is required' }, 400)
     }
 
-    const sessionId = crypto.randomUUID()
     const deviceName = typeof body.deviceName === 'string' ? body.deviceName : null
-    const now = new Date().toISOString()
-
-    const { error } = await admin.from('owner_active_sessions').upsert(
-      {
-        user_id: userId,
-        device_id: deviceId,
-        device_name: deviceName,
-        session_id: sessionId,
-        last_seen_at: now,
-      },
-      { onConflict: 'user_id' },
-    )
-
-    if (error) {
-      console.error(JSON.stringify({ tag: 'active_session_register', userId, error: String(error) }))
-      return jsonResponse({ error: 'Failed to register active session' }, 500)
+    const result = await upsertOwnerSession(admin, userId, deviceId, deviceName, true)
+    if (!result.ok) {
+      return jsonResponse({ error: result.error }, 500)
     }
 
-    return jsonResponse({ ok: true, sessionId })
+    return jsonResponse({ ok: true, sessionId: result.sessionId })
+  }
+
+  if (action === 'sync') {
+    const deviceId = typeof body.deviceId === 'string' ? body.deviceId.trim() : ''
+    if (!deviceId) {
+      return jsonResponse({ error: 'deviceId is required' }, 400)
+    }
+
+    const { data, error } = await admin
+      .from('owner_active_sessions')
+      .select('session_id, device_id')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (error) {
+      console.error(JSON.stringify({ tag: 'active_session_sync', userId, error: String(error) }))
+      return jsonResponse({ error: 'Failed to sync session' }, 500)
+    }
+
+    if (!data) {
+      const deviceName = typeof body.deviceName === 'string' ? body.deviceName : null
+      const result = await upsertOwnerSession(admin, userId, deviceId, deviceName, false)
+      if (!result.ok) {
+        return jsonResponse({ error: result.error }, 500)
+      }
+      return jsonResponse({ ok: true, sessionId: result.sessionId })
+    }
+
+    if (data.device_id !== deviceId) {
+      return jsonResponse({ ok: false, reason: 'superseded' })
+    }
+
+    await admin
+      .from('owner_active_sessions')
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq('user_id', userId)
+
+    return jsonResponse({ ok: true, sessionId: data.session_id })
   }
 
   if (action === 'validate') {

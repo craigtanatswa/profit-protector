@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons'
 
 import { Button, Card, Divider, Input } from '../../src/components/ui'
 import { BrandLogo, KeyboardAvoidingWrapper } from '../../src/components/layout'
+import { registerOwnerActiveSession } from '../../src/lib/activeSession'
 import { resolveEmailForSignIn } from '../../src/lib/authLogin'
 import {
   businessInfoFromRemoteRow,
@@ -274,6 +275,8 @@ export default function LoginScreen() {
         setLoading(false)
         return
       }
+
+      await registerOwnerActiveSession()
 
       setUser(user)
       setBusiness(businessInfoFromRemoteRow(biz))
