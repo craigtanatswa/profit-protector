@@ -122,6 +122,15 @@ export async function setupAndroidChannels(): Promise<void> {
     sound: 'default',
     description: 'When a shopkeeper records a sale',
   })
+
+  await Notifications.setNotificationChannelAsync('staff-inventory', {
+    name: 'Staff inventory',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 200, 120, 200],
+    lightColor: '#B45309',
+    sound: 'default',
+    description: 'When a shopkeeper adjusts stock levels',
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +247,46 @@ export async function notifyOwnerStaffSale(params: {
       priority: Notifications.AndroidNotificationPriority.HIGH,
       color: '#0047AB',
       ...(Platform.OS === 'android' ? { channelId: 'staff-sales' } : {}),
+    },
+  })
+}
+
+/** In-app banner when the owner app receives a staff stock adjustment via Realtime. */
+export async function notifyOwnerStaffStockAdjustment(params: {
+  businessId: string
+  staffLabel: string
+  productName: string
+  qtyChange: number
+  unit?: string
+}): Promise<void> {
+  await setupAndroidChannels()
+
+  const { status } = await Notifications.getPermissionsAsync()
+  if (status !== 'granted') return
+
+  const unit = params.unit?.trim() || 'units'
+  const qtyLabel =
+    params.qtyChange > 0
+      ? `+${params.qtyChange} ${unit}`
+      : params.qtyChange < 0
+        ? `−${Math.abs(params.qtyChange)} ${unit}`
+        : `0 ${unit}`
+  const title =
+    params.qtyChange >= 0 ? '📦 Staff Stock Added' : '📦 Staff Stock Removed'
+  const body = `${params.staffLabel} adjusted ${params.productName} (${qtyLabel})`
+
+  await deliverBizLocalNotification({
+    content: {
+      title,
+      body,
+      data: {
+        type: 'staff_stock_adjustment',
+        screen: 'activity_log',
+      },
+      sound: 'default',
+      priority: Notifications.AndroidNotificationPriority.HIGH,
+      color: params.qtyChange >= 0 ? '#0A7A4B' : '#C0152A',
+      ...(Platform.OS === 'android' ? { channelId: 'staff-inventory' } : {}),
     },
   })
 }
@@ -367,12 +416,21 @@ function shouldShowStaffSaleOsAlert(
   return AppState.currentState !== 'active'
 }
 
+function shouldShowStaffStockAdjustmentOsAlert(
+  data: Record<string, unknown> | undefined,
+): boolean {
+  if (data?.type !== 'staff_stock_adjustment') return shouldScheduleOsLocalBusinessAlerts()
+  return AppState.currentState !== 'active'
+}
+
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const raw = notification.request.content
       .data as Record<string, unknown> | undefined
     const showOs =
-      isLowStockNotificationData(raw) || shouldShowStaffSaleOsAlert(raw)
+      isLowStockNotificationData(raw) ||
+      shouldShowStaffSaleOsAlert(raw) ||
+      shouldShowStaffStockAdjustmentOsAlert(raw)
     return {
       shouldShowAlert: showOs,
       shouldPlaySound: showOs,
@@ -397,6 +455,8 @@ export function setupNotificationHandlers(): () => void {
         router.push('/(app)/inventory')
       } else if (data.screen === 'sales') {
         router.push('/(app)/sales')
+      } else if (data.screen === 'activity_log') {
+        router.push('/(app)/settings/activity-log')
       }
     },
   )

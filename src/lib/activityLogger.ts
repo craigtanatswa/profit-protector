@@ -12,10 +12,10 @@ export async function logActivity(params: {
   entityId?: string
   entityName?: string
   details?: Record<string, unknown>
-}): Promise<void> {
+}): Promise<string | undefined> {
   try {
     const { business, activeRole, shopkeeperSession } = useAuthStore.getState()
-    if (!business) return
+    if (!business) return undefined
 
     const isShopkeeper = activeRole === 'shopkeeper'
     const actorId = isShopkeeper
@@ -48,7 +48,7 @@ export async function logActivity(params: {
       })
     }
 
-    if (activeRole !== 'owner') return
+    if (activeRole !== 'owner') return logId
 
     supabase
       .from('activity_logs')
@@ -68,7 +68,10 @@ export async function logActivity(params: {
       .then(({ error }) => {
         if (error) console.warn('Log sync:', error.message)
       })
+
+    return logId
   } catch (err) {
     console.warn('Activity log error:', err)
+    return undefined
   }
 }

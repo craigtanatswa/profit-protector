@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native'
 import { z } from 'zod'
+import * as Crypto from 'expo-crypto'
 
 import { KeyboardAvoidingWrapper, ScreenHeader } from '../../../src/components/layout'
 import { ProductPickerModal } from '../../../src/components/inventory/ProductPickerModal'
@@ -29,8 +30,8 @@ import { useAuthStore } from '../../../src/stores/authStore'
 import { getProductById } from '../../../src/hooks/useProducts'
 import type { AdjustmentReason, Product } from '../../../src/types'
 import {
-  pushShopkeeperProductPatchesRemote,
-  enqueuePendingShopkeeperProductSync,
+  pushShopkeeperStockAdjustmentRemote,
+  enqueuePendingShopkeeperStockAdjustment,
   flushPendingShopkeeperOutbound,
 } from '../../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../../src/lib/activityLogger'
@@ -303,6 +304,8 @@ export default function AdjustStockScreen() {
         : values.reason
 
       const updatedMs = Date.now()
+      const movementId = Crypto.randomUUID()
+      const adjustmentCreatedMs = values.adjustmentDate || Date.now()
 
       const productRecord = await database
         .get<ProductModel>('products')
@@ -317,6 +320,7 @@ export default function AdjustStockScreen() {
         await database!
           .get<StockMovementModel>('stock_movements')
           .create((m) => {
+            m._raw.id = movementId
             m.businessId = business.id
             m.productId = selectedProduct.id
             m.productNameSnapshot = selectedProduct.name
@@ -324,16 +328,16 @@ export default function AdjustStockScreen() {
             m.qtyChange = qtyChange
             m.reason = reasonString
             m.supplier = ''
-            wmRaw(m).created_at = values.adjustmentDate || Date.now()
+            wmRaw(m).created_at = adjustmentCreatedMs
           })
       })
 
-      await logActivity({
+      const activityLogId = await logActivity({
         action: 'stock_adjusted',
         entityType: 'stock_movement',
         entityId: selectedProduct.id,
         entityName: selectedProduct.name,
-        details: { qtyChange, reason: reasonString },
+        details: { qtyChange, reason: reasonString, unit: selectedProduct.unit },
       })
 
       if (activeRole === 'owner') {
@@ -344,19 +348,51 @@ export default function AdjustStockScreen() {
       } else if (activeRole === 'shopkeeper') {
         const tok = useAuthStore.getState().shopkeeperSession?.sessionToken
         const skId = useAuthStore.getState().shopkeeperSession?.shopkeeper.id
-        const patch = {
-          product_id: values.productId,
-          stock_qty: newStockQty,
-          updated_at: new Date(updatedMs).toISOString(),
+        const adjustmentPayload = {
+          product_patch: {
+            product_id: values.productId,
+            stock_qty: newStockQty,
+            updated_at: new Date(updatedMs).toISOString(),
+          },
+          stock_movement: {
+            id: movementId,
+            business_id: business.id,
+            product_id: selectedProduct.id,
+            product_name_snapshot: selectedProduct.name,
+            action: 'adjustment',
+            qty_change: qtyChange,
+            reason: reasonString,
+            supplier: '',
+            created_at: new Date(adjustmentCreatedMs).toISOString(),
+          },
+          activity_log: {
+            id: activityLogId ?? Crypto.randomUUID(),
+            action: 'stock_adjusted' as const,
+            entity_type: 'stock_movement' as const,
+            entity_id: selectedProduct.id,
+            entity_name: selectedProduct.name,
+            details: { qtyChange, reason: reasonString, unit: selectedProduct.unit },
+            created_at: new Date(adjustmentCreatedMs).toISOString(),
+          },
         }
         void (async () => {
           if (!tok || !skId) return
           try {
             await flushPendingShopkeeperOutbound(tok, business.id, skId)
-            const ok = await pushShopkeeperProductPatchesRemote(tok, [patch])
-            if (!ok) await enqueuePendingShopkeeperProductSync(business.id, [values.productId])
+            const ok = await pushShopkeeperStockAdjustmentRemote(tok, adjustmentPayload)
+            if (!ok) {
+              await enqueuePendingShopkeeperStockAdjustment(
+                business.id,
+                movementId,
+                adjustmentPayload.activity_log.id,
+              )
+            }
           } catch {
-            await enqueuePendingShopkeeperProductSync(business.id, [values.productId])
+            await enqueuePendingShopkeeperStockAdjustment(
+              business.id,
+              movementId,
+              adjustmentPayload.activity_log.id,
+            )
           }
         })()
       }

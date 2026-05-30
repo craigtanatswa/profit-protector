@@ -243,13 +243,20 @@ export default function AppLayout() {
       const navigateHref =
         screen === 'sales' || nType === 'staff_sale'
           ? '/(app)/sales'
+          : screen === 'activity_log' || nType === 'staff_stock_adjustment'
+            ? '/(app)/settings/activity-log'
           : screen === 'inventory'
             ? '/(app)/inventory'
             : null
       showBanner({
         title: payload.title || 'Alert',
         message: payload.body,
-        type: nType === 'out_of_stock' ? 'danger' : 'warning',
+        type:
+          nType === 'out_of_stock'
+            ? 'danger'
+            : nType === 'staff_stock_adjustment'
+              ? 'warning'
+              : 'warning',
         productId: d?.productId ?? null,
         navigateHref,
       })
