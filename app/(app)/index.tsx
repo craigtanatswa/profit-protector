@@ -489,6 +489,16 @@ function QuickActionsSection({ isShopkeeper }: { isShopkeeper: boolean }) {
           labelColor="#FFFFFF"
           onPress={() => router.push('/(app)/sales/new' as never)}
         />
+        {!isShopkeeper ? (
+          <QuickAction
+            backgroundColor="#FFFFFF"
+            iconName="cube-outline"
+            iconColor="#5A6A8A"
+            label="Add Product"
+            labelColor="#5A6A8A"
+            onPress={() => router.push('/(app)/inventory/add' as never)}
+          />
+        ) : null}
         <QuickAction
           backgroundColor="#FFFFFF"
           iconName="arrow-down-circle"
@@ -496,14 +506,6 @@ function QuickActionsSection({ isShopkeeper }: { isShopkeeper: boolean }) {
           label="Add Stock"
           labelColor="#5A6A8A"
           onPress={() => router.push('/(app)/inventory/purchase')}
-        />
-        <QuickAction
-          backgroundColor="#FFFFFF"
-          iconName="swap-vertical"
-          iconColor="#5A6A8A"
-          label="Adjust"
-          labelColor="#5A6A8A"
-          onPress={() => router.push('/(app)/inventory/adjust')}
         />
         {!isShopkeeper ? (
           <QuickAction
