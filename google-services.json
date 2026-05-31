@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "48106278246",
+    "project_id": "profit-protector-777",
+    "storage_bucket": "profit-protector-777.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:48106278246:android:3fd57a0aed21e9ab30cca7",
+        "android_client_info": {
+          "package_name": "com.craigtanatswa.profitprotector"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgexr7S0zhBzhSWNy3trQV-ocavVmLpeg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
