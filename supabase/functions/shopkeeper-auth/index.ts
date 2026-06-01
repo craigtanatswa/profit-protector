@@ -20,6 +20,17 @@ function monthWindowValid(startIso: string, endIso: string): boolean {
   return true
 }
 
+/** Postgres UUID columns reject "" — use null instead (matches owner sync). */
+function nullableTextId(value: unknown, fallback?: unknown): string | null {
+  const primary = value != null ? String(value).trim() : ''
+  if (primary.length > 0) return primary
+  if (fallback != null) {
+    const fb = String(fallback).trim()
+    if (fb.length > 0) return fb
+  }
+  return null
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -322,6 +333,10 @@ serve(async (req) => {
     }
 
     if (action === 'push_sale') {
+      console.log('[staff-sale-notify] server.push_sale.start', {
+        hasActivityLog: body.activity_log != null,
+      })
+
       const payload = await verifyToken(sessionToken)
       if (!payload) {
         return error('Session expired. Please log in again.')
@@ -359,46 +374,78 @@ serve(async (req) => {
         return error('Missing sale payload.')
       }
 
-      if (String(sale.business_id) !== bizId) return error('Invalid sale.')
+      const canonicalShopkeeperId = String(shopkeeper.id ?? '').trim()
+      const canonicalBizId = String(shopkeeper.business_id ?? '').trim()
+      if (!canonicalShopkeeperId || !canonicalBizId) {
+        return error('[push_sale:sales] shopkeeper record missing id or business_id')
+      }
+
+      const saleBusinessId = String(sale.business_id ?? '').trim()
+      if (saleBusinessId !== canonicalBizId) return error('Invalid sale.')
+
+      const saleId = String(sale.id ?? '').trim()
+      if (!saleId) return error('[push_sale:sales] missing sale id')
 
       const row = {
-        id: String(sale.id),
-        business_id: bizId,
+        id: saleId,
+        business_id: canonicalBizId,
         total_cents: Number(sale.total_cents),
         discount_cents: Number(sale.discount_cents),
         payment_method: String(sale.payment_method),
         receipt_number: String(sale.receipt_number),
-        note: sale.note == null ? null : String(sale.note),
+        note:
+          sale.note != null && String(sale.note).trim().length > 0
+            ? String(sale.note).trim()
+            : null,
         created_at: String(sale.created_at),
-        created_by_shopkeeper_id: shopkeeperId,
+        // Must be set explicitly — a DB trigger fires on INSERT when this is NULL and reads
+        // from a session context variable that returns "" in the service role context, which
+        // fails the uuid cast. Passing the validated shopkeeper UUID avoids the trigger path.
+        created_by_shopkeeper_id: canonicalShopkeeperId,
       }
 
-      const { error: upSale } = await supabase.from('sales').upsert(row, {
+      let { error: upSale } = await supabase.from('sales').upsert(row, {
         onConflict: 'id',
       })
-      if (upSale) return error(upSale.message)
+      if (upSale) {
+        console.warn('[staff-sale-notify] server.sales_upsert.error', {
+          message: upSale.message,
+          code: (upSale as Record<string, unknown>).code ?? null,
+          details: (upSale as Record<string, unknown>).details ?? null,
+          hint: (upSale as Record<string, unknown>).hint ?? null,
+          rowId: row.id,
+          rowIdLength: row.id.length,
+        })
+        return error(`[push_sale:sales] ${upSale.message}`)
+      }
 
       const itemsPayload = sale_items.map((it) => ({
         id: String(it.id),
         sale_id: String(it.sale_id),
-        product_id: String(it.product_id),
+        product_id: String(it.product_id ?? '').trim(),
         product_name_snapshot: String(it.product_name_snapshot),
         qty: Number(it.qty),
         unit_price_cents: Number(it.unit_price_cents),
         cost_price_cents: Number(it.cost_price_cents),
       }))
 
+      for (const it of itemsPayload) {
+        if (!it.product_id) {
+          return error('[push_sale:sale_items] line item missing product_id')
+        }
+      }
+
       const { error: upItems } = await supabase
         .from('sale_items')
         .upsert(itemsPayload, { onConflict: 'id' })
-      if (upItems) return error(upItems.message)
+      if (upItems) return error(`[push_sale:sale_items] ${upItems.message}`)
 
       const movementsRaw = body.stock_movements as Record<string, unknown>[] | undefined
       if (Array.isArray(movementsRaw) && movementsRaw.length > 0) {
         const movRows = movementsRaw
           .map((m) => ({
             id: String(m.id ?? ''),
-            business_id: bizId,
+            business_id: canonicalBizId,
             product_id: String(m.product_id ?? ''),
             product_name_snapshot: String(m.product_name_snapshot ?? ''),
             action: String(m.action ?? 'sale'),
@@ -414,8 +461,80 @@ serve(async (req) => {
           const { error: movErr } = await supabase
             .from('stock_movements')
             .upsert(movRows, { onConflict: 'id' })
-          if (movErr) return error(movErr.message)
+          if (movErr) return error(`[push_sale:stock_movements] ${movErr.message}`)
         }
+      }
+
+      const staffLabel =
+        typeof shopkeeper.full_name === 'string' && shopkeeper.full_name.trim().length > 0
+          ? shopkeeper.full_name.trim()
+          : 'Staff'
+
+      // Upsert activity log — triggers owner Realtime in-app banner (same path as stock events)
+      const activityLogRaw = body.activity_log as Record<string, unknown> | undefined
+      const activityLogId =
+        activityLogRaw != null && String(activityLogRaw.id ?? '').length > 0
+          ? String(activityLogRaw.id)
+          : `${row.id}_log`
+
+      const { data: existingActivityLog } = await supabase
+        .from('activity_logs')
+        .select('id')
+        .eq('id', activityLogId)
+        .maybeSingle()
+      const isNewActivityLog = !existingActivityLog
+
+      console.log('[staff-sale-notify] server.activity_log.prepare', {
+        saleId: row.id,
+        activityLogId,
+        isNewActivityLog,
+        hasClientActivityLog: activityLogRaw != null,
+      })
+
+      const detailsBase =
+        activityLogRaw?.details != null &&
+        typeof activityLogRaw.details === 'object' &&
+        !Array.isArray(activityLogRaw.details)
+          ? (activityLogRaw.details as Record<string, unknown>)
+          : {
+              totalCents: row.total_cents,
+              itemCount: itemsPayload.length,
+              paymentMethod: row.payment_method,
+              receiptNumber: row.receipt_number,
+            }
+      const details = {
+        ...detailsBase,
+        staffName: staffLabel,
+        saleId: row.id,
+        receiptNumber: row.receipt_number,
+      }
+
+      const { error: logErr } = await supabase.from('activity_logs').upsert(
+        {
+          id: activityLogId,
+          business_id: canonicalBizId,
+          actor_id: canonicalShopkeeperId,
+          actor_name: staffLabel,
+          actor_role: 'shopkeeper',
+          action: 'sale_completed',
+          entity_type: 'sale',
+          entity_id: nullableTextId(activityLogRaw?.entity_id, row.id),
+          entity_name: String(activityLogRaw?.entity_name ?? row.receipt_number),
+          details,
+          created_at: String(activityLogRaw?.created_at ?? row.created_at),
+        },
+        { onConflict: 'id' },
+      )
+      if (logErr) {
+        console.warn('[staff-sale-notify] server.activity_log.upsert_failed', {
+          activityLogId,
+          message: logErr.message,
+        })
+      } else {
+        console.log('[staff-sale-notify] server.activity_log.upsert_ok', {
+          activityLogId,
+          isNewActivityLog,
+        })
       }
 
       const { error: appliedErr } = await supabase
@@ -425,7 +544,7 @@ serve(async (req) => {
       let stockAlreadyApplied = false
       if (appliedErr) {
         if (appliedErr.code === '23505') stockAlreadyApplied = true
-        else return error(appliedErr.message)
+        else return error(`[push_sale:sale_inventory_applied] ${appliedErr.message}`)
       }
 
       if (!stockAlreadyApplied) {
@@ -435,16 +554,15 @@ serve(async (req) => {
           const pid = String(it.product_id)
           const { error: stockErr } = await supabase.rpc('decrement_product_stock_for_sale', {
             p_product_id: pid,
-            p_business_id: bizId,
+            p_business_id: canonicalBizId,
             p_qty: Math.floor(qty),
           })
-          if (stockErr) return error(stockErr.message)
+          if (stockErr) return error(`[push_sale:decrement_stock] ${stockErr.message}`)
         }
+      }
 
-        const staffLabel =
-          typeof shopkeeper.full_name === 'string' && shopkeeper.full_name.trim().length > 0
-            ? shopkeeper.full_name.trim()
-            : 'Staff'
+      // Notify owner on first activity log insert (matches stock events; avoids duplicate push on retry)
+      if (isNewActivityLog && !logErr) {
         const receipt = row.receipt_number.trim() || 'Sale'
         const totalCents = Number(row.total_cents)
         const totalPart =
@@ -453,18 +571,34 @@ serve(async (req) => {
         const pushBody = `${staffLabel} completed ${receipt}${totalPart}`
 
         try {
-          await sendOwnerPushInternal({
-            businessId: bizId,
+          const pushResult = await sendOwnerPushInternal({
+            businessId: canonicalBizId,
             title,
             body: pushBody,
             data: { type: 'staff_sale', screen: 'sales' },
             androidChannel: 'staff-sales',
           })
+          console.log('[staff-sale-notify] server.owner_push.result', {
+            saleId: row.id,
+            ok: pushResult.ok,
+            sent: pushResult.sent ?? 0,
+          })
+          if (!pushResult.ok || (pushResult.sent ?? 0) === 0) {
+            console.warn('[staff-sale-notify] server.owner_push.not_delivered', pushResult)
+          }
         } catch (pushErr) {
-          console.warn('[shopkeeper-auth] staff sale push failed:', pushErr)
+          console.warn('[staff-sale-notify] server.owner_push.failed', pushErr)
         }
+      } else {
+        console.log('[staff-sale-notify] server.owner_push.skipped', {
+          saleId: row.id,
+          isNewActivityLog,
+          logErr: logErr?.message ?? null,
+          stockAlreadyApplied,
+        })
       }
 
+      console.log('[staff-sale-notify] server.push_sale.done', { saleId: row.id })
       return json({ status: 'ok' })
     }
 

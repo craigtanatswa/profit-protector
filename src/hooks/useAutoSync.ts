@@ -83,30 +83,32 @@ export function useAutoSync() {
   useEffect(() => {
     if (!business?.id || activeRole !== 'shopkeeper') return
 
-    async function shopkeeperPullAndFlush() {
+    async function shopkeeperPullAndFlush(flushOutbound: boolean) {
       if (skPullingRef.current) return
       skPullingRef.current = true
       try {
         const sess = useAuthStore.getState().shopkeeperSession
         if (!sess?.sessionToken || !business?.id) return
-        await pullShopkeeperCloudSnapshotFast(sess.sessionToken, business.id, sess.shopkeeper.id)
+        await pullShopkeeperCloudSnapshotFast(sess.sessionToken, business.id, sess.shopkeeper.id, {
+          flushOutbound,
+        })
       } finally {
         skPullingRef.current = false
       }
     }
 
-    void shopkeeperPullAndFlush()
+    void shopkeeperPullAndFlush(true)
 
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') shopkeeperPullAndFlush()
+      if (state === 'active') void shopkeeperPullAndFlush(true)
     })
 
     const fastPoll = setInterval(() => {
       if (AppState.currentState !== 'active') return
-      shopkeeperPullAndFlush()
+      void shopkeeperPullAndFlush(false)
     }, SHOPKEEPER_FOREGROUND_POLL_MS)
 
-    const interval = setInterval(shopkeeperPullAndFlush, SYNC_INTERVAL_MS)
+    const interval = setInterval(() => void shopkeeperPullAndFlush(true), SYNC_INTERVAL_MS)
 
     return () => {
       subscription.remove()

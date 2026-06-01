@@ -22,6 +22,7 @@ import {
 import { getLocalCalendarMonthBoundsIso } from './calendarMonth'
 import { isSessionSupersededResponse } from './activeSession'
 import { wmRaw } from './watermelonRaw'
+import { logStaffSaleNotify } from './staffSaleNotifyDebug'
 
 const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/shopkeeper-auth`
 
@@ -210,12 +211,27 @@ export type ShopkeeperSalePushPayload = {
   }>
   /** Mirrors owner `syncStockMovements` — same Supabase `stock_movements` rows. */
   stock_movements?: ShopkeeperStockMovementPushRow[]
+  activity_log?: {
+    id: string
+    action: 'sale_completed'
+    entity_type: 'sale'
+    entity_id: string
+    entity_name: string
+    details: {
+      totalCents: number
+      itemCount: number
+      paymentMethod: string
+      receiptNumber: string
+      staffName?: string
+    }
+    created_at: string
+  }
 }
 
 export async function pushShopkeeperSaleRemote(
   sessionToken: string,
   payload: ShopkeeperSalePushPayload,
-): Promise<boolean> {
+): Promise<{ ok: boolean; message?: string }> {
   const body: Record<string, unknown> = {
     action: 'push_sale',
     sessionToken,
@@ -225,8 +241,35 @@ export async function pushShopkeeperSaleRemote(
   if (payload.stock_movements != null && payload.stock_movements.length > 0) {
     body.stock_movements = payload.stock_movements
   }
+  if (payload.activity_log != null) {
+    body.activity_log = payload.activity_log
+  }
+
+  logStaffSaleNotify('shopkeeper.push_sale.request', {
+    saleId: payload.sale.id,
+    receipt: payload.sale.receipt_number,
+    itemCount: payload.sale_items.length,
+    hasActivityLog: payload.activity_log != null,
+    activityLogId: payload.activity_log?.id ?? null,
+    productIds: payload.sale_items.map((it) => it.product_id),
+  })
+
   const data = await callShopkeeperAuth(body)
-  return data.status === 'ok'
+  const ok = data.status === 'ok'
+  const message = data.message != null ? String(data.message) : undefined
+
+  logStaffSaleNotify(
+    ok ? 'shopkeeper.push_sale.ok' : 'shopkeeper.push_sale.failed',
+    ok
+      ? { saleId: payload.sale.id }
+      : {
+          saleId: payload.sale.id,
+          status: data.status,
+          message: message ?? null,
+        },
+  )
+
+  return { ok, message }
 }
 
 export type ShopkeeperProductPatchPayload = {
@@ -474,6 +517,59 @@ async function buildShopkeeperSalePayloadFromLocal(
       .fetch()
     const createdMs =
       saleRow.createdAt instanceof Date ? saleRow.createdAt.getTime() : Date.now()
+    const createdAtIso = new Date(createdMs).toISOString()
+
+    let activityLog: ShopkeeperSalePushPayload['activity_log'] = {
+      id: `${saleId}_log`,
+      action: 'sale_completed',
+      entity_type: 'sale',
+      entity_id: saleId,
+      entity_name: saleRow.receiptNumber,
+      details: {
+        totalCents: saleRow.totalCents,
+        itemCount: itemRows.length,
+        paymentMethod: saleRow.paymentMethod,
+        receiptNumber: saleRow.receiptNumber,
+      },
+      created_at: createdAtIso,
+    }
+
+    try {
+      const logs = await database
+        .get<ActivityLogModel>('activity_logs')
+        .query(Q.and(Q.where('entity_id', saleId), Q.where('action', 'sale_completed')))
+        .fetch()
+      if (logs.length > 0) {
+        const log = logs[0]
+        let details = activityLog.details
+        if (log.details) {
+          try {
+            const parsed = JSON.parse(log.details) as Record<string, unknown>
+            details = {
+              totalCents: Number(parsed.totalCents ?? saleRow.totalCents),
+              itemCount: Number(parsed.itemCount ?? itemRows.length),
+              paymentMethod: String(parsed.paymentMethod ?? saleRow.paymentMethod),
+              receiptNumber: String(parsed.receiptNumber ?? saleRow.receiptNumber),
+              staffName: parsed.staffName != null ? String(parsed.staffName) : undefined,
+            }
+          } catch {
+            /* keep sale-derived details */
+          }
+        }
+        activityLog = {
+          id: log.id,
+          action: 'sale_completed',
+          entity_type: 'sale',
+          entity_id: saleId,
+          entity_name: log.entityName || saleRow.receiptNumber,
+          details,
+          created_at: new Date(log.createdAt.getTime()).toISOString(),
+        }
+      }
+    } catch {
+      /* activity log optional for rebuild */
+    }
+
     return {
       sale: {
         id: saleRow.id,
@@ -483,7 +579,7 @@ async function buildShopkeeperSalePayloadFromLocal(
         payment_method: saleRow.paymentMethod,
         receipt_number: saleRow.receiptNumber,
         note: saleRow.note ?? null,
-        created_at: new Date(createdMs).toISOString(),
+        created_at: createdAtIso,
       },
       sale_items: itemRows.map((si) => ({
         id: si.id,
@@ -503,8 +599,9 @@ async function buildShopkeeperSalePayloadFromLocal(
         qty_change: -si.qty,
         reason: null,
         supplier: '',
-        created_at: new Date(createdMs).toISOString(),
+        created_at: createdAtIso,
       })),
+      activity_log: activityLog,
     }
   } catch {
     return null
@@ -677,6 +774,71 @@ async function buildShopkeeperStockReceivedPayloadFromLocal(
   }
 }
 
+function pendingSaleFailuresKey(businessId: string): string {
+  return `pp_sk_pending_sale_failures_${businessId}`
+}
+
+async function readSalePushFailureCounts(
+  businessId: string,
+): Promise<Record<string, number>> {
+  const raw = await SecureStore.getItemAsync(pendingSaleFailuresKey(businessId))
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as Record<string, number>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+async function writeSalePushFailureCounts(
+  businessId: string,
+  counts: Record<string, number>,
+): Promise<void> {
+  const keys = Object.keys(counts)
+  if (keys.length === 0) {
+    await SecureStore.deleteItemAsync(pendingSaleFailuresKey(businessId)).catch(() => {})
+    return
+  }
+  await SecureStore.setItemAsync(pendingSaleFailuresKey(businessId), JSON.stringify(counts))
+}
+
+async function clearSalePushFailureCount(businessId: string, saleId: string): Promise<void> {
+  const counts = await readSalePushFailureCounts(businessId)
+  if (!(saleId in counts)) return
+  delete counts[saleId]
+  await writeSalePushFailureCounts(businessId, counts)
+}
+
+const MAX_SALE_PUSH_ATTEMPTS = 5
+
+async function recordSalePushFailure(
+  businessId: string,
+  saleId: string,
+  message: string | undefined,
+): Promise<boolean> {
+  const counts = await readSalePushFailureCounts(businessId)
+  const next = (counts[saleId] ?? 0) + 1
+  counts[saleId] = next
+  await writeSalePushFailureCounts(businessId, counts)
+
+  if (next >= MAX_SALE_PUSH_ATTEMPTS) {
+    await removePendingShopkeeperSaleId(businessId, saleId)
+    delete counts[saleId]
+    await writeSalePushFailureCounts(businessId, counts)
+    logStaffSaleNotify('shopkeeper.push_sale.dropped_from_queue', {
+      saleId,
+      attempts: next,
+      message: message ?? null,
+    })
+    return true
+  }
+
+  return false
+}
+
+let flushOutboundInFlight: Promise<void> | null = null
+
 /**
  * Retry queued staff sales and product stock snapshots. Call after each sale/adjustment
  * and from `useAutoSync` while online — keeps Supabase `sales`, `products`, and
@@ -687,16 +849,25 @@ export async function flushPendingShopkeeperOutbound(
   businessId: string,
   shopkeeperId: string,
 ): Promise<void> {
-  const saleIds = await readStringIdList(pendingSalesKey(businessId))
-  for (const saleId of saleIds) {
-    const payload = await buildShopkeeperSalePayloadFromLocal(saleId, shopkeeperId)
-    if (!payload) {
-      await removePendingShopkeeperSaleId(businessId, saleId)
-      continue
+  if (flushOutboundInFlight) return flushOutboundInFlight
+
+  flushOutboundInFlight = (async () => {
+    const saleIds = await readStringIdList(pendingSalesKey(businessId))
+    for (const saleId of saleIds) {
+      const payload = await buildShopkeeperSalePayloadFromLocal(saleId, shopkeeperId)
+      if (!payload) {
+        await removePendingShopkeeperSaleId(businessId, saleId)
+        await clearSalePushFailureCount(businessId, saleId)
+        continue
+      }
+      const { ok, message } = await pushShopkeeperSaleRemote(sessionToken, payload)
+      if (ok) {
+        await removePendingShopkeeperSaleId(businessId, saleId)
+        await clearSalePushFailureCount(businessId, saleId)
+      } else {
+        await recordSalePushFailure(businessId, saleId, message)
+      }
     }
-    const ok = await pushShopkeeperSaleRemote(sessionToken, payload)
-    if (ok) await removePendingShopkeeperSaleId(businessId, saleId)
-  }
 
   const pendingAdjustments = await readPendingAdjustments(pendingAdjustmentsKey(businessId))
   for (const pending of pendingAdjustments) {
@@ -756,15 +927,22 @@ export async function flushPendingShopkeeperOutbound(
   if (patched) {
     await SecureStore.deleteItemAsync(pendingProductSyncKey(businessId)).catch(() => {})
   }
+  })().finally(() => {
+    flushOutboundInFlight = null
+  })
+
+  return flushOutboundInFlight
 }
 
 export async function pullShopkeeperCloudSnapshotFast(
   sessionToken: string,
   businessId: string,
   shopkeeperId: string,
-  opts?: { authoritativeProducts?: boolean },
+  opts?: { authoritativeProducts?: boolean; flushOutbound?: boolean },
 ): Promise<void> {
-  await flushPendingShopkeeperOutbound(sessionToken, businessId, shopkeeperId).catch(() => {})
+  if (opts?.flushOutbound === true) {
+    await flushPendingShopkeeperOutbound(sessionToken, businessId, shopkeeperId).catch(() => {})
+  }
 
   const authoritative = opts?.authoritativeProducts === true
 
@@ -951,7 +1129,10 @@ export async function shopkeeperLogin(params: {
     }
 
     await persistShopkeeperSession(session)
-    await pullShopkeeperCloudSnapshotFast(session.sessionToken, session.businessId, session.shopkeeper.id, { authoritativeProducts: true }).catch(
+    await pullShopkeeperCloudSnapshotFast(session.sessionToken, session.businessId, session.shopkeeper.id, {
+      authoritativeProducts: true,
+      flushOutbound: true,
+    }).catch(
       () => {},
     )
     return { status: 'approved', session }
@@ -1009,7 +1190,10 @@ export async function resumeShopkeeperAfterApproval(params: {
     }
 
     await persistShopkeeperSession(session)
-    await pullShopkeeperCloudSnapshotFast(session.sessionToken, session.businessId, session.shopkeeper.id, { authoritativeProducts: true }).catch(
+    await pullShopkeeperCloudSnapshotFast(session.sessionToken, session.businessId, session.shopkeeper.id, {
+      authoritativeProducts: true,
+      flushOutbound: true,
+    }).catch(
       () => {},
     )
     return { status: 'approved', session }
@@ -1065,7 +1249,7 @@ export async function getStoredShopkeeperSession(): Promise<ShopkeeperSession | 
       sessionOut.sessionToken,
       sessionOut.businessId,
       sessionOut.shopkeeper.id,
-      { authoritativeProducts: true },
+      { authoritativeProducts: true, flushOutbound: true },
     ).catch(() => {})
     return sessionOut
   } catch {

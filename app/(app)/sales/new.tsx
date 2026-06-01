@@ -124,6 +124,7 @@ import type SaleItemModel from '../../../src/database/models/SaleItem'
 import type StockMovementModel from '../../../src/database/models/StockMovement'
 import type CustomerModel from '../../../src/database/models/Customer'
 import type CreditSaleModel from '../../../src/database/models/CreditSale'
+import * as Crypto from 'expo-crypto'
 import { logActivity } from '../../../src/lib/activityLogger'
 import {
   pushShopkeeperSaleRemote,
@@ -131,6 +132,7 @@ import {
   flushPendingShopkeeperOutbound,
   enqueuePendingShopkeeperSaleId,
 } from '../../../src/lib/shopkeeperAuth'
+import { logStaffSaleNotify } from '../../../src/lib/staffSaleNotifyDebug'
 
 const COLORS = {
   primary: '#0047AB',
@@ -385,7 +387,9 @@ export default function NewSaleScreen() {
             ? authSnapshot.shopkeeperSession?.shopkeeper.id ?? null
             : null
 
+        const newSaleUuid = Crypto.randomUUID()
         const newSale = await database!.get<SaleModel>('sales').create((s) => {
+          s._raw.id = newSaleUuid
           s.businessId = business.id
           s.totalCents = totalCents
           s.discountCents = discountCents
@@ -445,6 +449,32 @@ export default function NewSaleScreen() {
         return newSale.id
       })
 
+      const saleRowAfterWrite = await database.get<SaleModel>('sales').find(newSaleId)
+      const receiptNumber = saleRowAfterWrite.receiptNumber.trim() || 'Sale'
+      const saleCreatedMs =
+        saleRowAfterWrite.createdAt instanceof Date
+          ? saleRowAfterWrite.createdAt.getTime()
+          : Date.now()
+      const staffName =
+        activeRole === 'shopkeeper'
+          ? authSnapshot.shopkeeperSession?.shopkeeper.fullName?.trim() || 'Staff'
+          : undefined
+      const saleDetails = {
+        totalCents,
+        itemCount: items.length,
+        paymentMethod,
+        receiptNumber,
+        ...(staffName ? { staffName } : {}),
+      }
+
+      const activityLogId = await logActivity({
+        action: 'sale_completed',
+        entityType: 'sale',
+        entityId: newSaleId,
+        entityName: receiptNumber,
+        details: saleDetails,
+      })
+
       const skTok = useAuthStore.getState().shopkeeperSession?.sessionToken
       const skBizId = business.id
       const skIdForPush = authSnapshot.shopkeeperSession?.shopkeeper.id ?? null
@@ -452,6 +482,11 @@ export default function NewSaleScreen() {
       if (activeRole === 'shopkeeper' && skTok && database && skIdForPush) {
         // Offline-first: complete the sale locally above; sync to Supabase after navigation.
         void (async () => {
+          logStaffSaleNotify('shopkeeper.sale_complete.start_push', {
+            saleId: newSaleId,
+            receiptNumber,
+            activityLogId: activityLogId ?? null,
+          })
           try {
             await flushPendingShopkeeperOutbound(skTok, skBizId, skIdForPush)
             const saleRow = await database!.get<SaleModel>('sales').find(newSaleId)
@@ -460,8 +495,9 @@ export default function NewSaleScreen() {
               .query(Q.where('sale_id', newSaleId))
               .fetch()
             const createdMs =
-              saleRow.createdAt instanceof Date ? saleRow.createdAt.getTime() : Date.now()
-            const pushed = await pushShopkeeperSaleRemote(skTok, {
+              saleRow.createdAt instanceof Date ? saleRow.createdAt.getTime() : saleCreatedMs
+            const createdAtIso = new Date(createdMs).toISOString()
+            const { ok: pushed } = await pushShopkeeperSaleRemote(skTok, {
               sale: {
                 id: saleRow.id,
                 business_id: saleRow.businessId,
@@ -470,7 +506,7 @@ export default function NewSaleScreen() {
                 payment_method: saleRow.paymentMethod,
                 receipt_number: saleRow.receiptNumber,
                 note: saleRow.note ?? null,
-                created_at: new Date(createdMs).toISOString(),
+                created_at: createdAtIso,
               },
               sale_items: itemRows.map((si) => ({
                 id: si.id,
@@ -490,30 +526,37 @@ export default function NewSaleScreen() {
                 qty_change: -si.qty,
                 reason: null,
                 supplier: '',
-                created_at: new Date(createdMs).toISOString(),
+                created_at: createdAtIso,
               })),
+              activity_log: {
+                id: activityLogId ?? `${newSaleId}_log`,
+                action: 'sale_completed',
+                entity_type: 'sale',
+                entity_id: newSaleId,
+                entity_name: receiptNumber,
+                details: saleDetails,
+                created_at: createdAtIso,
+              },
             })
             if (pushed) {
-              await pullShopkeeperCloudSnapshotFast(skTok, skBizId, skIdForPush).catch(() => {})
+              logStaffSaleNotify('shopkeeper.sale_complete.push_ok', { saleId: newSaleId })
+              await pullShopkeeperCloudSnapshotFast(skTok, skBizId, skIdForPush, {
+                flushOutbound: false,
+              }).catch(() => {})
             } else {
+              logStaffSaleNotify('shopkeeper.sale_complete.push_queued', { saleId: newSaleId })
               await enqueuePendingShopkeeperSaleId(skBizId, newSaleId)
             }
           } catch (e) {
+            logStaffSaleNotify('shopkeeper.sale_complete.push_error', {
+              saleId: newSaleId,
+              message: e instanceof Error ? e.message : String(e),
+            })
             console.warn('[shopkeeper] deferred push_sale:', e)
             await enqueuePendingShopkeeperSaleId(skBizId, newSaleId).catch(() => {})
           }
         })()
       }
-
-      // Fire-and-forget background sync — uses WatermelonDB record IDs so
-      // there is no ID mismatch between local and remote records.
-      await logActivity({
-        action: 'sale_completed',
-        entityType: 'sale',
-        entityId: newSaleId,
-        entityName: `Sale ${newSaleId.slice(-6).toUpperCase()}`,
-        details: { totalCents, itemCount: items.length, paymentMethod },
-      })
 
       const { triggerSync } = useAuthStore.getState()
       if (activeRole === 'owner') triggerSync(business.id).catch(() => {})

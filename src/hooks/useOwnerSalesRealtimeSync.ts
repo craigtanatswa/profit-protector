@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/authStore'
 import { supabase } from '../lib/supabase'
 import { notifyOwnerStaffSale, notifyOwnerStaffStockAdjustment, notifyOwnerStaffStockReceived } from '../lib/notifications'
 import { mergeRemoteActivityLogIntoWatermelon, refreshOwnerProductsForRemoteSale } from '../lib/sync'
+import { logStaffSaleNotify } from '../lib/staffSaleNotifyDebug'
 
 import { FOREGROUND_INVENTORY_POLL_MS } from '../lib/syncPoll'
 
@@ -31,6 +32,8 @@ export function useOwnerSalesRealtimeSync() {
 
     const businessId = business.id
 
+    logStaffSaleNotify('owner.realtime.subscribe', { businessId })
+
     const channel = supabase
       .channel(`owner_inventory_${businessId}_${channelSuffix.current}`)
       .on(
@@ -52,34 +55,19 @@ export function useOwnerSalesRealtimeSync() {
               const sk = payload.new.created_by_shopkeeper_id
               const staffSale = sk != null && sk !== ''
 
+              logStaffSaleNotify('owner.realtime.sales_insert', {
+                saleId,
+                staffSale,
+                receipt: payload.new.receipt_number ?? null,
+              })
+
               await Promise.all([
                 triggerSync(businessId),
                 staffSale
                   ? refreshOwnerProductsForRemoteSale(businessId, saleId).catch(() => {})
                   : Promise.resolve(),
               ])
-
-              if (!staffSale) return
-
-              const receiptNumber = String(payload.new.receipt_number ?? '')
-              const totalCents = Number(payload.new.total_cents)
-              const totalLabel =
-                Number.isFinite(totalCents) ? `$${(totalCents / 100).toFixed(2)}` : undefined
-
-              let staffLabel = 'Staff'
-              const { data } = await supabase
-                .from('shopkeepers')
-                .select('full_name')
-                .eq('id', String(sk))
-                .maybeSingle()
-              if (data?.full_name) staffLabel = String(data.full_name)
-
-              await notifyOwnerStaffSale({
-                businessId,
-                receiptNumber,
-                staffLabel,
-                totalLabel,
-              })
+              // In-app banner is delivered via activity_logs Realtime (sale_completed).
             })()
             return
           }
@@ -113,12 +101,25 @@ export function useOwnerSalesRealtimeSync() {
         },
         (payload: { new: Record<string, unknown> }) => {
           void (async () => {
+            const action = String(payload.new.action ?? '')
+            logStaffSaleNotify('owner.realtime.activity_log_insert', {
+              action,
+              logId: payload.new.id ?? null,
+              actorRole: payload.new.actor_role ?? null,
+              entityName: payload.new.entity_name ?? null,
+            })
+
             await mergeRemoteActivityLogIntoWatermelon(payload.new)
             void triggerSync(businessId)
 
-            if (payload.new.actor_role !== 'shopkeeper') return
+            if (payload.new.actor_role !== 'shopkeeper') {
+              logStaffSaleNotify('owner.realtime.activity_log_skip', {
+                reason: 'not_shopkeeper',
+                action,
+              })
+              return
+            }
 
-            const action = payload.new.action
             const detailsRaw = payload.new.details
             const productName = String(payload.new.entity_name ?? 'product')
             const staffLabel =
@@ -161,11 +162,47 @@ export function useOwnerSalesRealtimeSync() {
                 qty: Number.isFinite(qty) ? qty : 0,
                 unit,
               })
+              return
             }
+
+            if (action === 'sale_completed') {
+              let totalCents: number | undefined
+              let receiptNumber = String(payload.new.entity_name ?? '')
+              if (detailsRaw != null && typeof detailsRaw === 'object' && !Array.isArray(detailsRaw)) {
+                const d = detailsRaw as Record<string, unknown>
+                if (d.totalCents != null) totalCents = Number(d.totalCents)
+                if (d.receiptNumber != null) receiptNumber = String(d.receiptNumber)
+              }
+              const totalLabel =
+                totalCents != null && Number.isFinite(totalCents)
+                  ? `$${(totalCents / 100).toFixed(2)}`
+                  : undefined
+
+              logStaffSaleNotify('owner.realtime.sale_completed', {
+                receiptNumber,
+                staffLabel,
+                totalLabel: totalLabel ?? null,
+              })
+
+              await notifyOwnerStaffSale({
+                businessId,
+                receiptNumber,
+                staffLabel,
+                totalLabel,
+              })
+              return
+            }
+
+            logStaffSaleNotify('owner.realtime.activity_log_unhandled', { action })
           })()
         },
       )
-      .subscribe()
+      .subscribe((status, err) => {
+        logStaffSaleNotify('owner.realtime.channel_status', {
+          status,
+          error: err?.message ?? null,
+        })
+      })
 
     // Fallback poll — only fires when Realtime is silent and no sync is already
     // in progress. Prevents back-to-back queuing when syncAll takes >5 s.

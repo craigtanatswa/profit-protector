@@ -18,6 +18,7 @@ import WMBusiness from '../database/models/Business'
 import { getPersonalisation, normalizeBusinessType } from './appPersonalisation'
 import { shouldScheduleOsLocalBusinessAlerts } from './notificationDeliveryMode'
 import { requestLowStockRemotePushIfOwner } from './expoPushRemote'
+import { logStaffSaleNotify } from './staffSaleNotifyDebug'
 
 // ---------------------------------------------------------------------------
 // Android notification channels
@@ -228,12 +229,21 @@ export async function notifyOwnerStaffSale(params: {
   await setupAndroidChannels()
 
   const { status } = await Notifications.getPermissionsAsync()
-  if (status !== 'granted') return
+  if (status !== 'granted') {
+    logStaffSaleNotify('owner.notify.permission_denied', { status })
+    return
+  }
 
   const receipt = params.receiptNumber.trim() || 'Sale'
   const totalPart = params.totalLabel ? ` · ${params.totalLabel}` : ''
   const title = '🛒 Staff Sale Recorded'
   const body = `${params.staffLabel} completed ${receipt}${totalPart}`
+
+  logStaffSaleNotify('owner.notify.show_banner', {
+    receipt,
+    staffLabel: params.staffLabel,
+    totalLabel: params.totalLabel ?? null,
+  })
 
   await deliverBizLocalNotification({
     content: {
@@ -249,6 +259,8 @@ export async function notifyOwnerStaffSale(params: {
       ...(Platform.OS === 'android' ? { channelId: 'staff-sales' } : {}),
     },
   })
+
+  logStaffSaleNotify('owner.notify.banner_delivered')
 }
 
 /** In-app banner when the owner app receives a staff stock adjustment via Realtime. */
