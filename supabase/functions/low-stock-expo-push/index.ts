@@ -191,7 +191,8 @@ serve(async (req) => {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ messages }),
+      // Expo push endpoint expects an array of messages, not { messages: [...] }.
+      body: JSON.stringify(messages),
     })
 
     if (!expoRes.ok) {

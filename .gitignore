@@ -37,7 +37,6 @@ yarn-error.*
 supabase/sql/
 supabase/migrations/
 
-google-services.json
 
 # typescript
 *.tsbuildinfo

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { AppState, InteractionManager } from 'react-native'
 import { useAuthStore } from '../stores/authStore'
+import { syncOwnerExpoPushTokenToSupabase } from '../lib/expoPushRemote'
 import { checkAndNotifyLowStock } from '../lib/notifications'
 import { pullShopkeeperCloudSnapshotFast } from '../lib/shopkeeperAuth'
 import { SHOPKEEPER_FOREGROUND_POLL_MS } from '../lib/syncPoll'
@@ -58,6 +59,7 @@ export function useAutoSync() {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active' && syncStatusRef.current !== 'syncing') {
         syncOnly().catch(() => {})
+        void syncOwnerExpoPushTokenToSupabase()
         checkAndNotifyLowStock(businessId).catch((err) =>
           console.warn('Low stock check failed:', err.message),
         )

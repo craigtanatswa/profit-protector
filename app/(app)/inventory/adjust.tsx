@@ -465,6 +465,7 @@ export default function AdjustStockScreen() {
         'Save Failed',
         error instanceof Error ? error.message : JSON.stringify(error),
       )
+    } finally {
       setIsLoading(false)
     }
   })

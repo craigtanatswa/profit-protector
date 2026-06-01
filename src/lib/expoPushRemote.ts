@@ -43,6 +43,21 @@ export function clearExpoPushTokenCache() {
  * Registers this device's Expo push token for the signed-in owner so low-stock
  * alerts can be delivered when the app is not running (requires Edge Function + RPC).
  */
+/**
+ * Request OS notification permission (if needed) and register the Expo push token
+ * so staff inventory/sale alerts reach the owner when the app is closed.
+ */
+export async function ensureOwnerPushTokenRegistered(): Promise<void> {
+  const { isAuthenticated, activeRole } = useAuthStore.getState()
+  if (!isAuthenticated || activeRole !== 'owner') return
+
+  const { requestNotificationPermissions } = await import('./notifications')
+  const granted = await requestNotificationPermissions()
+  if (!granted) return
+
+  await syncOwnerExpoPushTokenToSupabase()
+}
+
 export async function syncOwnerExpoPushTokenToSupabase(): Promise<void> {
   const { isAuthenticated, activeRole } = useAuthStore.getState()
   if (!isAuthenticated || activeRole !== 'owner') return
@@ -69,7 +84,7 @@ export async function syncOwnerExpoPushTokenToSupabase(): Promise<void> {
     { onConflict: 'user_id,expo_push_token' },
   )
 
-  if (error && __DEV__) {
+  if (error) {
     console.warn('[expoPush] token upsert:', error.message)
   }
 }

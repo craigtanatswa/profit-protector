@@ -1,17 +1,17 @@
 /**
- * send-owner-push — general-purpose Expo Push fan-out for the business owner.
+ * send-owner-push — Expo Push fan-out for the business owner.
  *
  * Auth (one of):
- *   • Bearer <user JWT>  — owner-facing calls (app open on another device)
- *   • x-internal-push-secret: <secret>  — DB trigger / server-side calls
+ *   • x-internal-push-secret: <secret>  — server-side calls from shopkeeper-auth
+ *   • Bearer <user JWT>                 — owner-facing calls
  *
  * Body (JSON):
- *   business_id           string   required
- *   title                 string   required
- *   body                  string   required
- *   data                  object   optional  { key: string }
- *   android_channel       string   optional  (default: 'default')
- *   exclude_expo_push_token  string   optional  (skip this token, avoids duplicate on calling device)
+ *   business_id              string   required
+ *   title                    string   required
+ *   body                     string   required
+ *   data                     object   optional  { key: string }
+ *   android_channel          string   optional  (default: 'default')
+ *   exclude_expo_push_token  string   optional  (skip token already on calling device)
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -20,11 +20,10 @@ import { corsHeaders, jsonResponse } from '../_shared/cors.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-// Reuses the same secret as low-stock-expo-push — set once with:
-//   supabase secrets set LOW_STOCK_INTERNAL_SECRET=<value>
 const INTERNAL_SECRET = Deno.env.get('LOW_STOCK_INTERNAL_SECRET')
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
+const EXPO_CHUNK_SIZE = 90 // Expo's max messages per request
 
 type JsonBody = {
   business_id?: string
@@ -33,6 +32,13 @@ type JsonBody = {
   data?: Record<string, string>
   android_channel?: string
   exclude_expo_push_token?: string | null
+}
+
+type ExpoTicket = {
+  status: 'ok' | 'error'
+  id?: string
+  message?: string
+  details?: { error?: string }
 }
 
 serve(async (req) => {
@@ -122,19 +128,24 @@ serve(async (req) => {
   const exclude = payload.exclude_expo_push_token?.trim()
   const tokens = (tokenRows ?? [])
     .map((r) => r.expo_push_token as string)
-    .filter((t) => t && t !== exclude)
+    .filter((t) => Boolean(t) && t !== exclude)
 
-  if (tokens.length === 0) return jsonResponse({ ok: true, sent: 0 })
+  if (tokens.length === 0) {
+    console.log(`[send-owner-push] No tokens for user ${ownerUserId} (business ${businessId})`)
+    return jsonResponse({ ok: true, sent: 0 })
+  }
 
   const androidChannel = payload.android_channel?.trim() || 'default'
   const data: Record<string, string> = payload.data ?? {}
 
-  // --- Fan-out in batches of 90 (Expo limit) ---
-  const chunkSize = 90
+  // --- Fan-out in batches ---
   let sentOk = 0
+  const staleTokens: string[] = []
 
-  for (let i = 0; i < tokens.length; i += chunkSize) {
-    const messages = tokens.slice(i, i + chunkSize).map((to) => ({
+  for (let i = 0; i < tokens.length; i += EXPO_CHUNK_SIZE) {
+    const batch = tokens.slice(i, i + EXPO_CHUNK_SIZE)
+
+    const messages = batch.map((to) => ({
       to,
       title,
       body: pushBody,
@@ -148,26 +159,48 @@ serve(async (req) => {
       method: 'POST',
       headers: {
         Accept: 'application/json',
+        'Accept-Encoding': 'gzip, deflate',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ messages }),
+      // Expo push endpoint expects an array of messages, not { messages: [...] }.
+      body: JSON.stringify(messages),
     })
 
     if (!expoRes.ok) {
       const errText = await expoRes.text()
-      console.error('[send-owner-push] Expo error:', expoRes.status, errText)
-      return jsonResponse(
-        { error: 'Expo push failed', detail: errText.slice(0, 200) },
-        502,
-      )
+      console.error('[send-owner-push] Expo HTTP error:', expoRes.status, errText.slice(0, 300))
+      return jsonResponse({ error: 'Expo push failed', detail: errText.slice(0, 200) }, 502)
     }
 
-    const expoJson = (await expoRes.json()) as {
-      data?: Array<{ status?: string }>
-    }
-    const results = Array.isArray(expoJson.data) ? expoJson.data : []
-    sentOk += results.filter((r) => r?.status === 'ok').length
+    const expoJson = (await expoRes.json()) as { data?: ExpoTicket[] }
+    const tickets: ExpoTicket[] = Array.isArray(expoJson.data) ? expoJson.data : []
+
+    tickets.forEach((ticket, idx) => {
+      if (ticket.status === 'ok') {
+        sentOk++
+      } else {
+        const token = batch[idx]
+        const errCode = ticket.details?.error
+        console.warn(`[send-owner-push] Ticket error for token ${token?.slice(0, 20)}…: ${ticket.message} (${errCode})`)
+
+        // Prune tokens that are no longer valid — device uninstalled or revoked
+        if (errCode === 'DeviceNotRegistered' || errCode === 'InvalidCredentials') {
+          if (token) staleTokens.push(token)
+        }
+      }
+    })
   }
 
+  // Remove stale tokens so future pushes don't waste requests
+  if (staleTokens.length > 0) {
+    console.log(`[send-owner-push] Pruning ${staleTokens.length} stale token(s)`)
+    await admin
+      .from('owner_expo_push_tokens')
+      .delete()
+      .in('expo_push_token', staleTokens)
+      .eq('user_id', ownerUserId)
+  }
+
+  console.log(`[send-owner-push] Sent ${sentOk}/${tokens.length} to business ${businessId}`)
   return jsonResponse({ ok: true, sent: sentOk })
 })

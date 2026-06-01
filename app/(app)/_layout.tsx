@@ -15,6 +15,7 @@ import { useShopkeeperStaffSignalsRealtimeSync } from '../../src/hooks/useShopke
 import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
 import { useSubscription } from '../../src/hooks/useSubscription'
 import { setupNotificationHandlers, registerInAppBizNotificationSink } from '../../src/lib/notifications'
+import { ensureOwnerPushTokenRegistered } from '../../src/lib/expoPushRemote'
 import { useNotificationBanner } from '../../src/hooks/useNotificationBanner'
 import { NotificationBanner } from '../../src/components/ui/NotificationBanner'
 import { clearShopkeeperSession as clearStoredShopkeeperSession } from '../../src/lib/shopkeeperAuth'
@@ -233,6 +234,12 @@ export default function AppLayout() {
     const cleanup = setupNotificationHandlers()
     return cleanup
   }, [])
+
+  // Register Expo push token so staff inventory/sale alerts reach the owner when the app is closed.
+  useEffect(() => {
+    if (isLoadingAuth || activeRole !== 'owner') return
+    void ensureOwnerPushTokenRegistered()
+  }, [activeRole, isLoadingAuth, business?.id])
 
   // In-session business alerts (low stock, staff sales) bypass OS notifications and use this sink.
   useEffect(() => {

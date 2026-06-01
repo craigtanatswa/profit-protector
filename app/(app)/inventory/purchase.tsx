@@ -331,6 +331,7 @@ export default function PurchaseScreen() {
         'Save Failed',
         error instanceof Error ? error.message : JSON.stringify(error),
       )
+    } finally {
       setIsSaving(false)
     }
   }

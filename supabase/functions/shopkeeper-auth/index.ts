@@ -681,13 +681,19 @@ serve(async (req) => {
       const pushBody = `${staffName} adjusted ${productLabel} (${qtyLabel})`
 
       try {
-        await sendOwnerPushInternal({
+        const pushResult = await sendOwnerPushInternal({
           businessId: bizId,
           title,
           body: pushBody,
           data: { type: 'staff_stock_adjustment', screen: 'activity_log', productId },
           androidChannel: 'staff-inventory',
         })
+        if (!pushResult.ok || (pushResult.sent ?? 0) === 0) {
+          console.warn(
+            '[shopkeeper-auth] staff stock adjustment owner push not delivered',
+            pushResult,
+          )
+        }
       } catch (pushErr) {
         console.warn('[shopkeeper-auth] staff stock adjustment push failed:', pushErr)
       }
@@ -839,13 +845,19 @@ serve(async (req) => {
       const pushBody = `${staffName} received ${qtyLabel} of ${productLabel}`
 
       try {
-        await sendOwnerPushInternal({
+        const pushResult = await sendOwnerPushInternal({
           businessId: bizId,
           title,
           body: pushBody,
           data: { type: 'staff_stock_received', screen: 'activity_log', productId },
           androidChannel: 'staff-inventory',
         })
+        if (!pushResult.ok || (pushResult.sent ?? 0) === 0) {
+          console.warn(
+            '[shopkeeper-auth] staff stock received owner push not delivered',
+            pushResult,
+          )
+        }
       } catch (pushErr) {
         console.warn('[shopkeeper-auth] staff stock received push failed:', pushErr)
       }

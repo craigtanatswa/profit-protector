@@ -10,9 +10,8 @@ import { useAuthStore } from '../src/stores/authStore'
 import { useOnboardingStore } from '../src/stores/onboardingStore'
 import { AppAlertProvider } from '../src/components/ui/AppAlertProvider'
 import { LoadingScreen } from '../src/components/ui/LoadingScreen'
-import { requestNotificationPermissions } from '../src/lib/notifications'
 import { setBusinessAlertsPreferInAppOnly } from '../src/lib/notificationDeliveryMode'
-import { syncOwnerExpoPushTokenToSupabase } from '../src/lib/expoPushRemote'
+import { ensureOwnerPushTokenRegistered } from '../src/lib/expoPushRemote'
 import {
   clearShopkeeperSession as clearStoredShopkeeperSession,
   getStoredShopkeeperSession,
@@ -56,7 +55,7 @@ function AuthGate() {
 
   useEffect(() => {
     if (!isAuthenticated || activeRole !== 'owner' || isLoading) return
-    void syncOwnerExpoPushTokenToSupabase()
+    void ensureOwnerPushTokenRegistered()
   }, [isAuthenticated, activeRole, isLoading])
 
   useEffect(() => {
@@ -182,11 +181,7 @@ function AuthGate() {
 
 export default function RootLayout() {
   useEffect(() => {
-    requestNotificationPermissions().then((granted) => {
-      if (granted && __DEV__) {
-        console.log('Notifications permission granted')
-      }
-    })
+    void ensureOwnerPushTokenRegistered()
   }, [])
 
   const shell = (
