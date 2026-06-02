@@ -12,12 +12,14 @@ import {
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker'
+import * as SecureStore from 'expo-secure-store'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { useReports } from '../../../src/hooks/useReports'
 import { exportReportPDF } from '../../../src/lib/reportPDF'
 import { exportReportCSV } from '../../../src/lib/reportCSV'
 import { formatCurrency, formatPaymentMethod } from '../../../src/lib/formatters'
 import { ScreenHeader } from '../../../src/components/layout'
+import { ReportsTutorialModal } from '../../../src/components/reports/ReportsTutorialModal'
 import { Button, Card, MetricCard } from '../../../src/components/ui'
 import type { DailyDataPoint, PaymentBreakdownItem, TopProduct } from '../../../src/hooks/useReports'
 
@@ -623,6 +625,7 @@ export default function ReportsScreen() {
   const [selectedBar, setSelectedBar] = useState<number | null>(null)
   const [isExportingPDF, setIsExportingPDF] = useState(false)
   const [isExportingCSV, setIsExportingCSV] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
 
   // ── Computed date range ──
   const { startMs, endMs } = useMemo(
@@ -646,6 +649,22 @@ export default function ReportsScreen() {
     earliestSaleMs,
     isLoading,
   } = useReports(businessId, startMs, endMs)
+
+  // Show the reports tutorial once on the owner's first visit.
+  useEffect(() => {
+    if (isLoading || !businessId) return
+    let cancelled = false
+    void (async () => {
+      const key = `reports_tutorial_shown_${businessId}`
+      const seen = await SecureStore.getItemAsync(key)
+      if (!cancelled && seen !== 'true') {
+        setShowTutorial(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isLoading, businessId])
 
   // Reset selected bar when period changes
   useEffect(() => {
@@ -1121,6 +1140,23 @@ export default function ReportsScreen() {
         onClose={() => setShowExportModal(false)}
         rangeDescription={exportModalRangeDescription}
         onExport={handleModalExport}
+      />
+
+      <ReportsTutorialModal
+        visible={showTutorial}
+        ownerName={business?.ownerName ?? undefined}
+        onComplete={() => {
+          setShowTutorial(false)
+          if (businessId) {
+            void SecureStore.setItemAsync(`reports_tutorial_shown_${businessId}`, 'true')
+          }
+        }}
+        onDismiss={() => {
+          setShowTutorial(false)
+          if (businessId) {
+            void SecureStore.setItemAsync(`reports_tutorial_shown_${businessId}`, 'true')
+          }
+        }}
       />
     </View>
   )
