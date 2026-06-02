@@ -23,6 +23,7 @@ import {
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
+import * as SecureStore from 'expo-secure-store'
 import { Ionicons } from '@expo/vector-icons'
 import { Q } from '@nozbe/watermelondb'
 
@@ -32,6 +33,7 @@ import {
   CustomerCard,
   HighlightWrapper,
 } from '../../../src/components/customers/CustomerCard'
+import { CustomersTutorialModal } from '../../../src/components/customers/CustomersTutorialModal'
 import { useCustomers } from '../../../src/hooks/useCustomers'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useAuthStore } from '../../../src/stores/authStore'
@@ -316,6 +318,23 @@ export default function CustomersScreen() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [newCustomerId, setNewCustomerId] = useState<string | null>(null)
+  const [showTutorial, setShowTutorial] = useState(false)
+
+  // Show the customers tutorial once when the owner has no customers yet.
+  useEffect(() => {
+    if (isLoading || isShopkeeper || !business?.id || customers.length > 0) return
+    let cancelled = false
+    void (async () => {
+      const key = `customers_tutorial_shown_${business.id}`
+      const seen = await SecureStore.getItemAsync(key)
+      if (!cancelled && seen !== 'true') {
+        setShowTutorial(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isLoading, isShopkeeper, business?.id, customers.length])
 
   // Clear highlight after 2 seconds
   useEffect(() => {
@@ -590,6 +609,26 @@ export default function CustomersScreen() {
           onSuccess={handleAddSuccess}
         />
       )}
+
+      {!isShopkeeper ? (
+        <CustomersTutorialModal
+          visible={showTutorial}
+          ownerName={business?.ownerName ?? undefined}
+          onComplete={() => {
+            setShowTutorial(false)
+            if (business?.id) {
+              void SecureStore.setItemAsync(`customers_tutorial_shown_${business.id}`, 'true')
+            }
+            setShowAddModal(true)
+          }}
+          onDismiss={() => {
+            setShowTutorial(false)
+            if (business?.id) {
+              void SecureStore.setItemAsync(`customers_tutorial_shown_${business.id}`, 'true')
+            }
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   )
 }
