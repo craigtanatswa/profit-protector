@@ -36,6 +36,7 @@ import * as Clipboard from 'expo-clipboard'
 import { Badge, Button, LoadingScreen } from '../../../src/components/ui'
 import { BrandLogo, ScreenHeader } from '../../../src/components/layout'
 import { DeferredSettingsModals } from '../../../src/components/settings/DeferredSettingsModals'
+import { SettingsTutorialModal } from '../../../src/components/settings/SettingsTutorialModal'
 import { SettingsRow } from '../../../src/components/settings/SettingsRow'
 import { SettingsSection } from '../../../src/components/settings/SettingsSection'
 import { useAuthStore } from '../../../src/stores/authStore'
@@ -150,6 +151,7 @@ function SettingsScreen() {
   const [deleteVisible, setDeleteVisible] = useState(false)
   const [clearDataVisible, setClearDataVisible] = useState(false)
   const [businessIdCopied, setBusinessIdCopied] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
 
   const scrollRef = useRef<ScrollView>(null)
   const securitySectionY = useRef(0)
@@ -206,6 +208,22 @@ function SettingsScreen() {
     })
     return () => task.cancel()
   }, [])
+
+  // Show the settings tutorial once on the owner's first visit.
+  useEffect(() => {
+    if (activeRole === 'shopkeeper' || !business?.id) return
+    let cancelled = false
+    void (async () => {
+      const key = `settings_tutorial_shown_${business.id}`
+      const seen = await SecureStore.getItemAsync(key)
+      if (!cancelled && seen !== 'true') {
+        setShowTutorial(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeRole, business?.id])
 
   const toggleLowStock = useCallback(async (val: boolean) => {
     setLowStockAlertsEnabled(val)
@@ -870,6 +888,23 @@ function SettingsScreen() {
         business={business}
         user={user}
         setBusiness={setBusiness}
+      />
+
+      <SettingsTutorialModal
+        visible={showTutorial}
+        ownerName={business?.ownerName ?? undefined}
+        onComplete={() => {
+          setShowTutorial(false)
+          if (business?.id) {
+            void SecureStore.setItemAsync(`settings_tutorial_shown_${business.id}`, 'true')
+          }
+        }}
+        onDismiss={() => {
+          setShowTutorial(false)
+          if (business?.id) {
+            void SecureStore.setItemAsync(`settings_tutorial_shown_${business.id}`, 'true')
+          }
+        }}
       />
     </SafeAreaView>
   )
