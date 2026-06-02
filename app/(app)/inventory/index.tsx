@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons'
 import { router, Stack, useFocusEffect } from 'expo-router'
+import * as SecureStore from 'expo-secure-store'
 import React, {
   useCallback,
   useEffect,
@@ -21,6 +22,7 @@ import {
 } from 'react-native'
 
 import { ScreenHeader } from '../../../src/components/layout'
+import { AddProductTutorialModal } from '../../../src/components/inventory/AddProductTutorialModal'
 import { ProductCard } from '../../../src/components/products/ProductCard'
 import { SortModal, type SortOption } from '../../../src/components/products/SortModal'
 import { EmptyState } from '../../../src/components/ui'
@@ -91,6 +93,23 @@ export default function InventoryScreen() {
   const [sortOption, setSortOption] = useState<SortOption>('name_asc')
   const [showSortModal, setShowSortModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
+
+  // Show the add-product tutorial once when the owner has no products yet.
+  useEffect(() => {
+    if (isLoading || isShopkeeper || !business?.id || products.length > 0) return
+    let cancelled = false
+    void (async () => {
+      const key = `product_tutorial_shown_${business.id}`
+      const seen = await SecureStore.getItemAsync(key)
+      if (!cancelled && seen !== 'true') {
+        setShowTutorial(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isLoading, isShopkeeper, business?.id, products.length])
 
   // Skeleton pulse animation
   const pulseAnim = useRef(new Animated.Value(0.3)).current
@@ -435,6 +454,25 @@ export default function InventoryScreen() {
         sortOption={sortOption}
         onSelect={setSortOption}
         onClose={() => setShowSortModal(false)}
+      />
+
+      {/* First-time add product tutorial */}
+      <AddProductTutorialModal
+        visible={showTutorial}
+        ownerName={business?.ownerName ?? undefined}
+        onComplete={() => {
+          setShowTutorial(false)
+          if (business?.id) {
+            void SecureStore.setItemAsync(`product_tutorial_shown_${business.id}`, 'true')
+          }
+          router.push('/inventory/add' as never)
+        }}
+        onDismiss={() => {
+          setShowTutorial(false)
+          if (business?.id) {
+            void SecureStore.setItemAsync(`product_tutorial_shown_${business.id}`, 'true')
+          }
+        }}
       />
     </View>
   )

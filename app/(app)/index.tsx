@@ -26,7 +26,6 @@ import { useQuietOfflineRefreshOnFocus } from '../../src/hooks/useQuietOfflineRe
 import { useSubscription } from '../../src/hooks/useSubscription'
 import type { CashBreakdownItem, RecentSaleEntry } from '../../src/hooks/useDashboard'
 import { formatPaymentMethod } from '../../src/lib/formatters'
-import { insertSampleProductsForBusiness } from '../../src/lib/insertSampleProducts'
 import { normalizeBusinessType } from '../../src/lib/appPersonalisation'
 import { useMoneyFormat } from '../../src/hooks/useMoneyFormat'
 import type { Customer, PaymentMethod, Product } from '../../src/types'
@@ -70,21 +69,6 @@ function greetingNameSuffix(businessTypeRaw: string): string {
   if (t === 'restaurant') return ' — ready for service?'
   if (t === 'salon') return ' — ready for the day?'
   return ''
-}
-
-function sampleOfferBusinessLabel(bt: string): string {
-  const t = normalizeBusinessType(bt)
-  const m: Record<string, string> = {
-    tuck_shop: 'tuck shop',
-    hardware: 'hardware store',
-    tech_shop: 'tech shop',
-    salon: 'salon',
-    clothing: 'clothing shop',
-    pharmacy: 'pharmacy',
-    restaurant: 'restaurant',
-    other: 'business',
-  }
-  return m[t] ?? 'business'
 }
 
 // ---------------------------------------------------------------------------
@@ -840,49 +824,6 @@ export default function DashboardScreen() {
       setEmailSecurityBannerVisible(false)
     }
   }, [business?.recoveryEmailVerified])
-
-  useEffect(() => {
-    let cancelled = false
-
-    const run = async () => {
-      if (!business?.id || isLoading || isShopkeeper) return
-      if (totalProductCount !== 0) return
-      const offered = await SecureStore.getItemAsync('sample_products_offered')
-      if (offered === 'true' || cancelled) return
-
-      const label = sampleOfferBusinessLabel(business.businessType ?? 'other')
-      Alert.alert(
-        'Add sample products?',
-        `We have prepared some common products for a ${label}. Want to add them as a starting point? You can edit or remove them anytime.`,
-        [
-          {
-            text: 'Skip',
-            style: 'cancel',
-            onPress: () => {
-              void SecureStore.setItemAsync('sample_products_offered', 'true')
-            },
-          },
-          {
-            text: 'Add sample products',
-            onPress: async () => {
-              try {
-                await insertSampleProductsForBusiness(business.id)
-                await SecureStore.setItemAsync('sample_products_offered', 'true')
-                refetch()
-              } catch {
-                Alert.alert('Error', 'Could not add sample products.')
-              }
-            },
-          },
-        ],
-      )
-    }
-
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [business?.id, business?.businessType, totalProductCount, isLoading, isShopkeeper, refetch])
 
   // ── Notification bell logic ────────────────────────────────────────────
   const notifHash = `${lowStockProducts.length}:${recoveryVerified ? '1' : '0'}`

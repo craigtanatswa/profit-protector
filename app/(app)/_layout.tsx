@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Alert, AppState, StyleSheet, View } from 'react-native'
 import { Tabs, router, type Href, useSegments, useUnstableGlobalHref } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
@@ -13,11 +13,16 @@ import { useActiveSessionGuard } from '../../src/hooks/useActiveSessionGuard'
 import { useOwnerSalesRealtimeSync } from '../../src/hooks/useOwnerSalesRealtimeSync'
 import { useShopkeeperStaffSignalsRealtimeSync } from '../../src/hooks/useShopkeeperStaffSignalsRealtimeSync'
 import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
+import { useApplyFirstRunUxReset } from '../../src/hooks/useApplyFirstRunUxReset'
 import { useSubscription } from '../../src/hooks/useSubscription'
 import { setupNotificationHandlers, registerInAppBizNotificationSink } from '../../src/lib/notifications'
 import { ensureOwnerPushTokenRegistered } from '../../src/lib/expoPushRemote'
 import { useNotificationBanner } from '../../src/hooks/useNotificationBanner'
 import { NotificationBanner } from '../../src/components/ui/NotificationBanner'
+import {
+  GoToInventoryPromptModal,
+  TrialWelcomeModal,
+} from '../../src/components/modals/FirstRunWelcomeModals'
 import { clearShopkeeperSession as clearStoredShopkeeperSession } from '../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../src/lib/activityLogger'
 
@@ -156,6 +161,9 @@ export default function AppLayout() {
   const shopkeeperSession = useAuthStore((s) => s.shopkeeperSession)
   const clearShopkeeperSession = useAuthStore((s) => s.clearShopkeeperSession)
   const isShopkeeper = activeRole === 'shopkeeper'
+  const [showTrialWelcome, setShowTrialWelcome] = useState(false)
+  const [showInventoryPrompt, setShowInventoryPrompt] = useState(false)
+  useApplyFirstRunUxReset(business?.id, activeRole === 'owner' && !isShopkeeper)
   const { pendingRequests } = usePendingApprovals(
     activeRole === 'owner' ? business?.id ?? '' : '',
   )
@@ -194,32 +202,66 @@ export default function AppLayout() {
     router.replace('/(app)/paywall')
   }, [activeRole, canUseApp, isLoadingAuth, paywallFocused, subscriptionLoading])
 
-  // Show a one-time "welcome — you have a 30-day trial" alert on the very
-  // first login after a new account is created.
+  // Show a one-time trial welcome modal, then prompt the owner to open Stock & Products.
   useEffect(() => {
     if (isLoadingAuth || subscriptionLoading) return
     if (activeRole !== 'owner') return
     if (subscription?.status !== 'trial') return
     if (!business?.id) return
 
-    const key = `trial_welcome_shown_${business.id}`
-    void SecureStore.getItemAsync(key).then((shown) => {
-      if (shown) return
-      void SecureStore.setItemAsync(key, '1')
-      Alert.alert(
-        'Welcome to Profit Protector!',
-        `You have a ${daysRemainingInTrial}-day free trial — no payment needed yet.\n\nExplore all features and start protecting your business profits today.`,
-        [{ text: 'Get Started', style: 'default' }],
-      )
-    })
+    let cancelled = false
+    void (async () => {
+      const trialKey = `trial_welcome_shown_${business.id}`
+      const inventoryKey = `inventory_prompt_shown_${business.id}`
+      const trialShown = await SecureStore.getItemAsync(trialKey)
+      const inventoryShown = await SecureStore.getItemAsync(inventoryKey)
+
+      if (cancelled) return
+
+      if (trialShown !== '1' && trialShown !== 'true') {
+        setShowTrialWelcome(true)
+        return
+      }
+
+      if (inventoryShown !== 'true') {
+        setShowInventoryPrompt(true)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [
     activeRole,
     business?.id,
-    daysRemainingInTrial,
     isLoadingAuth,
     subscription?.status,
     subscriptionLoading,
   ])
+
+  const handleTrialGetStarted = useCallback(() => {
+    setShowTrialWelcome(false)
+    if (business?.id) {
+      void SecureStore.setItemAsync(`trial_welcome_shown_${business.id}`, '1')
+    }
+    setShowInventoryPrompt(true)
+  }, [business?.id])
+
+  const markInventoryPromptSeen = useCallback(() => {
+    setShowInventoryPrompt(false)
+    if (business?.id) {
+      void SecureStore.setItemAsync(`inventory_prompt_shown_${business.id}`, 'true')
+    }
+  }, [business?.id])
+
+  const handleGoToInventory = useCallback(() => {
+    markInventoryPromptSeen()
+    router.replace('/(app)/inventory')
+  }, [markInventoryPromptSeen])
+
+  const handleInventoryLater = useCallback(() => {
+    markInventoryPromptSeen()
+  }, [markInventoryPromptSeen])
 
   /** Accounts that verified phone but never finished `createBusinessProfile` (e.g. older builds). */
   useEffect(() => {
@@ -376,6 +418,22 @@ export default function AppLayout() {
             }}
           />
         </Tabs>
+
+        {!isShopkeeper ? (
+          <>
+            <TrialWelcomeModal
+              visible={showTrialWelcome}
+              ownerName={business?.ownerName ?? undefined}
+              daysRemainingInTrial={daysRemainingInTrial}
+              onGetStarted={handleTrialGetStarted}
+            />
+            <GoToInventoryPromptModal
+              visible={showInventoryPrompt}
+              onGoToInventory={handleGoToInventory}
+              onLater={handleInventoryLater}
+            />
+          </>
+        ) : null}
       </View>
     </AppChromeContext.Provider>
   )
