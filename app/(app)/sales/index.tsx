@@ -13,11 +13,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import * as SecureStore from 'expo-secure-store'
 import { Q } from '@nozbe/watermelondb'
 
 import { ScreenHeader } from '../../../src/components/layout'
 import { EmptyState } from '../../../src/components/ui'
 import { SaleCard } from '../../../src/components/sales/SaleCard'
+import { SalesTutorialModal } from '../../../src/components/sales/SalesTutorialModal'
 import { FilterPanel, DEFAULT_FILTERS } from '../../../src/components/sales/FilterPanel'
 import type { FilterState, ShopkeeperOption } from '../../../src/components/sales/FilterPanel'
 import { useAuthStore } from '../../../src/stores/authStore'
@@ -98,7 +100,7 @@ function SkeletonCard() {
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
-export default function SalesHistoryScreen() {
+export default function SalesScreen() {
   const router = useRouter()
   const { formatMoney } = useMoneyFormat()
   const business = useAuthStore((s) => s.business)
@@ -138,6 +140,7 @@ export default function SalesHistoryScreen() {
   const [showFilterPanel, setShowFilterPanel] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
 
   const { dateFilter, selectedMethods, sortOption, creatorFilter } = filters
 
@@ -149,6 +152,22 @@ export default function SalesHistoryScreen() {
       ? { shopkeeperId: shopkeeperIdForQuery }
       : { ownerCreatorFilter: creatorFilter },
   )
+
+  // Show the sales tutorial once when the owner has no sales yet.
+  useEffect(() => {
+    if (isLoading || isShopkeeper || !business?.id || salesWithItems.length > 0) return
+    let cancelled = false
+    void (async () => {
+      const key = `sales_tutorial_shown_${business.id}`
+      const seen = await SecureStore.getItemAsync(key)
+      if (!cancelled && seen !== 'true') {
+        setShowTutorial(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isLoading, isShopkeeper, business?.id, salesWithItems.length])
 
   useQuietOfflineRefreshOnFocus(
     useCallback(() => {
@@ -355,7 +374,7 @@ export default function SalesHistoryScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
-        title="Sales History"
+        title="Sales"
         rightAction={{ icon: 'funnel-outline', onPress: () => setShowFilterPanel(true) }}
         showBorder
       />
@@ -509,6 +528,26 @@ export default function SalesHistoryScreen() {
         onClose={() => setShowFilterPanel(false)}
         shopkeepers={isShopkeeper ? undefined : shopkeeperOptions}
       />
+
+      {!isShopkeeper ? (
+        <SalesTutorialModal
+          visible={showTutorial}
+          ownerName={business?.ownerName ?? undefined}
+          onComplete={() => {
+            setShowTutorial(false)
+            if (business?.id) {
+              void SecureStore.setItemAsync(`sales_tutorial_shown_${business.id}`, 'true')
+            }
+            router.push('/(app)/sales/new')
+          }}
+          onDismiss={() => {
+            setShowTutorial(false)
+            if (business?.id) {
+              void SecureStore.setItemAsync(`sales_tutorial_shown_${business.id}`, 'true')
+            }
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   )
 }

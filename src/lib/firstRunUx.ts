@@ -8,6 +8,7 @@ export function firstRunUxKeysForBusiness(businessId: string): string[] {
     `trial_welcome_shown_${businessId}`,
     `inventory_prompt_shown_${businessId}`,
     `product_tutorial_shown_${businessId}`,
+    `sales_tutorial_shown_${businessId}`,
   ]
 }
 
