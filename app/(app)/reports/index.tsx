@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Animated,
   Modal,
   Platform,
   ScrollView,
@@ -11,6 +12,7 @@ import {
   useWindowDimensions,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import Svg, { Circle, Polyline } from 'react-native-svg'
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import * as SecureStore from 'expo-secure-store'
 import { useAuthStore } from '../../../src/stores/authStore'
@@ -281,7 +283,7 @@ function SectionLabel({ label }: { label: string }) {
   )
 }
 
-// ── Bar Chart ────────────────────────────────────────────────────────────────
+// ── Sales Chart (bar / line) ─────────────────────────────────────────────────
 
 const CHART_BAR_H = 120
 const CHART_LABEL_H = 20
@@ -289,15 +291,84 @@ const MIN_BAR_W = 8
 const MAX_BAR_W = 32
 const CHART_Y_AXIS_W = 40
 
-interface BarChartProps {
+type ChartViewMode = 'bar' | 'line'
+
+const CHART_TOGGLE_SEGMENT = 32
+const CHART_TOGGLE_PADDING = 3
+
+function ChartViewToggle({
+  viewMode,
+  onViewModeChange,
+}: {
+  viewMode: ChartViewMode
+  onViewModeChange: (mode: ChartViewMode) => void
+}) {
+  const slideAnim = useRef(new Animated.Value(viewMode === 'bar' ? 0 : 1)).current
+
+  useEffect(() => {
+    Animated.spring(slideAnim, {
+      toValue: viewMode === 'bar' ? 0 : 1,
+      useNativeDriver: true,
+      tension: 220,
+      friction: 22,
+    }).start()
+  }, [viewMode, slideAnim])
+
+  const slideX = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, CHART_TOGGLE_SEGMENT],
+  })
+
+  return (
+    <View style={styles.chartToggleTrack}>
+      <Animated.View
+        style={[
+          styles.chartToggleSlider,
+          { transform: [{ translateX: slideX }] },
+        ]}
+      />
+      <TouchableOpacity
+        style={styles.chartToggleSegment}
+        onPress={() => onViewModeChange('bar')}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityState={{ selected: viewMode === 'bar' }}
+        accessibilityLabel="Bar chart"
+      >
+        <Ionicons
+          name="bar-chart-outline"
+          size={16}
+          color={viewMode === 'bar' ? '#FFFFFF' : THEME.textSecondary}
+        />
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.chartToggleSegment}
+        onPress={() => onViewModeChange('line')}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityState={{ selected: viewMode === 'line' }}
+        accessibilityLabel="Line chart"
+      >
+        <Ionicons
+          name="analytics-outline"
+          size={16}
+          color={viewMode === 'line' ? '#FFFFFF' : THEME.textSecondary}
+        />
+      </TouchableOpacity>
+    </View>
+  )
+}
+
+interface SalesChartProps {
   data: ChartPoint[]
   selectedBar: number | null
   onSelectBar: (idx: number | null) => void
   currency: string
   zigRatePerUsd: number
+  viewMode: ChartViewMode
 }
 
-function BarChart({ data, selectedBar, onSelectBar, currency, zigRatePerUsd }: BarChartProps) {
+function SalesChart({ data, selectedBar, onSelectBar, currency, zigRatePerUsd, viewMode }: SalesChartProps) {
   const { width: screenW } = useWindowDimensions()
   const chartAreaW = screenW - 32 - CHART_Y_AXIS_W - 8
   const numBars = data.length || 1
@@ -306,6 +377,19 @@ function BarChart({ data, selectedBar, onSelectBar, currency, zigRatePerUsd }: B
   const isEmpty = data.length === 0 || data.every(d => d.totalCents === 0)
 
   const gridPcts = [1, 0.75, 0.5, 0.25]
+  const pointSpacing = barWidth + 4
+
+  const linePoints = data.map((item, idx) => {
+    const barH =
+      item.totalCents > 0
+        ? Math.max(2, (item.totalCents / maxValue) * (CHART_BAR_H - 4))
+        : 0
+    return {
+      x: idx * pointSpacing + pointSpacing / 2,
+      y: CHART_BAR_H - barH,
+      idx,
+    }
+  })
 
   return (
     <View>
@@ -378,7 +462,7 @@ function BarChart({ data, selectedBar, onSelectBar, currency, zigRatePerUsd }: B
                 }}
               />
 
-              {/* Scrollable bars + x-axis labels */}
+              {/* Scrollable chart + x-axis labels */}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -386,60 +470,87 @@ function BarChart({ data, selectedBar, onSelectBar, currency, zigRatePerUsd }: B
                 contentContainerStyle={{ paddingHorizontal: 4 }}
               >
                 <View>
-                  {/* Bars row */}
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'flex-end',
-                      height: CHART_BAR_H,
-                    }}
-                  >
-                    {data.map((item, idx) => {
-                      const barH =
-                        item.totalCents > 0
-                          ? Math.max(2, (item.totalCents / maxValue) * (CHART_BAR_H - 4))
-                          : 0
-                      const isSelected = selectedBar === idx
-                      return (
-                        <TouchableOpacity
-                          key={idx}
-                          onPress={() => onSelectBar(isSelected ? null : idx)}
-                          hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}
-                          style={{
-                            width: barWidth + 4,
-                            alignItems: 'center',
-                            justifyContent: 'flex-end',
-                            height: CHART_BAR_H,
-                            paddingHorizontal: 2,
-                          }}
-                        >
-                          {/* Background bar */}
-                          <View
+                  {viewMode === 'bar' ? (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'flex-end',
+                        height: CHART_BAR_H,
+                      }}
+                    >
+                      {data.map((item, idx) => {
+                        const barH =
+                          item.totalCents > 0
+                            ? Math.max(2, (item.totalCents / maxValue) * (CHART_BAR_H - 4))
+                            : 0
+                        const isSelected = selectedBar === idx
+                        return (
+                          <TouchableOpacity
+                            key={idx}
+                            onPress={() => onSelectBar(isSelected ? null : idx)}
+                            hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}
                             style={{
-                              position: 'absolute',
-                              bottom: 0,
-                              width: barWidth,
+                              width: barWidth + 4,
+                              alignItems: 'center',
+                              justifyContent: 'flex-end',
                               height: CHART_BAR_H,
-                              backgroundColor: '#F4F6FB',
-                              borderRadius: 2,
+                              paddingHorizontal: 2,
                             }}
-                          />
-                          {/* Fill bar */}
-                          {barH > 0 && (
+                          >
                             <View
                               style={{
+                                position: 'absolute',
+                                bottom: 0,
                                 width: barWidth,
-                                height: barH,
-                                backgroundColor: isSelected ? THEME.primaryDark : THEME.primary,
-                                borderTopLeftRadius: 2,
-                                borderTopRightRadius: 2,
+                                height: CHART_BAR_H,
+                                backgroundColor: '#F4F6FB',
+                                borderRadius: 2,
                               }}
                             />
-                          )}
-                        </TouchableOpacity>
-                      )
-                    })}
-                  </View>
+                            {barH > 0 && (
+                              <View
+                                style={{
+                                  width: barWidth,
+                                  height: barH,
+                                  backgroundColor: isSelected ? THEME.primaryDark : THEME.primary,
+                                  borderTopLeftRadius: 2,
+                                  borderTopRightRadius: 2,
+                                }}
+                              />
+                            )}
+                          </TouchableOpacity>
+                        )
+                      })}
+                    </View>
+                  ) : (
+                    <Svg width={data.length * pointSpacing} height={CHART_BAR_H}>
+                      {linePoints.length > 1 && (
+                        <Polyline
+                          points={linePoints.map(p => `${p.x},${p.y}`).join(' ')}
+                          fill="none"
+                          stroke={THEME.primary}
+                          strokeWidth={2}
+                          strokeLinejoin="round"
+                          strokeLinecap="round"
+                        />
+                      )}
+                      {linePoints.map(p => {
+                        const isSelected = selectedBar === p.idx
+                        return (
+                          <Circle
+                            key={p.idx}
+                            cx={p.x}
+                            cy={p.y}
+                            r={isSelected ? 5 : 3.5}
+                            fill={isSelected ? THEME.primaryDark : THEME.primary}
+                            stroke={THEME.card}
+                            strokeWidth={2}
+                            onPress={() => onSelectBar(isSelected ? null : p.idx)}
+                          />
+                        )
+                      })}
+                    </Svg>
+                  )}
 
                   {/* X-axis labels row */}
                   <View
@@ -623,6 +734,7 @@ export default function ReportsScreen() {
   const [showExportModal, setShowExportModal] = useState(false)
   const [topProductSort, setTopProductSort] = useState<TopProductSort>('revenue')
   const [selectedBar, setSelectedBar] = useState<number | null>(null)
+  const [chartViewMode, setChartViewMode] = useState<ChartViewMode>('bar')
   const [isExportingPDF, setIsExportingPDF] = useState(false)
   const [isExportingCSV, setIsExportingCSV] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
@@ -1034,31 +1146,39 @@ export default function ReportsScreen() {
                         {transactionCount} sale{transactionCount !== 1 ? 's' : ''}
                       </Text>
                     </View>
-                    {chartPeakEntry != null && chartPeakEntry.totalCents > 0 && (
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          color: THEME.textSecondary,
-                          textAlign: 'right',
-                          maxWidth: 140,
-                        }}
-                        numberOfLines={2}
-                      >
-                        {'Peak: '}
-                        {chartPeakEntry.label !== ''
-                          ? chartPeakEntry.label
-                          : `Hr ${new Date(chartPeakEntry.date).getHours()}`}
-                        {' · '}
-                        {formatCurrency(chartPeakEntry.totalCents, currency, zigRatePerUsd)}
-                      </Text>
-                    )}
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <ChartViewToggle
+                        viewMode={chartViewMode}
+                        onViewModeChange={setChartViewMode}
+                      />
+                      {chartPeakEntry != null && chartPeakEntry.totalCents > 0 && (
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            color: THEME.textSecondary,
+                            textAlign: 'right',
+                            maxWidth: 140,
+                            marginTop: 8,
+                          }}
+                          numberOfLines={2}
+                        >
+                          {'Peak: '}
+                          {chartPeakEntry.label !== ''
+                            ? chartPeakEntry.label
+                            : `Hr ${new Date(chartPeakEntry.date).getHours()}`}
+                          {' · '}
+                          {formatCurrency(chartPeakEntry.totalCents, currency, zigRatePerUsd)}
+                        </Text>
+                      )}
+                    </View>
                   </View>
-                  <BarChart
+                  <SalesChart
                     data={chartData}
                     selectedBar={selectedBar}
                     onSelectBar={setSelectedBar}
                     currency={currency}
                     zigRatePerUsd={zigRatePerUsd}
+                    viewMode={chartViewMode}
                   />
                 </Card>
               </>
@@ -1695,6 +1815,32 @@ const styles = StyleSheet.create({
   },
   sortPillTextActive: {
     color: '#FFFFFF',
+  },
+
+  chartToggleTrack: {
+    flexDirection: 'row',
+    backgroundColor: THEME.bg,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    padding: CHART_TOGGLE_PADDING,
+    width: CHART_TOGGLE_SEGMENT * 2 + CHART_TOGGLE_PADDING * 2,
+  },
+  chartToggleSlider: {
+    position: 'absolute',
+    top: CHART_TOGGLE_PADDING,
+    left: CHART_TOGGLE_PADDING,
+    width: CHART_TOGGLE_SEGMENT,
+    height: CHART_TOGGLE_SEGMENT,
+    backgroundColor: THEME.primary,
+    borderRadius: 6,
+  },
+  chartToggleSegment: {
+    width: CHART_TOGGLE_SEGMENT,
+    height: CHART_TOGGLE_SEGMENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
   },
 
   // Profit analysis rows
