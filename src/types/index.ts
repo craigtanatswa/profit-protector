@@ -200,6 +200,8 @@ export type ActivityAction =
   | 'shopkeeper_password_changed'
   | 'device_approved'
   | 'device_denied'
+  | 'stock_access_approved'
+  | 'stock_access_denied'
   | 'business_profile_updated'
   | 'password_changed'
   | 'data_exported'
@@ -243,6 +245,25 @@ export interface DeviceApprovalRequest {
   status: 'pending' | 'approved' | 'denied'
   requestedAt: string
 }
+
+/** Owner approval scope: receive/add stock vs adjust stock (separate 24h grants). */
+export type StockAccessType = 'receive' | 'adjust'
+
+export interface StockAccessApprovalRequest {
+  id: string
+  shopkeeperId: string
+  businessId: string
+  shopkeeperName: string
+  accessType: StockAccessType
+  status: 'pending' | 'approved' | 'denied'
+  requestedAt: string
+}
+
+export type ShopkeeperStockAccessStatus =
+  | 'granted'
+  | 'pending'
+  | 'denied'
+  | 'none'
 
 export interface CartItem {
   productId: string

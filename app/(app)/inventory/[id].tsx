@@ -18,6 +18,8 @@ import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflin
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { StockMovement } from '../../../src/types'
 import { useAuthStore } from '../../../src/stores/authStore'
+import { useShopkeeperStockAccessGate } from '../../../src/hooks/useShopkeeperStockAccessGate'
+import { StockAccessPendingModal } from '../../../src/components/modals/StockAccessPendingModal'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -144,6 +146,13 @@ export default function ProductDetailScreen() {
   const productId = Array.isArray(id) ? id[0] : (id ?? '')
   const activeRole = useAuthStore((s) => s.activeRole)
   const isShopkeeper = activeRole === 'shopkeeper'
+  const {
+    ensureStockAccess,
+    pendingVisible,
+    pendingAccessType,
+    closePending,
+    shopkeeperName,
+  } = useShopkeeperStockAccessGate()
 
   const { product, movements, isLoading, error, refreshFromLocal } =
     useProductDetail(productId)
@@ -299,17 +308,23 @@ export default function ProductDetailScreen() {
   const totalProfitCents = totalSold * profitCents
 
   // ── Navigation helpers ────────────────────────────────────────────────────
-  const goToReceive = () =>
-    router.push({
-      pathname: '/(app)/inventory/purchase',
-      params: { productId },
+  const goToReceive = () => {
+    void ensureStockAccess('receive', () => {
+      router.push({
+        pathname: '/(app)/inventory/purchase',
+        params: { productId },
+      })
     })
+  }
 
-  const goToAdjust = () =>
-    router.push({
-      pathname: '/(app)/inventory/adjust',
-      params: { productId },
+  const goToAdjust = () => {
+    void ensureStockAccess('adjust', () => {
+      router.push({
+        pathname: '/(app)/inventory/adjust',
+        params: { productId },
+      })
     })
+  }
 
   const goToEdit = () =>
     router.push({
@@ -706,6 +721,13 @@ export default function ProductDetailScreen() {
           </View>
         </View>
       </View>
+
+      <StockAccessPendingModal
+        visible={pendingVisible}
+        accessType={pendingAccessType}
+        shopkeeperName={shopkeeperName}
+        onCancel={closePending}
+      />
     </SafeAreaView>
   )
 }

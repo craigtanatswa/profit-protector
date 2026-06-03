@@ -3,8 +3,8 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { router, Stack, useLocalSearchParams } from 'expo-router'
-import React, { useEffect, useMemo, useState } from 'react'
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import {
   ActivityIndicator,
@@ -34,6 +34,8 @@ import {
   enqueuePendingShopkeeperStockAdjustment,
   flushPendingShopkeeperOutbound,
 } from '../../../src/lib/shopkeeperAuth'
+import { useShopkeeperStockAccessGate } from '../../../src/hooks/useShopkeeperStockAccessGate'
+import { StockAccessPendingModal } from '../../../src/components/modals/StockAccessPendingModal'
 import { logActivity } from '../../../src/lib/activityLogger'
 import { sendLowStockNotification } from '../../../src/lib/notifications'
 import { wmRaw } from '../../../src/lib/watermelonRaw'
@@ -159,6 +161,20 @@ export default function AdjustStockScreen() {
   const business = useAuthStore((s) => s.business)
   const activeRole = useAuthStore((s) => s.activeRole)
   const isShopkeeper = activeRole === 'shopkeeper'
+  const {
+    ensureStockAccess,
+    pendingVisible,
+    pendingAccessType,
+    closePending,
+    shopkeeperName,
+  } = useShopkeeperStockAccessGate()
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isShopkeeper) return
+      void ensureStockAccess('adjust')
+    }, [isShopkeeper, ensureStockAccess]),
+  )
 
   const adjustmentSchema = useMemo(() => buildAdjustmentSchema(isShopkeeper), [isShopkeeper])
   const reasonChoices = useMemo(
@@ -867,6 +883,13 @@ export default function AdjustStockScreen() {
         businessId={business?.id ?? ''}
         onSelect={handleSelectProduct}
         onClose={() => setShowProductPicker(false)}
+      />
+
+      <StockAccessPendingModal
+        visible={pendingVisible}
+        accessType={pendingAccessType}
+        shopkeeperName={shopkeeperName}
+        onCancel={closePending}
       />
     </View>
   )

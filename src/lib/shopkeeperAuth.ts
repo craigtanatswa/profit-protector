@@ -4,7 +4,7 @@ import { Q } from '@nozbe/watermelondb'
 
 import { getDeviceId, getDeviceName } from './deviceId'
 import { secureStoreGetLarge, secureStoreRemoveLarge, secureStoreSetLarge } from './secureStoreLarge'
-import type { ShopkeeperSession } from '../types'
+import type { ShopkeeperSession, ShopkeeperStockAccessStatus, StockAccessType } from '../types'
 import { database } from '../database'
 import type SaleModel from '../database/models/Sale'
 import type SaleItemModel from '../database/models/SaleItem'
@@ -1298,6 +1298,44 @@ export async function clearShopkeeperSession(): Promise<void> {
     await SecureStore.deleteItemAsync(pendingSalesKey(bizId)).catch(() => {})
     await SecureStore.deleteItemAsync(pendingProductSyncKey(bizId)).catch(() => {})
   }
+}
+
+export async function checkShopkeeperStockAccess(
+  sessionToken: string,
+  accessType: StockAccessType,
+): Promise<ShopkeeperStockAccessStatus> {
+  try {
+    const data = await callShopkeeperAuth({
+      action: 'check_stock_access',
+      sessionToken,
+      accessType,
+    })
+    if (data.status === 'granted') return 'granted'
+    if (data.status === 'pending') return 'pending'
+    if (data.status === 'denied') return 'denied'
+  } catch {
+    return 'none'
+  }
+  return 'none'
+}
+
+export async function requestShopkeeperStockAccess(
+  sessionToken: string,
+  accessType: StockAccessType,
+): Promise<ShopkeeperStockAccessStatus> {
+  try {
+    const data = await callShopkeeperAuth({
+      action: 'request_stock_access',
+      sessionToken,
+      accessType,
+    })
+    if (data.status === 'granted') return 'granted'
+    if (data.status === 'pending') return 'pending'
+    if (data.status === 'denied') return 'denied'
+  } catch {
+    return 'none'
+  }
+  return 'pending'
 }
 
 export async function checkApprovalStatus(params: {

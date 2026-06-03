@@ -22,6 +22,8 @@ const ACTION_LABELS: Record<string, string> = {
   shopkeeper_password_changed: 'Changed staff password',
   device_approved: 'Approved device',
   device_denied: 'Denied device',
+  stock_access_approved: 'Approved stock access',
+  stock_access_denied: 'Denied stock access',
   business_profile_updated: 'Updated business profile',
   password_changed: 'Changed password',
   data_exported: 'Exported data',

@@ -4,8 +4,8 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker'
 import { Q } from '@nozbe/watermelondb'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { router, Stack, useLocalSearchParams } from 'expo-router'
-import React, { useEffect, useState } from 'react'
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router'
+import React, { useCallback, useEffect, useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import {
   Alert,
@@ -34,6 +34,8 @@ import {
   enqueuePendingShopkeeperStockReceived,
   flushPendingShopkeeperOutbound,
 } from '../../../src/lib/shopkeeperAuth'
+import { useShopkeeperStockAccessGate } from '../../../src/hooks/useShopkeeperStockAccessGate'
+import { StockAccessPendingModal } from '../../../src/components/modals/StockAccessPendingModal'
 import { logActivity } from '../../../src/lib/activityLogger'
 import { wmRaw } from '../../../src/lib/watermelonRaw'
 
@@ -86,6 +88,21 @@ export default function PurchaseScreen() {
   const { productId: routeProductId } = useLocalSearchParams<{ productId?: string }>()
   const business = useAuthStore((s) => s.business)
   const activeRole = useAuthStore((s) => s.activeRole)
+  const isShopkeeper = activeRole === 'shopkeeper'
+  const {
+    ensureStockAccess,
+    pendingVisible,
+    pendingAccessType,
+    closePending,
+    shopkeeperName,
+  } = useShopkeeperStockAccessGate()
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isShopkeeper) return
+      void ensureStockAccess('receive')
+    }, [isShopkeeper, ensureStockAccess]),
+  )
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -697,6 +714,13 @@ export default function PurchaseScreen() {
         businessId={business?.id ?? ''}
         onSelect={handleSelectProduct}
         onClose={() => setShowPicker(false)}
+      />
+
+      <StockAccessPendingModal
+        visible={pendingVisible}
+        accessType={pendingAccessType}
+        shopkeeperName={shopkeeperName}
+        onCancel={closePending}
       />
     </View>
   )

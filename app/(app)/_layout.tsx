@@ -13,6 +13,9 @@ import { useActiveSessionGuard } from '../../src/hooks/useActiveSessionGuard'
 import { useOwnerSalesRealtimeSync } from '../../src/hooks/useOwnerSalesRealtimeSync'
 import { useShopkeeperStaffSignalsRealtimeSync } from '../../src/hooks/useShopkeeperStaffSignalsRealtimeSync'
 import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
+import { usePendingStockAccessApprovals } from '../../src/hooks/usePendingStockAccessApprovals'
+import { DeviceApprovalModal } from '../../src/components/modals/DeviceApprovalModal'
+import { StockAccessApprovalModal } from '../../src/components/modals/StockAccessApprovalModal'
 import { useApplyFirstRunUxReset } from '../../src/hooks/useApplyFirstRunUxReset'
 import { useSubscription } from '../../src/hooks/useSubscription'
 import { setupNotificationHandlers, registerInAppBizNotificationSink } from '../../src/lib/notifications'
@@ -164,9 +167,13 @@ export default function AppLayout() {
   const [showTrialWelcome, setShowTrialWelcome] = useState(false)
   const [showInventoryPrompt, setShowInventoryPrompt] = useState(false)
   useApplyFirstRunUxReset(business?.id, activeRole === 'owner' && !isShopkeeper)
-  const { pendingRequests } = usePendingApprovals(
-    activeRole === 'owner' ? business?.id ?? '' : '',
-  )
+  const ownerBusinessId = activeRole === 'owner' ? business?.id ?? '' : ''
+  const { pendingRequests, approveDevice, denyDevice } = usePendingApprovals(ownerBusinessId)
+  const {
+    pendingRequests: pendingStockAccess,
+    approveStockAccess,
+    denyStockAccess,
+  } = usePendingStockAccessApprovals(ownerBusinessId)
 
   const segments = useSegments()
   const unstableHref = useUnstableGlobalHref()
@@ -296,7 +303,7 @@ export default function AppLayout() {
               nType === 'staff_stock_adjustment' ||
               nType === 'staff_stock_received'
             ? '/(app)/settings/activity-log'
-          : screen === 'inventory'
+          : screen === 'inventory' || nType === 'staff_stock_access'
             ? '/(app)/inventory'
             : null
       showBanner({
@@ -349,7 +356,7 @@ export default function AppLayout() {
     title: 'Settings',
     headerShown: false,
     tabBarIcon: (props: TabIconProps) => (
-      <SettingsIcon {...props} badgeCount={pendingRequests.length} />
+      <SettingsIcon {...props} badgeCount={pendingRequests.length + pendingStockAccess.length} />
     ),
   } as const
 
@@ -421,6 +428,16 @@ export default function AppLayout() {
 
         {!isShopkeeper ? (
           <>
+            <StockAccessApprovalModal
+              requests={pendingStockAccess}
+              onApprove={approveStockAccess}
+              onDeny={denyStockAccess}
+            />
+            <DeviceApprovalModal
+              requests={pendingRequests}
+              onApprove={approveDevice}
+              onDeny={denyDevice}
+            />
             <TrialWelcomeModal
               visible={showTrialWelcome}
               ownerName={business?.ownerName ?? undefined}

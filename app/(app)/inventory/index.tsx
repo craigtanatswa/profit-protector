@@ -30,6 +30,8 @@ import { useProducts } from '../../../src/hooks/useProducts'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import { pullShopkeeperCloudSnapshotFast } from '../../../src/lib/shopkeeperAuth'
+import { useShopkeeperStockAccessGate } from '../../../src/hooks/useShopkeeperStockAccessGate'
+import { StockAccessPendingModal } from '../../../src/components/modals/StockAccessPendingModal'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
 
@@ -55,6 +57,13 @@ export default function InventoryScreen() {
   const triggerSync = useAuthStore((s) => s.triggerSync)
   const businessId = business?.id ?? ''
   const isShopkeeper = activeRole === 'shopkeeper'
+  const {
+    ensureStockAccess,
+    pendingVisible,
+    pendingAccessType,
+    closePending,
+    shopkeeperName,
+  } = useShopkeeperStockAccessGate()
 
   const { products, isLoading, refetch } = useProducts(businessId)
 
@@ -228,12 +237,16 @@ export default function InventoryScreen() {
   }, [isShopkeeper])
 
   const navigateToPurchase = useCallback(() => {
-    router.push('/inventory/purchase' as never)
-  }, [])
+    void ensureStockAccess('receive', () => {
+      router.push('/inventory/purchase' as never)
+    })
+  }, [ensureStockAccess])
 
   const navigateToAdjust = useCallback(() => {
-    router.push('/inventory/adjust' as never)
-  }, [])
+    void ensureStockAccess('adjust', () => {
+      router.push('/inventory/adjust' as never)
+    })
+  }, [ensureStockAccess])
 
   const navigateToDetail = useCallback((id: string) => {
     router.push(`/inventory/${id}` as never)
@@ -457,6 +470,13 @@ export default function InventoryScreen() {
       />
 
       {/* First-time add product tutorial */}
+      <StockAccessPendingModal
+        visible={pendingVisible}
+        accessType={pendingAccessType}
+        shopkeeperName={shopkeeperName}
+        onCancel={closePending}
+      />
+
       <AddProductTutorialModal
         visible={showTutorial}
         ownerName={business?.ownerName ?? undefined}

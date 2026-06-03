@@ -29,8 +29,6 @@ import { formatPaymentMethod } from '../../src/lib/formatters'
 import { normalizeBusinessType } from '../../src/lib/appPersonalisation'
 import { useMoneyFormat } from '../../src/hooks/useMoneyFormat'
 import type { Customer, PaymentMethod, Product } from '../../src/types'
-import { DeviceApprovalModal } from '../../src/components/modals/DeviceApprovalModal'
-import { usePendingApprovals } from '../../src/hooks/usePendingApprovals'
 import {
   clearShopkeeperSession as clearStoredShopkeeperSession,
   pullShopkeeperCloudSnapshotFast,
@@ -748,10 +746,6 @@ export default function DashboardScreen() {
     ? shopkeeperSession?.shopkeeper.fullName ?? 'there'
     : business?.ownerName ?? 'there'
   const recoveryVerified = business?.recoveryEmailVerified === true
-  const { pendingRequests, approveDevice, denyDevice } = usePendingApprovals(
-    activeRole === 'owner' ? businessId : '',
-  )
-
   const { subscription, daysRemainingInTrial } = useSubscription()
 
   const {
@@ -1089,13 +1083,6 @@ export default function DashboardScreen() {
 
           <View style={styles.bottomPad} />
         </ScrollView>
-        {!isShopkeeper ? (
-          <DeviceApprovalModal
-            requests={pendingRequests}
-            onApprove={approveDevice}
-            onDeny={denyDevice}
-          />
-        ) : null}
       </View>
     </>
   )

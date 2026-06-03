@@ -708,6 +708,12 @@ serve(async (req) => {
       const sessionCheckAdjust = await assertActiveShopkeeperSession(supabase, payload)
       if (sessionCheckAdjust === 'superseded') return sessionSuperseded()
 
+      if (!(await shopkeeperHasStockAccess(supabase, shopkeeperId, 'adjust'))) {
+        return error(
+          'Stock adjustment access not approved. Request access from the owner in Stock & Products.',
+        )
+      }
+
       const productPatch = body.product_patch as Record<string, unknown> | undefined
       const movementRaw = body.stock_movement as Record<string, unknown> | undefined
       const activityRaw = body.activity_log as Record<string, unknown> | undefined
@@ -867,6 +873,12 @@ serve(async (req) => {
       const sessionCheckReceive = await assertActiveShopkeeperSession(supabase, payload)
       if (sessionCheckReceive === 'superseded') return sessionSuperseded()
 
+      if (!(await shopkeeperHasStockAccess(supabase, shopkeeperId, 'receive'))) {
+        return error(
+          'Add stock access not approved. Request access from the owner in Stock & Products.',
+        )
+      }
+
       const productPatch = body.product_patch as Record<string, unknown> | undefined
       const movementRaw = body.stock_movement as Record<string, unknown> | undefined
       const activityRaw = body.activity_log as Record<string, unknown> | undefined
@@ -999,6 +1011,102 @@ serve(async (req) => {
       return json({ status: 'ok' })
     }
 
+    if (action === 'check_stock_access') {
+      const payload = await verifyToken(sessionToken)
+      if (!payload) return error('Session expired. Please log in again.')
+
+      const accessType = parseStockAccessType(body.accessType ?? body.access_type)
+      if (!accessType) return error('Invalid access type. Use receive or adjust.')
+
+      const shopkeeperId = String(payload.shopkeeperId)
+      const access = await stockAccessState(supabase, shopkeeperId, accessType)
+      if (access.status === 'granted') {
+        return json({ status: 'granted', grantedUntil: access.grantedUntil, accessType })
+      }
+      if (access.status === 'pending') {
+        return json({ status: 'pending', accessType })
+      }
+
+      const { data: denied } = await supabase
+        .from('stock_access_approval_requests')
+        .select('status')
+        .eq('shopkeeper_id', shopkeeperId)
+        .eq('access_type', accessType)
+        .eq('status', 'denied')
+        .order('resolved_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (denied) return json({ status: 'denied', accessType })
+      return json({ status: 'none', accessType })
+    }
+
+    if (action === 'request_stock_access') {
+      const payload = await verifyToken(sessionToken)
+      if (!payload) return error('Session expired. Please log in again.')
+
+      const accessType = parseStockAccessType(body.accessType ?? body.access_type)
+      if (!accessType) return error('Invalid access type. Use receive or adjust.')
+
+      const shopkeeperId = String(payload.shopkeeperId)
+      const bizId = String(payload.businessId)
+
+      const { data: shopkeeper } = await supabase
+        .from('shopkeepers')
+        .select('id, full_name, is_active')
+        .eq('id', shopkeeperId)
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .single()
+
+      if (!shopkeeper) return error('Account deactivated.')
+
+      const access = await stockAccessState(supabase, shopkeeperId, accessType)
+      if (access.status === 'granted') {
+        return json({ status: 'granted', grantedUntil: access.grantedUntil, accessType })
+      }
+      if (access.status === 'pending') {
+        return json({ status: 'pending', accessType })
+      }
+
+      const staffName =
+        typeof shopkeeper.full_name === 'string' && shopkeeper.full_name.trim().length > 0
+          ? shopkeeper.full_name.trim()
+          : 'Staff'
+
+      const { error: insErr } = await supabase.from('stock_access_approval_requests').insert({
+        shopkeeper_id: shopkeeperId,
+        business_id: bizId,
+        shopkeeper_name: staffName,
+        access_type: accessType,
+        status: 'pending',
+      })
+      if (insErr) return error(insErr.message)
+
+      const pushTitle =
+        accessType === 'receive'
+          ? '📦 Staff Add Stock Request'
+          : '📦 Staff Adjust Stock Request'
+      const pushBody =
+        accessType === 'receive'
+          ? `${staffName} wants to add or receive stock`
+          : `${staffName} wants to adjust stock`
+
+      try {
+        await sendOwnerPushInternal({
+          businessId: bizId,
+          title: pushTitle,
+          body: pushBody,
+          data: { type: 'staff_stock_access', screen: 'inventory', accessType },
+          androidChannel: 'staff-inventory',
+        })
+      } catch (pushErr) {
+        console.warn('[shopkeeper-auth] stock access owner push failed:', pushErr)
+      }
+
+      return json({ status: 'pending', accessType })
+    }
+
     if (action === 'check_approval_status') {
       const { data: business } = await supabase
         .from('businesses')
@@ -1111,6 +1219,67 @@ serve(async (req) => {
 })
 
 type SupabaseAdmin = ReturnType<typeof createClient>
+
+type StockAccessType = 'receive' | 'adjust'
+
+function parseStockAccessType(value: unknown): StockAccessType | null {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (raw === 'receive' || raw === 'add') return 'receive'
+  if (raw === 'adjust' || raw === 'adjustment') return 'adjust'
+  return null
+}
+
+async function shopkeeperHasStockAccess(
+  supabase: SupabaseAdmin,
+  shopkeeperId: string,
+  accessType: StockAccessType,
+): Promise<boolean> {
+  const now = new Date().toISOString()
+  const { data } = await supabase
+    .from('stock_access_approval_requests')
+    .select('id')
+    .eq('shopkeeper_id', shopkeeperId)
+    .eq('access_type', accessType)
+    .eq('status', 'approved')
+    .gt('access_granted_until', now)
+    .limit(1)
+    .maybeSingle()
+  return !!data
+}
+
+async function stockAccessState(
+  supabase: SupabaseAdmin,
+  shopkeeperId: string,
+  accessType: StockAccessType,
+): Promise<{ status: 'granted' | 'pending'; grantedUntil?: string } | { status: 'none' }> {
+  const now = new Date().toISOString()
+  const { data: grant } = await supabase
+    .from('stock_access_approval_requests')
+    .select('access_granted_until')
+    .eq('shopkeeper_id', shopkeeperId)
+    .eq('access_type', accessType)
+    .eq('status', 'approved')
+    .gt('access_granted_until', now)
+    .order('access_granted_until', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (grant?.access_granted_until) {
+    return { status: 'granted', grantedUntil: String(grant.access_granted_until) }
+  }
+
+  const { data: pending } = await supabase
+    .from('stock_access_approval_requests')
+    .select('id')
+    .eq('shopkeeper_id', shopkeeperId)
+    .eq('access_type', accessType)
+    .eq('status', 'pending')
+    .limit(1)
+    .maybeSingle()
+
+  if (pending) return { status: 'pending' }
+  return { status: 'none' }
+}
 
 /** Upserts the single active session for this shopkeeper and returns a signed JWT. */
 async function issueShopkeeperSession(
