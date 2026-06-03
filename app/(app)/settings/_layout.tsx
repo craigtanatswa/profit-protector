@@ -20,6 +20,10 @@ export default function SettingsLayout() {
         options={{ title: 'Activity Log', headerShown: false }}
       />
       <Stack.Screen
+        name="help-support"
+        options={{ title: 'Help & Support', headerShown: false }}
+      />
+      <Stack.Screen
         name="privacy-policy"
         options={{ title: 'Privacy Policy', headerShown: false }}
       />

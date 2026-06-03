@@ -19,7 +19,6 @@ import {
   Alert,
   Image,
   InteractionManager,
-  Linking,
   ScrollView,
   StyleSheet,
   Switch,
@@ -814,11 +813,8 @@ function SettingsScreen() {
             iconColor="#0047AB"
             iconBackground="#E6EEFF"
             label="Help & Support"
-            description="WhatsApp support chat"
-            onPress={() => {
-              // TODO: Replace with your WhatsApp business number
-              Linking.openURL('https://wa.me/YOUR_WHATSAPP_NUMBER')
-            }}
+            description="FAQs and contact us"
+            onPress={() => router.push('/(app)/settings/help-support')}
           />
           <SettingsRow
             icon="shield-checkmark-outline"

@@ -81,6 +81,12 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/active-session/index.ts"
 
+[functions.send-support-message]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-support-message/deno.json"
+entrypoint = "./functions/send-support-message/index.ts"
+
 [functions.shopkeeper-auth]
 enabled = true
 verify_jwt = false

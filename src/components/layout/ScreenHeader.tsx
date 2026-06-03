@@ -10,7 +10,7 @@ import { BrandLogo } from './BrandLogo'
 const HEADER_BG = '#0047AB'
 
 type IconAction = { icon: keyof typeof Ionicons.glyphMap; onPress: () => void }
-type LabelAction = { label: string; onPress: () => void }
+type LabelAction = { label: string; onPress: () => void; compact?: boolean }
 
 interface ScreenHeaderProps {
   title: string
@@ -80,7 +80,12 @@ export function ScreenHeader({
                 style={styles.actionTouch}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Text style={styles.rightLabel}>{rightAction.label}</Text>
+                <Text
+                  style={[styles.rightLabel, rightAction.compact && styles.rightLabelCompact]}
+                  numberOfLines={2}
+                >
+                  {rightAction.label}
+                </Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
@@ -148,5 +153,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#FFFFFF',
     fontWeight: '500',
+    textAlign: 'right',
+  },
+  rightLabelCompact: {
+    fontSize: 12,
+    lineHeight: 16,
+    maxWidth: 108,
   },
 })
