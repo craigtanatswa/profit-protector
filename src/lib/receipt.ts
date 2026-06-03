@@ -1,3 +1,5 @@
+import { File, Paths } from 'expo-file-system'
+import { copyAsync } from 'expo-file-system/legacy'
 import * as Print from 'expo-print'
 import * as Sharing from 'expo-sharing'
 import * as SecureStore from 'expo-secure-store'
@@ -25,6 +27,36 @@ async function getReceiptFooterMessage(business: Business): Promise<string> {
     }
   }
   return getPersonalisation(normalizeBusinessType(business.businessType ?? 'other')).receiptFooter
+}
+
+const RECEIPT_SHARE_PREFIX = 'Profit Protector'
+
+function receiptShareLabel(receiptNumber: string, businessName: string): string {
+  const receipt = receiptNumber.trim() || 'receipt'
+  const business = businessName.trim() || 'business'
+  return `${RECEIPT_SHARE_PREFIX} ${receipt}-${business}`
+}
+
+function receiptPdfFilename(receiptNumber: string, businessName: string): string {
+  const safe = receiptShareLabel(receiptNumber, businessName).replace(/[/\\?%*:|"<>]/g, '-')
+  return `${safe}.pdf`
+}
+
+async function pdfUriWithReceiptFilename(
+  tempUri: string,
+  receiptNumber: string,
+  businessName: string,
+): Promise<string> {
+  const dest = new File(Paths.cache, receiptPdfFilename(receiptNumber, businessName))
+  if (dest.exists) {
+    try {
+      dest.delete()
+    } catch {
+      /* best effort */
+    }
+  }
+  await copyAsync({ from: tempUri, to: dest.uri })
+  return dest.uri
 }
 
 function escapeHtml(text: string): string {
@@ -216,7 +248,7 @@ export async function generateReceiptPDF(params: ReceiptParams): Promise<string>
     html,
     base64: false,
   })
-  return uri
+  return pdfUriWithReceiptFilename(uri, params.sale.receiptNumber, params.business.name)
 }
 
 export async function shareReceipt(params: ReceiptParams): Promise<void> {
@@ -224,7 +256,7 @@ export async function shareReceipt(params: ReceiptParams): Promise<void> {
     const fileUri = await generateReceiptPDF(params)
     await Sharing.shareAsync(fileUri, {
       mimeType: 'application/pdf',
-      dialogTitle: `Receipt ${params.sale.receiptNumber}`,
+      dialogTitle: receiptShareLabel(params.sale.receiptNumber, params.business.name),
       UTI: 'com.adobe.pdf',
     })
   } catch (error: unknown) {
