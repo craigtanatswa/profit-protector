@@ -91,12 +91,40 @@ function buildReceiptHTML(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page { margin: 12mm; }
+    html, body {
+      width: 100%;
+      min-height: 100%;
+    }
     body {
       font-family: -apple-system, Arial, sans-serif;
       font-size: 13px;
       color: #0D1B3E;
-      width: 80mm;
-      padding: 8mm;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      margin: 0;
+      padding: 12mm;
+      background: #fff;
+    }
+    .receipt {
+      width: 100%;
+      max-width: 100%;
+    }
+    @media print {
+      body {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        min-height: auto;
+        padding: 0;
+        margin: 0;
+      }
+      .receipt {
+        width: 100%;
+        max-width: 100%;
+      }
     }
     .center { text-align: center; }
     .logo-wrap { margin-bottom: 8px; }
@@ -125,6 +153,7 @@ function buildReceiptHTML(
   </style>
 </head>
 <body>
+  <div class="receipt">
   ${
     logoDataUri
       ? `<div class="center logo-wrap"><img class="logo-img" src="${logoDataUri}" alt="" /></div>`
@@ -174,6 +203,7 @@ function buildReceiptHTML(
   <div class="footer">${escapeHtml(footerMessage)}</div>
   <div class="center" style="font-size:11px;color:#5A6A8A;margin-top:4px;">${escapeHtml(business.name)}</div>
   <div class="powered-by">Powered by Profit Protector</div>
+  </div>
 </body>
 </html>`
 }
