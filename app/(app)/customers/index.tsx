@@ -34,6 +34,10 @@ import {
   CustomerCard,
   HighlightWrapper,
 } from '../../../src/components/customers/CustomerCard'
+import {
+  CustomerSortModal,
+  type CustomerSortOption,
+} from '../../../src/components/customers/CustomerSortModal'
 import { CustomersTutorialModal } from '../../../src/components/customers/CustomersTutorialModal'
 import { useCustomers } from '../../../src/hooks/useCustomers'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
@@ -49,6 +53,25 @@ import { logActivity } from '../../../src/lib/activityLogger'
 // ---------------------------------------------------------------------------
 
 type FilterTab = 'All' | 'Owing' | 'Settled'
+
+function sortCustomers(list: Customer[], sortOption: CustomerSortOption): Customer[] {
+  const result = [...list]
+  switch (sortOption) {
+    case 'name_asc':
+      return result.sort((a, b) => a.name.localeCompare(b.name))
+    case 'name_desc':
+      return result.sort((a, b) => b.name.localeCompare(a.name))
+    case 'date_desc':
+      return result.sort((a, b) => b.createdAt - a.createdAt)
+    case 'date_asc':
+      return result.sort((a, b) => a.createdAt - b.createdAt)
+    case 'balance_asc':
+      return result.sort((a, b) => a.outstandingBalanceCents - b.outstandingBalanceCents)
+    case 'balance_desc':
+    default:
+      return result.sort((a, b) => b.outstandingBalanceCents - a.outstandingBalanceCents)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Validation helpers (no external deps)
@@ -369,6 +392,8 @@ export default function CustomersScreen() {
 
   const [searchText, setSearchText] = useState('')
   const [activeTab, setActiveTab] = useState<FilterTab>('All')
+  const [sortOption, setSortOption] = useState<CustomerSortOption>('balance_desc')
+  const [showSortModal, setShowSortModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [newCustomerId, setNewCustomerId] = useState<string | null>(null)
@@ -397,13 +422,9 @@ export default function CustomersScreen() {
     return () => clearTimeout(t)
   }, [newCustomerId])
 
-  // Sort by outstanding balance descending
   const sorted = useMemo(
-    () =>
-      [...customers].sort(
-        (a, b) => b.outstandingBalanceCents - a.outstandingBalanceCents,
-      ),
-    [customers],
+    () => sortCustomers(customers, sortOption),
+    [customers, sortOption],
   )
 
   // Filter
@@ -598,27 +619,37 @@ export default function CustomersScreen() {
         </View>
       </View>
 
-      {/* Filter tabs */}
+      {/* Filter tabs + sort */}
       <View style={styles.tabsRow}>
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            onPress={() => setActiveTab(tab)}
-            style={[
-              styles.tabPill,
-              activeTab === tab && styles.tabPillActive,
-            ]}
-          >
-            <Text
+        <View style={styles.tabsGroup}>
+          {TABS.map((tab) => (
+            <TouchableOpacity
+              key={tab}
+              onPress={() => setActiveTab(tab)}
               style={[
-                styles.tabLabel,
-                activeTab === tab && styles.tabLabelActive,
+                styles.tabPill,
+                activeTab === tab && styles.tabPillActive,
               ]}
             >
-              {tab}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[
+                  styles.tabLabel,
+                  activeTab === tab && styles.tabLabelActive,
+                ]}
+              >
+                {tab}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <TouchableOpacity
+          style={styles.sortButton}
+          onPress={() => setShowSortModal(true)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="swap-vertical-outline" size={18} color="#5A6A8A" />
+          <Text style={styles.sortButtonText}>Sort</Text>
+        </TouchableOpacity>
       </View>
 
       {/* List */}
@@ -654,6 +685,13 @@ export default function CustomersScreen() {
           <Ionicons name="person-add" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       ) : null}
+
+      <CustomerSortModal
+        visible={showSortModal}
+        sortOption={sortOption}
+        onSelect={setSortOption}
+        onClose={() => setShowSortModal(false)}
+      />
 
       {/* Add Customer Modal */}
       {business && (
@@ -744,9 +782,31 @@ const styles = StyleSheet.create({
   },
   tabsRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingBottom: 8,
     gap: 8,
+  },
+  tabsGroup: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DDE3F0',
+    borderRadius: 999,
+  },
+  sortButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#5A6A8A',
   },
   tabPill: {
     backgroundColor: '#FFFFFF',
