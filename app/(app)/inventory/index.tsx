@@ -305,17 +305,8 @@ export default function InventoryScreen() {
         }}
       />
 
-      {/* Action row: sort + receive stock + add product + adjust */}
+      {/* Action row: receive stock + add product + adjust */}
       <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={styles.actionRowSort}
-          onPress={() => setShowSortModal(true)}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="swap-vertical-outline" size={18} color="#5A6A8A" />
-          <Text style={styles.actionRowSortText}>Sort</Text>
-        </TouchableOpacity>
-
         <View style={styles.actionRowButtons}>
           <TouchableOpacity
             style={styles.receiveStockBtn}
@@ -512,22 +503,11 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#DDE3F0',
     backgroundColor: '#FFFFFF',
-  },
-  actionRowSort: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  actionRowSortText: {
-    fontSize: 13,
-    color: '#5A6A8A',
-    fontWeight: '500',
   },
   actionRowButtons: {
     flexDirection: 'row',
