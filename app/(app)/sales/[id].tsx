@@ -20,6 +20,7 @@ import type SaleModel from '../../../src/database/models/Sale'
 import type SaleItemModel from '../../../src/database/models/SaleItem'
 import type CustomerModel from '../../../src/database/models/Customer'
 import type CreditSaleModel from '../../../src/database/models/CreditSale'
+import type PaymentRecordModel from '../../../src/database/models/PaymentRecord'
 
 export default function SaleDetailScreen() {
   const router = useRouter()
@@ -30,6 +31,8 @@ export default function SaleDetailScreen() {
   const [sale, setSale] = useState<Sale | null>(null)
   const [saleItems, setSaleItems] = useState<SaleItem[]>([])
   const [customer, setCustomer] = useState<Customer | null>(null)
+  const [creditPaidCents, setCreditPaidCents] = useState(0)
+  const [creditDepositMethod, setCreditDepositMethod] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [isSharing, setIsSharing] = useState(false)
@@ -50,6 +53,10 @@ export default function SaleDetailScreen() {
     }
 
     try {
+      setCustomer(null)
+      setCreditPaidCents(0)
+      setCreditDepositMethod(undefined)
+
       const saleRecord = await database!.get<SaleModel>('sales').find(id)
       const { activeRole, shopkeeperSession } = useAuthStore.getState()
       if (
@@ -76,9 +83,12 @@ export default function SaleDetailScreen() {
           .fetch()
 
         if (creditRecords.length > 0) {
+          const creditSale = creditRecords[0]
+          setCreditPaidCents(creditSale.amountPaidCents)
+
           const customerRecord = await database!
             .get<CustomerModel>('customers')
-            .find(creditRecords[0].customerId)
+            .find(creditSale.customerId)
 
           setCustomer({
             id: customerRecord.id,
@@ -91,6 +101,22 @@ export default function SaleDetailScreen() {
                 ? customerRecord.createdAt.getTime()
                 : Date.now(),
           })
+
+          if (creditSale.amountPaidCents > 0) {
+            const depositNote = `Deposit on sale ${saleRecord.receiptNumber}`
+            const paymentRecords = await database!
+              .get<PaymentRecordModel>('payment_records')
+              .query(
+                Q.where('customer_id', creditSale.customerId),
+                Q.where('amount_cents', creditSale.amountPaidCents),
+                Q.sortBy('created_at', Q.desc),
+              )
+              .fetch()
+            const depositRecord = paymentRecords.find(
+              (pr) => pr.notes === depositNote || pr.amountCents === creditSale.amountPaidCents,
+            )
+            if (depositRecord) setCreditDepositMethod(depositRecord.paymentMethod)
+          }
         }
       }
     } catch {
@@ -133,6 +159,8 @@ export default function SaleDetailScreen() {
         saleItems,
         business: businessForReceipt,
         customer: customer ?? undefined,
+        creditPaidCents,
+        creditDepositMethod,
       })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong'
@@ -151,6 +179,8 @@ export default function SaleDetailScreen() {
         saleItems,
         business: businessForReceipt,
         customer: customer ?? undefined,
+        creditPaidCents,
+        creditDepositMethod,
       })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong'
@@ -246,6 +276,8 @@ export default function SaleDetailScreen() {
           saleItems={saleItems}
           business={businessForReceipt}
           customer={customer ?? undefined}
+          creditPaidCents={creditPaidCents}
+          creditDepositMethod={creditDepositMethod}
           headerLogoUri={headerLogoUri}
         />
 

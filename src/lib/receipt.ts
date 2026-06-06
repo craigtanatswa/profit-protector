@@ -13,6 +13,8 @@ interface ReceiptParams {
   saleItems: SaleItem[]
   business: Business
   customer?: Customer
+  creditPaidCents?: number
+  creditDepositMethod?: string
 }
 
 async function getReceiptFooterMessage(business: Business): Promise<string> {
@@ -72,7 +74,7 @@ function buildReceiptHTML(
   logoDataUri: string | null,
   footerMessage: string,
 ): string {
-  const { sale, saleItems, business, customer } = params
+  const { sale, saleItems, business, customer, creditPaidCents = 0, creditDepositMethod } = params
   const currency = business.currency || 'USD'
   const zigRate = business.zigRatePerUsd ?? 1
 
@@ -99,6 +101,23 @@ function buildReceiptHTML(
     </div>`
       : ''
 
+  const partialCreditHTML =
+    customer != null && creditPaidCents > 0 && creditPaidCents < sale.totalCents
+      ? `
+    <div class="payment-row">
+      <span class="totals-label">Paid now</span>
+      <span style="font-weight:500;">${escapeHtml(formatCurrency(creditPaidCents, currency, zigRate))}${
+        creditDepositMethod
+          ? ` via ${escapeHtml(formatPaymentMethod(creditDepositMethod))}`
+          : ''
+      }</span>
+    </div>
+    <div class="payment-row">
+      <span class="totals-label">On credit</span>
+      <span style="color:#B45309;font-weight:500;">${escapeHtml(formatCurrency(sale.totalCents - creditPaidCents, currency, zigRate))}</span>
+    </div>`
+      : ''
+
   const customerHTML =
     customer != null
       ? `
@@ -106,6 +125,7 @@ function buildReceiptHTML(
       <span class="totals-label">Customer</span>
       <span style="font-weight:500;">${escapeHtml(customer.name)}</span>
     </div>
+    ${partialCreditHTML}
     ${
       customer.outstandingBalanceCents > 0
         ? `<div class="payment-row">

@@ -9,11 +9,22 @@ interface ReceiptCardProps {
   saleItems: SaleItem[]
   business: Business
   customer?: Customer
+  /** Initial deposit collected on a partial credit sale. */
+  creditPaidCents?: number
+  creditDepositMethod?: string
   /** Local file URI of optional business logo (same as PDF/print). */
   headerLogoUri?: string | null
 }
 
-export function ReceiptCard({ sale, saleItems, business, customer, headerLogoUri }: ReceiptCardProps) {
+export function ReceiptCard({
+  sale,
+  saleItems,
+  business,
+  customer,
+  creditPaidCents = 0,
+  creditDepositMethod,
+  headerLogoUri,
+}: ReceiptCardProps) {
   const subtotal = saleItems.reduce((sum, item) => sum + item.unitPriceCents * item.qty, 0)
   const currency = business.currency || 'USD'
   const zigRate = business.zigRatePerUsd ?? 1
@@ -102,6 +113,25 @@ export function ReceiptCard({ sale, saleItems, business, customer, headerLogoUri
             <Text style={styles.paymentLabel}>Customer</Text>
             <Text style={styles.paymentValue}>{customer.name}</Text>
           </View>
+          {creditPaidCents > 0 && creditPaidCents < sale.totalCents && (
+            <>
+              <View style={styles.paymentRow}>
+                <Text style={styles.paymentLabel}>Paid now</Text>
+                <Text style={styles.paymentValue}>
+                  {formatCurrency(creditPaidCents, currency, zigRate)}
+                  {creditDepositMethod
+                    ? ` via ${formatPaymentMethod(creditDepositMethod)}`
+                    : ''}
+                </Text>
+              </View>
+              <View style={styles.paymentRow}>
+                <Text style={styles.paymentLabel}>On credit</Text>
+                <Text style={styles.balanceOwed}>
+                  {formatCurrency(sale.totalCents - creditPaidCents, currency, zigRate)}
+                </Text>
+              </View>
+            </>
+          )}
           {customer.outstandingBalanceCents > 0 && (
             <View style={styles.paymentRow}>
               <Text style={styles.paymentLabel} />

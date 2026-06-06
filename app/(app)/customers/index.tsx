@@ -9,6 +9,7 @@ import {
   Alert,
   Animated,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -92,6 +93,29 @@ function AddCustomerModal({
   const [nameError, setNameError] = useState<string | null>(null)
   const [phoneError, setPhoneError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [keyboardHeight, setKeyboardHeight] = useState(0)
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0)
+      return
+    }
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height)
+    })
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0)
+    })
+
+    return () => {
+      showSub.remove()
+      hideSub.remove()
+    }
+  }, [visible])
 
   useEffect(() => {
     if (visible) {
@@ -193,6 +217,9 @@ function AddCustomerModal({
     }
   }, [name, phone, businessId, onSuccess])
 
+  const keyboardLift =
+    keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0
+
   return (
     <Modal
       visible={visible}
@@ -204,6 +231,7 @@ function AddCustomerModal({
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalKav}
+          keyboardVerticalOffset={insets.bottom}
         >
           <Animated.View
             style={[
@@ -212,6 +240,7 @@ function AddCustomerModal({
                 transform: [{ translateY: slideAnim }],
                 paddingBottom: insets.bottom + 16,
               },
+              keyboardLift > 0 && { marginBottom: keyboardLift },
             ]}
           >
             <Pressable onPress={(e) => e.stopPropagation()}>
@@ -223,41 +252,48 @@ function AddCustomerModal({
                 Add a customer to track credit sales
               </Text>
 
-              <View style={styles.modalFields}>
-                <Input
-                  label="Full Name"
-                  placeholder="e.g. Tendai Moyo"
-                  value={name}
-                  onChangeText={(t) => {
-                    setName(t)
-                    if (nameError) setNameError(null)
-                  }}
-                  autoCapitalize="words"
-                  maxLength={60}
-                  error={nameError ?? undefined}
-                  leftIcon={
-                    <Ionicons name="person-outline" size={18} color="#5A6A8A" />
-                  }
-                />
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+              >
+                <View style={styles.modalFields}>
+                  <Input
+                    label="Full Name"
+                    placeholder="e.g. Tendai Moyo"
+                    value={name}
+                    onChangeText={(t) => {
+                      setName(t)
+                      if (nameError) setNameError(null)
+                    }}
+                    autoCapitalize="words"
+                    maxLength={60}
+                    error={nameError ?? undefined}
+                    leftIcon={
+                      <Ionicons name="person-outline" size={18} color="#5A6A8A" />
+                    }
+                  />
 
-                <View style={{ height: 12 }} />
+                  <View style={{ height: 12 }} />
 
-                <Input
-                  label="Phone Number"
-                  placeholder="e.g. 0771234567"
-                  value={phone}
-                  onChangeText={(t) => {
-                    setPhone(t)
-                    if (phoneError) setPhoneError(null)
-                  }}
-                  keyboardType="phone-pad"
-                  error={phoneError ?? undefined}
-                  hint="Optional — used for WhatsApp receipts later"
-                  leftIcon={
-                    <Ionicons name="call-outline" size={18} color="#5A6A8A" />
-                  }
-                />
-              </View>
+                  <Input
+                    label="Phone Number"
+                    placeholder="e.g. 0771234567"
+                    value={phone}
+                    onChangeText={(t) => {
+                      setPhone(t)
+                      if (phoneError) setPhoneError(null)
+                    }}
+                    keyboardType="phone-pad"
+                    error={phoneError ?? undefined}
+                    hint="Optional — used for WhatsApp receipts later"
+                    leftIcon={
+                      <Ionicons name="call-outline" size={18} color="#5A6A8A" />
+                    }
+                  />
+                </View>
+              </ScrollView>
 
               <View style={styles.modalButtons}>
                 <View style={{ flex: 1 }}>
@@ -749,6 +785,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalKav: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   modalSheet: {

@@ -91,15 +91,19 @@ import {
   Animated,
   FlatList,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { Q } from '@nozbe/watermelondb'
@@ -124,6 +128,7 @@ import type SaleItemModel from '../../../src/database/models/SaleItem'
 import type StockMovementModel from '../../../src/database/models/StockMovement'
 import type CustomerModel from '../../../src/database/models/Customer'
 import type CreditSaleModel from '../../../src/database/models/CreditSale'
+import type PaymentRecordModel from '../../../src/database/models/PaymentRecord'
 import * as Crypto from 'expo-crypto'
 import { logActivity } from '../../../src/lib/activityLogger'
 import {
@@ -157,6 +162,8 @@ const PAYMENT_METHODS: { key: PaymentMethod; label: string }[] = [
   { key: 'bank_transfer', label: 'Bank' },
   { key: 'credit', label: 'Credit' },
 ]
+
+const DEPOSIT_PAYMENT_METHODS = PAYMENT_METHODS.filter((p) => p.key !== 'credit')
 
 // ---------------------------------------------------------------------------
 // Main Screen
@@ -217,6 +224,22 @@ export default function NewSaleScreen() {
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [discountInput, setDiscountInput] = useState('')
+  const [collectCreditDeposit, setCollectCreditDeposit] = useState(false)
+  const [creditDepositInput, setCreditDepositInput] = useState('')
+  const [creditDepositMethod, setCreditDepositMethod] = useState<PaymentMethod>('cash_usd')
+
+  const creditDepositCents = useMemo(() => {
+    if (!collectCreditDeposit || !creditDepositInput.trim()) return 0
+    const num = parseFloat(creditDepositInput)
+    if (isNaN(num) || num <= 0) return 0
+    return Math.round(num * 100)
+  }, [collectCreditDeposit, creditDepositInput])
+
+  const creditDepositInvalid =
+    collectCreditDeposit &&
+    (creditDepositCents <= 0 || creditDepositCents >= totalCents)
+
+  const creditRemainingCents = totalCents - creditDepositCents
 
   const filteredProducts = useMemo(() => {
     if (!searchText.trim()) return products
@@ -244,7 +267,20 @@ export default function NewSaleScreen() {
   const canComplete =
     items.length > 0 &&
     !discountExceedsTotal &&
-    !(paymentMethod === 'credit' && !customerId)
+    !(paymentMethod === 'credit' && !customerId) &&
+    !(paymentMethod === 'credit' && creditDepositInvalid)
+
+  const handlePaymentMethodChange = useCallback(
+    (method: PaymentMethod) => {
+      setPaymentMethod(method)
+      if (method !== 'credit') {
+        setCollectCreditDeposit(false)
+        setCreditDepositInput('')
+        setCreditDepositMethod('cash_usd')
+      }
+    },
+    [setPaymentMethod],
+  )
 
   // ---- Handlers ----
 
@@ -429,21 +465,35 @@ export default function NewSaleScreen() {
         }
 
         if (paymentMethod === 'credit' && customerId) {
+          const initialPaidCents = creditDepositCents
+          const remainingCreditCents = totalCents - initialPaidCents
+
           await database!.get<CreditSaleModel>('credit_sales').create((cs) => {
             cs.saleId = newSale.id
             cs.customerId = customerId
             cs.amountCents = totalCents
-            cs.amountPaidCents = 0
-            cs.isSettled = false
+            cs.amountPaidCents = initialPaidCents
+            cs.isSettled = initialPaidCents >= totalCents
           })
 
           const customerRecord = await database!
             .get<CustomerModel>('customers')
             .find(customerId)
           await customerRecord.update((c) => {
-            c.outstandingBalanceCents = c.outstandingBalanceCents + totalCents
+            if (remainingCreditCents > 0) {
+              c.outstandingBalanceCents = c.outstandingBalanceCents + remainingCreditCents
+            }
             c.updatedAt = new Date(Date.now())
           })
+
+          if (initialPaidCents > 0) {
+            await database!.get<PaymentRecordModel>('payment_records').create((r) => {
+              r.customerId = customerId
+              r.amountCents = initialPaidCents
+              r.paymentMethod = creditDepositMethod
+              r.notes = `Deposit on sale ${receiptNumber}`
+            })
+          }
         }
 
         return newSale.id
@@ -587,6 +637,9 @@ export default function NewSaleScreen() {
 
       clearCart()
       setDiscountInput('')
+      setCollectCreditDeposit(false)
+      setCreditDepositInput('')
+      setCreditDepositMethod('cash_usd')
       router.push({
         pathname: '/(app)/sales/[id]',
         params: { id: newSaleId, showReceipt: 'true' },
@@ -605,6 +658,8 @@ export default function NewSaleScreen() {
     paymentMethod,
     items,
     customerId,
+    creditDepositCents,
+    creditDepositMethod,
     clearCart,
     router,
   ])
@@ -737,7 +792,16 @@ export default function NewSaleScreen() {
         selectedCustomer={selectedCustomer}
         formatMoney={formatMoney}
         onDiscountChange={handleDiscountChange}
-        onPaymentMethodChange={setPaymentMethod}
+        onPaymentMethodChange={handlePaymentMethodChange}
+        collectCreditDeposit={collectCreditDeposit}
+        creditDepositInput={creditDepositInput}
+        creditDepositMethod={creditDepositMethod}
+        creditDepositCents={creditDepositCents}
+        creditRemainingCents={creditRemainingCents}
+        creditDepositInvalid={creditDepositInvalid}
+        onCollectCreditDepositChange={setCollectCreditDeposit}
+        onCreditDepositInputChange={setCreditDepositInput}
+        onCreditDepositMethodChange={setCreditDepositMethod}
         onOpenCustomerPicker={() => setShowCustomerModal(true)}
         onChangeCustomer={() => setShowCustomerModal(true)}
         onItemLongPress={(productId: string) => {
@@ -841,6 +905,15 @@ interface CartPanelProps {
   formatMoney: (usdCents: number) => string
   onDiscountChange: (text: string) => void
   onPaymentMethodChange: (method: PaymentMethod) => void
+  collectCreditDeposit: boolean
+  creditDepositInput: string
+  creditDepositMethod: PaymentMethod
+  creditDepositCents: number
+  creditRemainingCents: number
+  creditDepositInvalid: boolean
+  onCollectCreditDepositChange: (value: boolean) => void
+  onCreditDepositInputChange: (text: string) => void
+  onCreditDepositMethodChange: (method: PaymentMethod) => void
   onOpenCustomerPicker: () => void
   onChangeCustomer: () => void
   onItemLongPress: (productId: string) => void
@@ -859,23 +932,37 @@ function CartPanel({
   formatMoney,
   onDiscountChange,
   onPaymentMethodChange,
+  collectCreditDeposit,
+  creditDepositInput,
+  creditDepositMethod,
+  creditDepositCents,
+  creditRemainingCents,
+  creditDepositInvalid,
+  onCollectCreditDepositChange,
+  onCreditDepositInputChange,
+  onCreditDepositMethodChange,
   onOpenCustomerPicker,
   onChangeCustomer,
   onItemLongPress,
 }: CartPanelProps) {
-  const customerSectionAnim = useRef(new Animated.Value(paymentMethod === 'credit' ? 1 : 0)).current
+  const { height: windowHeight } = useWindowDimensions()
+  const cartScrollRef = useRef<ScrollView>(null)
+  const cartScrollMaxHeight = Math.round(windowHeight * 0.52)
 
   const handlePaymentChange = useCallback(
     (method: PaymentMethod) => {
       onPaymentMethodChange(method)
-      Animated.timing(customerSectionAnim, {
-        toValue: method === 'credit' ? 1 : 0,
-        duration: 250,
-        useNativeDriver: false,
-      }).start()
     },
-    [onPaymentMethodChange, customerSectionAnim],
+    [onPaymentMethodChange],
   )
+
+  useEffect(() => {
+    if (!collectCreditDeposit) return
+    const timer = setTimeout(() => {
+      cartScrollRef.current?.scrollToEnd({ animated: true })
+    }, 150)
+    return () => clearTimeout(timer)
+  }, [collectCreditDeposit])
 
   if (items.length === 0) {
     return (
@@ -886,36 +973,37 @@ function CartPanel({
     )
   }
 
-  const customerHeight = customerSectionAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 80],
-  })
-
   return (
     <View style={cartStyles.expanded}>
+      <ScrollView
+        ref={cartScrollRef}
+        style={{ maxHeight: cartScrollMaxHeight }}
+        contentContainerStyle={cartStyles.scrollContent}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator
+      >
       {/* Cart Items */}
-      <ScrollView style={cartStyles.itemsList} nestedScrollEnabled>
-        {items.map((item) => (
-          <TouchableOpacity
-            key={item.productId}
-            style={cartStyles.itemRow}
-            activeOpacity={0.7}
-            onLongPress={() => onItemLongPress(item.productId)}
-          >
-            <View style={cartStyles.itemLeft}>
-              <Text style={cartStyles.itemName} numberOfLines={1}>
-                {item.productName}
-              </Text>
-              <View style={cartStyles.qtyPill}>
-                <Text style={cartStyles.qtyPillText}>×{item.qty}</Text>
-              </View>
-            </View>
-            <Text style={cartStyles.itemTotal}>
-              {formatMoney(item.qty * item.unitPriceCents)}
+      {items.map((item) => (
+        <TouchableOpacity
+          key={item.productId}
+          style={cartStyles.itemRow}
+          activeOpacity={0.7}
+          onLongPress={() => onItemLongPress(item.productId)}
+        >
+          <View style={cartStyles.itemLeft}>
+            <Text style={cartStyles.itemName} numberOfLines={1}>
+              {item.productName}
             </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+            <View style={cartStyles.qtyPill}>
+              <Text style={cartStyles.qtyPillText}>×{item.qty}</Text>
+            </View>
+          </View>
+          <Text style={cartStyles.itemTotal}>
+            {formatMoney(item.qty * item.unitPriceCents)}
+          </Text>
+        </TouchableOpacity>
+      ))}
 
       {/* Discount */}
       <View style={cartStyles.discountRow}>
@@ -991,8 +1079,7 @@ function CartPanel({
       </View>
 
       {/* Customer (credit only) */}
-      <Animated.View style={[cartStyles.customerSection, { maxHeight: customerHeight, overflow: 'hidden' }]}>
-        {paymentMethod === 'credit' && (
+      {paymentMethod === 'credit' && (
           <View style={cartStyles.customerInner}>
             <Text style={cartStyles.customerLabel}>Customer (required for credit)</Text>
             {selectedCustomer ? (
@@ -1018,9 +1105,78 @@ function CartPanel({
                 fullWidth={false}
               />
             )}
+
+            <TouchableOpacity
+              style={cartStyles.depositToggleRow}
+              activeOpacity={0.7}
+              onPress={() => onCollectCreditDepositChange(!collectCreditDeposit)}
+            >
+              <Ionicons
+                name={collectCreditDeposit ? 'checkbox' : 'square-outline'}
+                size={20}
+                color={collectCreditDeposit ? COLORS.primary : COLORS.textSecondary}
+              />
+              <Text style={cartStyles.depositToggleText}>Collect partial payment now</Text>
+            </TouchableOpacity>
+
+            {collectCreditDeposit && (
+              <View style={cartStyles.depositSection}>
+                <View style={cartStyles.depositAmountRow}>
+                  <Text style={cartStyles.depositLabel}>Amount paid now</Text>
+                  <View style={cartStyles.discountInputWrapper}>
+                    <Text style={cartStyles.discountPrefix}>$</Text>
+                    <TextInput
+                      style={cartStyles.discountInput}
+                      keyboardType="decimal-pad"
+                      placeholder="0.00"
+                      placeholderTextColor={COLORS.textSecondary}
+                      value={creditDepositInput}
+                      onChangeText={onCreditDepositInputChange}
+                    />
+                  </View>
+                </View>
+                {creditDepositInvalid && (
+                  <Text style={cartStyles.discountError}>
+                    Enter an amount greater than 0 and less than the total
+                  </Text>
+                )}
+                {creditDepositCents > 0 && !creditDepositInvalid && (
+                  <Text style={cartStyles.depositRemainder}>
+                    {formatMoney(creditRemainingCents)} on credit
+                  </Text>
+                )}
+                <Text style={cartStyles.depositMethodLabel}>Deposit payment method</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {DEPOSIT_PAYMENT_METHODS.map((pm) => {
+                    const isActive = creditDepositMethod === pm.key
+                    return (
+                      <TouchableOpacity
+                        key={pm.key}
+                        style={[
+                          cartStyles.paymentPill,
+                          isActive ? cartStyles.paymentPillActive : cartStyles.paymentPillInactive,
+                        ]}
+                        onPress={() => onCreditDepositMethodChange(pm.key)}
+                      >
+                        <Text
+                          style={[
+                            cartStyles.paymentPillText,
+                            isActive
+                              ? cartStyles.paymentPillTextActive
+                              : cartStyles.paymentPillTextInactive,
+                          ]}
+                        >
+                          {pm.label}
+                        </Text>
+                      </TouchableOpacity>
+                    )
+                  })}
+                </ScrollView>
+              </View>
+            )}
           </View>
         )}
-      </Animated.View>
+      </ScrollView>
     </View>
   )
 }
@@ -1101,6 +1257,160 @@ function QuantityEditorModal({ product, currentQty, onUpdate, onRemove, onClose 
 }
 
 // ---------------------------------------------------------------------------
+// Add Customer Sheet (nested modal)
+// ---------------------------------------------------------------------------
+
+interface AddCustomerSheetProps {
+  visible: boolean
+  onClose: () => void
+  onCreate: (name: string, phone?: string) => Promise<void>
+}
+
+function AddCustomerSheetModal({ visible, onClose, onCreate }: AddCustomerSheetProps) {
+  const insets = useSafeAreaInsets()
+  const slideAnim = useRef(new Animated.Value(600)).current
+
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
+  const [keyboardHeight, setKeyboardHeight] = useState(0)
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0)
+      return
+    }
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height)
+    })
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0)
+    })
+
+    return () => {
+      showSub.remove()
+      hideSub.remove()
+    }
+  }, [visible])
+
+  useEffect(() => {
+    if (visible) {
+      setName('')
+      setPhone('')
+      setIsCreating(false)
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 65,
+        friction: 11,
+      }).start()
+    } else {
+      Animated.timing(slideAnim, {
+        toValue: 600,
+        duration: 220,
+        useNativeDriver: true,
+      }).start()
+    }
+  }, [visible, slideAnim])
+
+  const handleCreate = useCallback(async () => {
+    if (!name.trim()) return
+    setIsCreating(true)
+    try {
+      await onCreate(name, phone || undefined)
+    } catch {
+      Alert.alert('Error', 'Could not create customer')
+    } finally {
+      setIsCreating(false)
+    }
+  }, [name, phone, onCreate])
+
+  const keyboardLift =
+    keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0
+
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <Pressable style={acStyles.overlay} onPress={onClose}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={acStyles.kav}
+          keyboardVerticalOffset={insets.bottom}
+        >
+          <Animated.View
+            style={[
+              acStyles.sheet,
+              {
+                transform: [{ translateY: slideAnim }],
+                paddingBottom: insets.bottom + 16,
+              },
+              keyboardLift > 0 && { marginBottom: keyboardLift },
+            ]}
+          >
+            <Pressable onPress={(e) => e.stopPropagation()}>
+              <View style={acStyles.handleBar} />
+
+              <Text style={acStyles.title}>Add Customer</Text>
+              <Text style={acStyles.subtitle}>Add a customer to record credit sales</Text>
+
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+              >
+                <View style={acStyles.fields}>
+                  <Text style={acStyles.fieldLabel}>Full Name</Text>
+                  <TextInput
+                    style={acStyles.input}
+                    placeholder="e.g. Tendai Moyo"
+                    placeholderTextColor={COLORS.textSecondary}
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
+                    maxLength={60}
+                  />
+
+                  <Text style={acStyles.fieldLabel}>Phone Number</Text>
+                  <TextInput
+                    style={acStyles.input}
+                    placeholder="e.g. 0771234567"
+                    placeholderTextColor={COLORS.textSecondary}
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                  />
+                  <Text style={acStyles.fieldHint}>Optional — used for WhatsApp receipts later</Text>
+                </View>
+              </ScrollView>
+
+              <View style={acStyles.buttons}>
+                <View style={{ flex: 1 }}>
+                  <Button label="Cancel" variant="ghost" size="md" onPress={onClose} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Button
+                    label="Add Customer"
+                    variant="primary"
+                    size="md"
+                    onPress={handleCreate}
+                    loading={isCreating}
+                    disabled={!name.trim()}
+                  />
+                </View>
+              </View>
+            </Pressable>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Customer Picker Modal
 // ---------------------------------------------------------------------------
 
@@ -1114,10 +1424,7 @@ interface CustomerPickerProps {
 function CustomerPickerModal({ customers, onSelect, onCreate, onClose }: CustomerPickerProps) {
   const { formatMoney } = useMoneyFormat()
   const [search, setSearch] = useState('')
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newPhone, setNewPhone] = useState('')
-  const [isCreating, setIsCreating] = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
 
   const filtered = useMemo(() => {
     if (!search.trim()) return customers
@@ -1129,118 +1436,87 @@ function CustomerPickerModal({ customers, onSelect, onCreate, onClose }: Custome
     )
   }, [customers, search])
 
-  const handleCreate = useCallback(async () => {
-    if (!newName.trim()) return
-    setIsCreating(true)
-    try {
-      await onCreate(newName, newPhone || undefined)
-    } catch {
-      Alert.alert('Error', 'Could not create customer')
-    } finally {
-      setIsCreating(false)
-    }
-  }, [newName, newPhone, onCreate])
-
   return (
-    <Modal animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={cpStyles.container}>
-        {/* Header */}
-        <View style={cpStyles.header}>
-          <Text style={cpStyles.headerTitle}>Select Customer</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Search */}
-        <View style={cpStyles.searchContainer}>
-          <View style={cpStyles.searchRow}>
-            <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} />
-            <TextInput
-              style={cpStyles.searchInput}
-              placeholder="Search by name or phone..."
-              placeholderTextColor={COLORS.textSecondary}
-              value={search}
-              onChangeText={setSearch}
-            />
-          </View>
-        </View>
-
-        {/* Customer List */}
-        <FlatList
-          data={filtered}
-          keyExtractor={(c) => c.id}
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={
-            <EmptyState
-              icon="people-outline"
-              title="No customers yet"
-              subtitle="Add a customer to record credit sales"
-            />
-          }
-          renderItem={({ item: customer }) => (
-            <TouchableOpacity
-              style={cpStyles.customerRow}
-              activeOpacity={0.7}
-              onPress={() => onSelect(customer)}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={cpStyles.customerName}>{customer.name}</Text>
-                {customer.phone && (
-                  <Text style={cpStyles.customerPhone}>{customer.phone}</Text>
-                )}
-              </View>
-              {customer.outstandingBalanceCents > 0 && (
-                <Badge
-                  label={`Owes ${formatMoney(customer.outstandingBalanceCents)}`}
-                  variant="warning"
-                  size="sm"
-                />
-              )}
+    <>
+      <Modal animationType="slide" onRequestClose={onClose}>
+        <SafeAreaView style={cpStyles.container}>
+          {/* Header */}
+          <View style={cpStyles.header}>
+            <Text style={cpStyles.headerTitle}>Select Customer</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
             </TouchableOpacity>
-          )}
-        />
+          </View>
 
-        {/* Add New Customer */}
-        <View style={cpStyles.addSection}>
-          {showAddForm ? (
-            <View style={cpStyles.addForm}>
+          {/* Search */}
+          <View style={cpStyles.searchContainer}>
+            <View style={cpStyles.searchRow}>
+              <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} />
               <TextInput
-                style={cpStyles.addInput}
-                placeholder="Customer name (required)"
+                style={cpStyles.searchInput}
+                placeholder="Search by name or phone..."
                 placeholderTextColor={COLORS.textSecondary}
-                value={newName}
-                onChangeText={setNewName}
-              />
-              <TextInput
-                style={cpStyles.addInput}
-                placeholder="Phone number (optional)"
-                placeholderTextColor={COLORS.textSecondary}
-                value={newPhone}
-                onChangeText={setNewPhone}
-                keyboardType="phone-pad"
-              />
-              <Button
-                label="Add Customer"
-                variant="primary"
-                size="md"
-                onPress={handleCreate}
-                loading={isCreating}
-                disabled={!newName.trim()}
+                value={search}
+                onChangeText={setSearch}
               />
             </View>
-          ) : (
+          </View>
+
+          {/* Customer List */}
+          <FlatList
+            data={filtered}
+            keyExtractor={(c) => c.id}
+            style={cpStyles.customerList}
+            contentContainerStyle={{ flexGrow: 1 }}
+            keyboardShouldPersistTaps="handled"
+            ListEmptyComponent={
+              <EmptyState
+                icon="people-outline"
+                title="No customers yet"
+                subtitle="Add a customer to record credit sales"
+              />
+            }
+            renderItem={({ item: customer }) => (
+              <TouchableOpacity
+                style={cpStyles.customerRow}
+                activeOpacity={0.7}
+                onPress={() => onSelect(customer)}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={cpStyles.customerName}>{customer.name}</Text>
+                  {customer.phone && (
+                    <Text style={cpStyles.customerPhone}>{customer.phone}</Text>
+                  )}
+                </View>
+                {customer.outstandingBalanceCents > 0 && (
+                  <Badge
+                    label={`Owes ${formatMoney(customer.outstandingBalanceCents)}`}
+                    variant="warning"
+                    size="sm"
+                  />
+                )}
+              </TouchableOpacity>
+            )}
+          />
+
+          {/* Add New Customer */}
+          <View style={cpStyles.addSection}>
             <Button
               label="+ Add New Customer"
               variant="secondary"
               size="md"
-              onPress={() => setShowAddForm(true)}
+              onPress={() => setShowAddModal(true)}
             />
-          )}
-        </View>
-      </SafeAreaView>
-    </Modal>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      <AddCustomerSheetModal
+        visible={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onCreate={onCreate}
+      />
+    </>
   )
 }
 
@@ -1404,11 +1680,11 @@ const cartStyles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
   },
-  itemsList: {
-    maxHeight: 176,
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
   },
   itemRow: {
     height: 44,
@@ -1550,11 +1826,9 @@ const cartStyles = StyleSheet.create({
   paymentPillTextInactive: {
     color: COLORS.textSecondary,
   },
-  customerSection: {
-    marginTop: 0,
-  },
   customerInner: {
     paddingTop: 12,
+    paddingBottom: 4,
   },
   customerLabel: {
     fontSize: 13,
@@ -1579,6 +1853,41 @@ const cartStyles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.primary,
     fontWeight: '500',
+  },
+  depositToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  depositToggleText: {
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    fontWeight: '500',
+  },
+  depositSection: {
+    marginTop: 10,
+    paddingBottom: 12,
+  },
+  depositAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  depositLabel: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  depositRemainder: {
+    fontSize: 12,
+    color: COLORS.warning,
+    marginTop: 4,
+  },
+  depositMethodLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 10,
+    marginBottom: 6,
   },
 })
 
@@ -1666,10 +1975,80 @@ const modalStyles = StyleSheet.create({
   },
 })
 
+const acStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  kav: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: COLORS.card,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  handleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  fields: {
+    gap: 8,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+    marginTop: 4,
+  },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    backgroundColor: COLORS.card,
+  },
+  fieldHint: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: 8,
+  },
+  buttons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+})
+
 const cpStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  customerList: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -1731,18 +2110,5 @@ const cpStyles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-  },
-  addForm: {
-    gap: 12,
-  },
-  addInput: {
-    height: 48,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    fontSize: 15,
-    color: COLORS.textPrimary,
-    backgroundColor: COLORS.card,
   },
 })
