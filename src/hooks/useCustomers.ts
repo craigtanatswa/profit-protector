@@ -89,11 +89,13 @@ export function useCustomers(businessId: string) {
 
       const outstandingMap = buildOutstandingMap(creditRows, customerIdSet)
 
-      const result: Customer[] = customerModels.map((r) => {
-        const base = mapCustomerRecord(r)
-        const outstandingBalanceCents = outstandingMap.get(base.id) ?? 0
-        return { ...base, outstandingBalanceCents }
-      })
+      const result: Customer[] = customerModels
+        .filter((r) => r.isActive !== false)
+        .map((r) => {
+          const base = mapCustomerRecord(r)
+          const outstandingBalanceCents = outstandingMap.get(base.id) ?? 0
+          return { ...base, outstandingBalanceCents }
+        })
 
       setCustomers(result)
       setIsLoading(false)

@@ -194,6 +194,7 @@ export type ActivityAction =
   | 'stock_adjusted'
   | 'customer_added'
   | 'customer_edited'
+  | 'customer_deleted'
   | 'payment_recorded'
   | 'shopkeeper_added'
   | 'shopkeeper_deactivated'

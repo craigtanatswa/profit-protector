@@ -67,9 +67,10 @@ export function HighlightWrapper({ isHighlighted, children }: HighlightWrapperPr
 interface CustomerCardProps {
   customer: Customer
   onPress: () => void
+  onLongPress?: () => void
 }
 
-export function CustomerCard({ customer, onPress }: CustomerCardProps) {
+export function CustomerCard({ customer, onPress, onLongPress }: CustomerCardProps) {
   const { formatMoney } = useMoneyFormat()
   const { bg, text } = getAvatarColors(customer.name)
   const initials = customer.name.slice(0, 2).toUpperCase()
@@ -78,6 +79,7 @@ export function CustomerCard({ customer, onPress }: CustomerCardProps) {
   return (
     <TouchableOpacity
       onPress={onPress}
+      onLongPress={onLongPress}
       activeOpacity={0.92}
       style={[styles.card, isOwing && styles.owingBorder]}
     >

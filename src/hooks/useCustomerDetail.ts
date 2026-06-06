@@ -112,6 +112,15 @@ export function useCustomerDetail(customerId: string): CustomerDetailResult {
     function merge() {
       if (cancelled || customerModel === null) return
 
+      if (customerModel.isActive === false) {
+        setState({
+          ...INITIAL,
+          isLoading: false,
+          error: 'Customer not found',
+        })
+        return
+      }
+
       const creditSales = creditModels.map(mapCreditSaleRecord)
       const paymentRecords = paymentModels.map(mapPaymentRecord)
 

@@ -255,13 +255,15 @@ export function useDashboard(businessId: string): DashboardData {
         const customerIdSet = new Set(customerIds)
         const outstandingMap = buildOutstandingMap(creditRows, customerIdSet)
 
-        const allCustomersMapped: Customer[] = allCustomersRaw.map((r) => {
-          const base = mapCustomerRecord(r)
-          return {
-            ...base,
-            outstandingBalanceCents: outstandingMap.get(base.id) ?? 0,
-          }
-        })
+        const allCustomersMapped: Customer[] = allCustomersRaw
+          .filter((r) => r.isActive !== false)
+          .map((r) => {
+            const base = mapCustomerRecord(r)
+            return {
+              ...base,
+              outstandingBalanceCents: outstandingMap.get(base.id) ?? 0,
+            }
+          })
 
         const creditCustomers = allCustomersMapped
           .filter((c) => c.outstandingBalanceCents > 0)

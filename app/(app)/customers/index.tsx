@@ -46,6 +46,7 @@ import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import { database } from '../../../src/database'
 import type { Customer } from '../../../src/types'
 import type CustomerModel from '../../../src/database/models/Customer'
+import { confirmDeleteCustomer } from '../../../src/lib/customerDelete'
 import { logActivity } from '../../../src/lib/activityLogger'
 
 // ---------------------------------------------------------------------------
@@ -497,6 +498,12 @@ export default function CustomersScreen() {
     })
   }, [])
 
+  const handleDeleteCustomer = useCallback((customer: Customer) => {
+    confirmDeleteCustomer(customer, () => {
+      void refreshLocal()
+    })
+  }, [refreshLocal])
+
   const renderEmptyState = useCallback(() => {
     if (customers.length === 0) {
       return (
@@ -557,10 +564,13 @@ export default function CustomersScreen() {
         <CustomerCard
           customer={item}
           onPress={() => handleNavigateToDetail(item)}
+          onLongPress={
+            isShopkeeper ? undefined : () => handleDeleteCustomer(item)
+          }
         />
       </HighlightWrapper>
     ),
-    [newCustomerId, handleNavigateToDetail],
+    [newCustomerId, handleNavigateToDetail, handleDeleteCustomer, isShopkeeper],
   )
 
   if (isLoading) {
@@ -573,10 +583,14 @@ export default function CustomersScreen() {
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScreenHeader
         title="Customers"
-        rightAction={{
-          icon: 'person-add-outline',
-          onPress: () => setShowAddModal(true),
-        }}
+        rightAction={
+          isShopkeeper
+            ? undefined
+            : {
+                icon: 'person-add-outline',
+                onPress: () => setShowAddModal(true),
+              }
+        }
         showBorder
       />
 

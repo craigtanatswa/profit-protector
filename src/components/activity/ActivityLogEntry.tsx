@@ -15,6 +15,7 @@ const ACTION_LABELS: Record<string, string> = {
   stock_adjusted: 'Adjusted stock',
   customer_added: 'Added customer',
   customer_edited: 'Edited customer',
+  customer_deleted: 'Deleted customer',
   payment_recorded: 'Recorded payment',
   shopkeeper_added: 'Added staff member',
   shopkeeper_deactivated: 'Deactivated staff member',

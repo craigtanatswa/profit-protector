@@ -35,7 +35,9 @@ import { database } from '../../../src/database'
 import type CustomerModel from '../../../src/database/models/Customer'
 import type CreditSaleModel from '../../../src/database/models/CreditSale'
 import type PaymentRecordModel from '../../../src/database/models/PaymentRecord'
+import { confirmDeleteCustomer } from '../../../src/lib/customerDelete'
 import { logActivity } from '../../../src/lib/activityLogger'
+import { wmRaw } from '../../../src/lib/watermelonRaw'
 
 // ---------------------------------------------------------------------------
 // Avatar color helper
@@ -439,10 +441,13 @@ function EditCustomerModal({
     try {
       await database.write(async () => {
         const record = await database!.get<CustomerModel>('customers').find(customerId)
+        const now = Date.now()
         await record.update((c) => {
           c.name = name.trim()
           c.phone = phone.trim() || null
           c.nationalId = nationalId.trim() || null
+          c.updatedAt = new Date(now)
+          wmRaw(c).updated_at = now
         })
       })
       const { triggerSync, business } = useAuthStore.getState()
@@ -455,38 +460,13 @@ function EditCustomerModal({
   }, [name, phone, nationalId, customerId, onClose])
 
   const handleDelete = useCallback(() => {
-    if (outstandingBalanceCents > 0) {
-      Alert.alert(
-        'Cannot Delete Customer',
-        'Cannot delete a customer with an outstanding balance. Record a payment first.',
-      )
-      return
-    }
-
-    Alert.alert(
-      `Delete ${currentName}?`,
-      'This will not delete their sales history. Their credit records will remain.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Customer',
-          style: 'destructive',
-          onPress: async () => {
-            if (!database) return
-            try {
-              await database.write(async () => {
-                const record = await database!.get<CustomerModel>('customers').find(customerId)
-                await record.update((c) => { c.isActive = false })
-              })
-              const { triggerSync, business } = useAuthStore.getState()
-              if (business) triggerSync(business.id).catch(() => {})
-              onDeleted()
-            } catch {
-              Alert.alert('Error', 'Failed to delete customer.')
-            }
-          },
-        },
-      ],
+    confirmDeleteCustomer(
+      {
+        id: customerId,
+        name: currentName,
+        outstandingBalanceCents,
+      },
+      onDeleted,
     )
   }, [outstandingBalanceCents, currentName, customerId, onDeleted])
 
