@@ -1385,7 +1385,7 @@ function AddCustomerSheetModal({ visible, onClose, onCreate }: AddCustomerSheetP
                     onChangeText={setPhone}
                     keyboardType="phone-pad"
                   />
-                  <Text style={acStyles.fieldHint}>Optional — used for WhatsApp receipts later</Text>
+                  <Text style={acStyles.fieldHint}>Optional</Text>
 
                   <Text style={acStyles.fieldLabel}>ID Number</Text>
                   <TextInput
