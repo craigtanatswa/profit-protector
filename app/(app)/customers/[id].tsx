@@ -379,6 +379,7 @@ interface EditCustomerModalProps {
   customerId: string
   currentName: string
   currentPhone: string
+  currentNationalId: string
   outstandingBalanceCents: number
   onClose: () => void
   onDeleted: () => void
@@ -389,12 +390,14 @@ function EditCustomerModal({
   customerId,
   currentName,
   currentPhone,
+  currentNationalId,
   outstandingBalanceCents,
   onClose,
   onDeleted,
 }: EditCustomerModalProps) {
   const [name, setName] = useState(currentName)
   const [phone, setPhone] = useState(currentPhone)
+  const [nationalId, setNationalId] = useState(currentNationalId)
   const [nameError, setNameError] = useState<string | null>(null)
   const [phoneError, setPhoneError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -403,11 +406,12 @@ function EditCustomerModal({
     if (visible) {
       setName(currentName)
       setPhone(currentPhone)
+      setNationalId(currentNationalId)
       setNameError(null)
       setPhoneError(null)
       setIsSaving(false)
     }
-  }, [visible, currentName, currentPhone])
+  }, [visible, currentName, currentPhone, currentNationalId])
 
   function validateName(n: string): string | null {
     if (!n.trim()) return 'Name is required'
@@ -438,6 +442,7 @@ function EditCustomerModal({
         await record.update((c) => {
           c.name = name.trim()
           c.phone = phone.trim() || null
+          c.nationalId = nationalId.trim() || null
         })
       })
       const { triggerSync, business } = useAuthStore.getState()
@@ -447,7 +452,7 @@ function EditCustomerModal({
       setIsSaving(false)
       Alert.alert('Error', 'Failed to update customer. Please try again.')
     }
-  }, [name, phone, customerId, onClose])
+  }, [name, phone, nationalId, customerId, onClose])
 
   const handleDelete = useCallback(() => {
     if (outstandingBalanceCents > 0) {
@@ -509,6 +514,17 @@ function EditCustomerModal({
           error={phoneError ?? undefined}
           hint="Optional — used for WhatsApp receipts later"
           leftIcon={<Ionicons name="call-outline" size={18} color="#5A6A8A" />}
+        />
+        <View style={{ height: 12 }} />
+        <Input
+          label="ID Number"
+          placeholder="e.g. 63-1234567A12"
+          value={nationalId}
+          onChangeText={setNationalId}
+          autoCapitalize="characters"
+          maxLength={30}
+          hint="Optional"
+          leftIcon={<Ionicons name="card-outline" size={18} color="#5A6A8A" />}
         />
       </View>
       <View style={styles.modalButtons}>
@@ -654,6 +670,12 @@ export default function CustomerDetailScreen() {
                   <Ionicons name="call-outline" size={14} color="#5A6A8A" />
                   <Text style={styles.heroPhone}>{customer.phone}</Text>
                 </TouchableOpacity>
+              ) : null}
+              {customer.nationalId ? (
+                <View style={styles.heroPhoneRow}>
+                  <Ionicons name="card-outline" size={14} color="#5A6A8A" />
+                  <Text style={styles.heroPhone}>{customer.nationalId}</Text>
+                </View>
               ) : null}
               <Text style={styles.heroAdded}>Added {formatDate(customer.createdAt)}</Text>
             </View>
@@ -877,6 +899,7 @@ export default function CustomerDetailScreen() {
         customerId={customer.id}
         currentName={customer.name}
         currentPhone={customer.phone ?? ''}
+        currentNationalId={customer.nationalId ?? ''}
         outstandingBalanceCents={customer.outstandingBalanceCents}
         onClose={() => setShowEditModal(false)}
         onDeleted={handleDeleted}

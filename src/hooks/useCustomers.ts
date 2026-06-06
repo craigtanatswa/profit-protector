@@ -17,6 +17,7 @@ export function mapCustomerRecord(record: CustomerModel): Customer {
     businessId: record.businessId,
     name: record.name,
     phone: record.phone ?? undefined,
+    nationalId: record.nationalId ?? undefined,
     // Row cache — will be overwritten with the ledger value before any UI sees it
     outstandingBalanceCents:
       typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? Math.round(raw) : 0,
@@ -201,13 +202,14 @@ export function useCustomers(businessId: string) {
   // ── Mutation helpers ──────────────────────────────────────────────────────
 
   const createCustomer = useCallback(
-    async (name: string, phone?: string): Promise<Customer> => {
+    async (name: string, phone?: string, nationalId?: string): Promise<Customer> => {
       if (!database) throw new Error('Database not available')
       const record = await database.write(async () =>
         database!.get<CustomerModel>('customers').create((c) => {
           c.businessId = businessId
           c.name = name.trim()
           c.phone = phone?.trim() || null
+          c.nationalId = nationalId?.trim() || null
           c.outstandingBalanceCents = 0
           c.isActive = true
         }),

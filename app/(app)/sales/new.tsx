@@ -876,8 +876,8 @@ export default function NewSaleScreen() {
             setCustomer(customer.id)
             setShowCustomerModal(false)
           }}
-          onCreate={async (name, phone) => {
-            const newCustomer = await createCustomer(name, phone)
+          onCreate={async (name, phone, nationalId) => {
+            const newCustomer = await createCustomer(name, phone, nationalId)
             setCustomer(newCustomer.id)
             setShowCustomerModal(false)
           }}
@@ -1263,7 +1263,7 @@ function QuantityEditorModal({ product, currentQty, onUpdate, onRemove, onClose 
 interface AddCustomerSheetProps {
   visible: boolean
   onClose: () => void
-  onCreate: (name: string, phone?: string) => Promise<void>
+  onCreate: (name: string, phone?: string, nationalId?: string) => Promise<void>
 }
 
 function AddCustomerSheetModal({ visible, onClose, onCreate }: AddCustomerSheetProps) {
@@ -1272,6 +1272,7 @@ function AddCustomerSheetModal({ visible, onClose, onCreate }: AddCustomerSheetP
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [nationalId, setNationalId] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
 
@@ -1301,6 +1302,7 @@ function AddCustomerSheetModal({ visible, onClose, onCreate }: AddCustomerSheetP
     if (visible) {
       setName('')
       setPhone('')
+      setNationalId('')
       setIsCreating(false)
       Animated.spring(slideAnim, {
         toValue: 0,
@@ -1321,13 +1323,13 @@ function AddCustomerSheetModal({ visible, onClose, onCreate }: AddCustomerSheetP
     if (!name.trim()) return
     setIsCreating(true)
     try {
-      await onCreate(name, phone || undefined)
+      await onCreate(name, phone || undefined, nationalId || undefined)
     } catch {
       Alert.alert('Error', 'Could not create customer')
     } finally {
       setIsCreating(false)
     }
-  }, [name, phone, onCreate])
+  }, [name, phone, nationalId, onCreate])
 
   const keyboardLift =
     keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0
@@ -1384,6 +1386,18 @@ function AddCustomerSheetModal({ visible, onClose, onCreate }: AddCustomerSheetP
                     keyboardType="phone-pad"
                   />
                   <Text style={acStyles.fieldHint}>Optional — used for WhatsApp receipts later</Text>
+
+                  <Text style={acStyles.fieldLabel}>ID Number</Text>
+                  <TextInput
+                    style={acStyles.input}
+                    placeholder="e.g. 63-1234567A12"
+                    placeholderTextColor={COLORS.textSecondary}
+                    value={nationalId}
+                    onChangeText={setNationalId}
+                    autoCapitalize="characters"
+                    maxLength={30}
+                  />
+                  <Text style={acStyles.fieldHint}>Optional</Text>
                 </View>
               </ScrollView>
 
@@ -1417,7 +1431,7 @@ function AddCustomerSheetModal({ visible, onClose, onCreate }: AddCustomerSheetP
 interface CustomerPickerProps {
   customers: Customer[]
   onSelect: (customer: Customer) => void
-  onCreate: (name: string, phone?: string) => Promise<void>
+  onCreate: (name: string, phone?: string, nationalId?: string) => Promise<void>
   onClose: () => void
 }
 
@@ -1432,7 +1446,8 @@ function CustomerPickerModal({ customers, onSelect, onCreate, onClose }: Custome
     return customers.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
-        (c.phone && c.phone.includes(q)),
+        (c.phone && c.phone.includes(q)) ||
+        (c.nationalId && c.nationalId.toLowerCase().includes(q)),
     )
   }, [customers, search])
 
@@ -1454,7 +1469,7 @@ function CustomerPickerModal({ customers, onSelect, onCreate, onClose }: Custome
               <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} />
               <TextInput
                 style={cpStyles.searchInput}
-                placeholder="Search by name or phone..."
+                placeholder="Search by name, phone, or ID..."
                 placeholderTextColor={COLORS.textSecondary}
                 value={search}
                 onChangeText={setSearch}

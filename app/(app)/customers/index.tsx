@@ -90,6 +90,7 @@ function AddCustomerModal({
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [nationalId, setNationalId] = useState('')
   const [nameError, setNameError] = useState<string | null>(null)
   const [phoneError, setPhoneError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -121,6 +122,7 @@ function AddCustomerModal({
     if (visible) {
       setName('')
       setPhone('')
+      setNationalId('')
       setNameError(null)
       setPhoneError(null)
       setIsSaving(false)
@@ -192,6 +194,7 @@ function AddCustomerModal({
           c.businessId = businessId
           c.name = name.trim()
           c.phone = phone.trim() || null
+          c.nationalId = nationalId.trim() || null
           c.outstandingBalanceCents = 0
           c.isActive = true
         })
@@ -215,7 +218,7 @@ function AddCustomerModal({
       setIsSaving(false)
       Alert.alert('Error', 'Failed to save customer. Please try again.')
     }
-  }, [name, phone, businessId, onSuccess])
+  }, [name, phone, nationalId, businessId, onSuccess])
 
   const keyboardLift =
     keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0
@@ -287,9 +290,24 @@ function AddCustomerModal({
                     }}
                     keyboardType="phone-pad"
                     error={phoneError ?? undefined}
-                    hint="Optional — used for WhatsApp receipts later"
+                    hint="Optional"
                     leftIcon={
                       <Ionicons name="call-outline" size={18} color="#5A6A8A" />
+                    }
+                  />
+
+                  <View style={{ height: 12 }} />
+
+                  <Input
+                    label="ID Number"
+                    placeholder="e.g. 63-1234567A12"
+                    value={nationalId}
+                    onChangeText={setNationalId}
+                    autoCapitalize="characters"
+                    maxLength={30}
+                    hint="Optional"
+                    leftIcon={
+                      <Ionicons name="card-outline" size={18} color="#5A6A8A" />
                     }
                   />
                 </View>
@@ -403,7 +421,8 @@ export default function CustomersScreen() {
       result = result.filter(
         (c) =>
           c.name.toLowerCase().includes(q) ||
-          (c.phone && c.phone.includes(q)),
+          (c.phone && c.phone.includes(q)) ||
+          (c.nationalId && c.nationalId.toLowerCase().includes(q)),
       )
     }
 
@@ -564,7 +583,7 @@ export default function CustomersScreen() {
           <Ionicons name="search-outline" size={18} color="#5A6A8A" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name or phone..."
+            placeholder="Search by name, phone, or ID..."
             placeholderTextColor="#A0AEC0"
             value={searchText}
             onChangeText={setSearchText}

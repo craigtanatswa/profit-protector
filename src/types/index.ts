@@ -71,6 +71,7 @@ export interface Customer {
   businessId: string
   name: string
   phone?: string
+  nationalId?: string
   outstandingBalanceCents: number
   isActive?: boolean
   createdAt: number

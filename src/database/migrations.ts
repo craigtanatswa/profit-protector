@@ -127,5 +127,14 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      toVersion: 11,
+      steps: [
+        addColumns({
+          table: 'customers',
+          columns: [{ name: 'national_id', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
   ],
 })

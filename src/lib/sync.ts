@@ -526,6 +526,7 @@ async function syncCustomers(
                 existing.prepareUpdate((r) => {
                   r.name = remote.name
                   r.phone = remote.phone
+                  r.nationalId = remote.national_id ?? null
                   r.outstandingBalanceCents = remote.outstanding_balance_cents
                   r.supabaseId = remote.id
                   wmRaw(r).updated_at = remoteMs
@@ -539,6 +540,7 @@ async function syncCustomers(
                 r.businessId = remote.business_id
                 r.name = remote.name
                 r.phone = remote.phone
+                r.nationalId = remote.national_id ?? null
                 r.outstandingBalanceCents = remote.outstanding_balance_cents
                 r.supabaseId = remote.id
                 wmRaw(r).created_at = new Date(remote.created_at).getTime()
@@ -580,6 +582,7 @@ async function syncCustomers(
         business_id: r.businessId,
         name: r.name,
         phone: r.phone,
+        national_id: r.nationalId,
         outstanding_balance_cents: r.outstandingBalanceCents,
         created_at: toISO(wmRaw(r).created_at as number),
         updated_at: toISO(wmRaw(r).updated_at as number),
