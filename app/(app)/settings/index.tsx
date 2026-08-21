@@ -1,6 +1,7 @@
 ﻿/*
  * Supabase setup (SQL Editor):
  * - Account deletion + clear data: run `supabase/sql/account_lifecycle.sql`
+ *   (re-run after adding tables that FK to businesses, e.g. subscriptions/payments/shopkeepers).
  * - Deploy the `delete-account` Edge Function (service role deletes auth user after RPC).
  * Optional audit trail for delete requests:
  *   create table if not exists deletion_requests (...); -- see git history or support docs

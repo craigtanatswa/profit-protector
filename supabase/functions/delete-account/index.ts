@@ -51,7 +51,7 @@ serve(async (req) => {
       {
         error:
           rpcError.message ??
-          'Could not remove account data. Run supabase/sql/account_lifecycle.sql (including delete_account_data_for_user) in the SQL Editor, redeploy this function, and retry.',
+          'Could not remove account data. Re-run supabase/sql/account_lifecycle.sql in the SQL Editor (it must delete subscriptions/payments before businesses), then retry.',
       },
       400,
     )
