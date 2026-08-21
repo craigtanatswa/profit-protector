@@ -35,8 +35,12 @@ const RETURN_URL = 'profitprotector://payment/result'
 const CARD_RETURN_URL = `${SUPABASE_URL}/functions/v1/paynow-card-complete`
 
 const PLAN_PRICES: Record<string, { cents: number; amountString: string; label: string }> = {
-  pro:      { cents: 500, amountString: '5.00', label: 'Profit Protector Pro'  },
-  pro_plus: { cents: 1000, amountString: '10.00', label: 'Profit Protector Pro+' },
+  // live:
+  // pro:      { cents: 500, amountString: '5.00', label: 'Profit Protector Pro'  },
+  // pro_plus: { cents: 1000, amountString: '10.00', label: 'Profit Protector Pro+' },
+  // TEST pricing — restore live figures before Play Store release
+  pro:      { cents: 20, amountString: '0.20', label: 'Profit Protector Pro'  },
+  pro_plus: { cents: 30, amountString: '0.30', label: 'Profit Protector Pro+' },
 }
 
 const corsHeaders = {
@@ -162,8 +166,8 @@ serve(async (req) => {
     const remainingMs = Math.max(0, endMs - nowMs)
     const fraction = remainingMs / totalMs
 
-    const proCents = PLAN_PRICES.pro.cents          // 500
-    const prosPlusCents = PLAN_PRICES.pro_plus.cents // 1000
+    const proCents = PLAN_PRICES.pro.cents
+    const prosPlusCents = PLAN_PRICES.pro_plus.cents
     const creditCents = Math.floor(fraction * proCents)
     const newCostCents = Math.ceil(fraction * prosPlusCents)
     const chargeCents = Math.max(0, newCostCents - creditCents)

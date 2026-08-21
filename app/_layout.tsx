@@ -43,6 +43,7 @@ function AuthGate() {
     setUser,
     initializeAuth,
   } = useAuthStore()
+  const business = useAuthStore((s) => s.business)
   const hydrated = useOnboardingStore((s) => s.hydrated)
   const hasCompletedOnboarding = useOnboardingStore((s) => s.hasCompletedOnboarding)
   const hydrateOnboarding = useOnboardingStore((s) => s.hydrateFromStorage)
@@ -147,6 +148,10 @@ function AuthGate() {
       if (inApp) return
       if (inAuth && keepAuthShell) return
       if (inOnboarding && keepOnboardingShell) return
+      if (business == null) {
+        router.replace('/(auth)/login')
+        return
+      }
       router.replace('/(app)')
       return
     }
@@ -167,6 +172,7 @@ function AuthGate() {
     isLoading,
     hydrated,
     hasCompletedOnboarding,
+    business,
     segments,
     router,
     markCompletedSyncedWithAuth,

@@ -15,6 +15,34 @@ export function buildLegacySupabaseEmailFromPhone(phone10: string): string {
   return `${phone10}@${AUTH_EMAIL_DOMAIN}`
 }
 
+/** Zimbabwe local 10-digit form (07…) from common input / E.164 variants. */
+export function normalizePhone10(raw: string): string | null {
+  const d = String(raw ?? '').replace(/\D/g, '')
+  if (d.length === 10 && d.startsWith('07')) return d
+  if (d.length === 9 && d.startsWith('7')) return `0${d}`
+  if (d.length === 12 && d.startsWith('263')) return `0${d.slice(3)}`
+  if (d.length === 13 && d.startsWith('2630')) return d.slice(3)
+  return null
+}
+
+/** Recover 07… phone from an Auth user when `app_users` is missing or unreadable. */
+export function phone10FromAuthUser(
+  user: { email?: string | null; user_metadata?: Record<string, unknown> | null },
+  fallback = '',
+): string | null {
+  const meta = user.user_metadata?.phone_local
+  if (typeof meta === 'string') {
+    const fromMeta = normalizePhone10(meta)
+    if (fromMeta) return fromMeta
+  }
+  const email = user.email ?? ''
+  const prefixed = email.match(/^u(07\d{8})@/i)
+  if (prefixed) return prefixed[1]
+  const legacy = email.match(/^(07\d{8})@/)
+  if (legacy) return legacy[1]
+  return normalizePhone10(fallback)
+}
+
 /** Empty string, or lowercase 3–30 chars, letter first, [a-z0-9_]. */
 export const LOGIN_USERNAME_REGEX = /^[a-z][a-z0-9_]{2,29}$/
 
@@ -41,12 +69,9 @@ export function parseLoginIdentifier(raw: string): ParsedLoginIdentifier {
     return { kind: 'invalid', message: 'Enter your phone number or username' }
   }
 
-  const looksLikePhone = /^[\d\s]+$/.test(trimmed)
+  const looksLikePhone = /^[\d\s+]+$/.test(trimmed)
   if (looksLikePhone) {
-    const d = trimmed.replace(/\D/g, '')
-    let phone: string | null = null
-    if (d.length === 10 && d.startsWith('07')) phone = d
-    else if (d.length === 9 && d.startsWith('7')) phone = `0${d}`
+    const phone = normalizePhone10(trimmed)
     if (phone) {
       const email = buildSupabaseEmailFromPhone(phone)
       const legacy = buildLegacySupabaseEmailFromPhone(phone)

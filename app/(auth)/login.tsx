@@ -17,10 +17,12 @@ import { Button, Card, Divider, Input } from '../../src/components/ui'
 import { BrandLogo, KeyboardAvoidingWrapper } from '../../src/components/layout'
 import { registerOwnerActiveSession } from '../../src/lib/activeSession'
 import { resolveEmailForSignIn } from '../../src/lib/authLogin'
+import { normalizePhone10, parseLoginIdentifier } from '../../src/lib/authIdentity'
 import {
   businessInfoFromRemoteRow,
   fetchBusinessRowForUser,
 } from '../../src/lib/businessRemote'
+import { ensureBusinessProfileForVerifiedSession } from '../../src/lib/createAccount'
 import { ensureLocalWatermelonForSession } from '../../src/lib/ensureLocalWatermelon'
 import { refreshOwnerProductsFromSupabase } from '../../src/lib/sync'
 import { supabase } from '../../src/lib/supabase'
@@ -174,13 +176,25 @@ export default function LoginScreen() {
 
   // Session restored before this screen mounts (normal cold start): leave Login immediately.
   // Mid-submit login does not hit this — user was null on first paint.
+  // Verified accounts without a business row are finished here so they enter the app
+  // instead of being sent back to signup.
   useEffect(() => {
     const { user, business, isLoading } = useAuthStore.getState()
     if (isLoading || !user) return
     if (business) {
       router.replace('/(app)')
-    } else {
-      router.replace('/(auth)/register?resume=1')
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const result = await ensureBusinessProfileForVerifiedSession('')
+      if (cancelled || !result.success) return
+      setUser(result.user)
+      setBusiness(result.business)
+      router.replace('/(app)')
+    })()
+    return () => {
+      cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap-only routing from restored session
   }, [])
@@ -253,27 +267,36 @@ export default function LoginScreen() {
 
       const { data: au } = await supabase
         .from('app_users')
-        .select('phone_verified')
+        .select('phone, phone_verified')
         .eq('id', user.id)
         .maybeSingle()
 
-      if (au != null && au.phone_verified !== true) {
-        await supabase.auth.signOut()
-        Alert.alert(
-          'Phone not verified',
-          'Your phone number must be verified before you can sign in. Complete signup verification or contact support.',
-        )
-        setLoading(false)
-        return
-      }
+      const identifierPhone = parseLoginIdentifier(values.identifier).kind === 'phone'
+        ? normalizePhone10(values.identifier)
+        : null
 
-      const { data: biz, error: bizErr } = await fetchBusinessRowForUser(user.id)
+      let { data: biz, error: bizErr } = await fetchBusinessRowForUser(user.id)
       if (bizErr || !biz) {
-        setUser(user)
-        setBusiness(null)
-        router.replace('/(auth)/register?resume=1')
-        setLoading(false)
-        return
+        const ensured = await ensureBusinessProfileForVerifiedSession(
+          identifierPhone ?? (typeof au?.phone === 'string' ? au.phone : ''),
+        )
+        if (!ensured.success) {
+          Alert.alert('Sign in failed', ensured.error)
+          setLoading(false)
+          return
+        }
+        const refetch = await fetchBusinessRowForUser(user.id)
+        biz = refetch.data
+        bizErr = refetch.error
+        if (bizErr || !biz) {
+          await registerOwnerActiveSession()
+          setUser(ensured.user)
+          setBusiness(ensured.business)
+          await logActivity({ action: 'account_login_owner', entityType: 'account' })
+          router.replace('/(app)')
+          setLoading(false)
+          return
+        }
       }
 
       await registerOwnerActiveSession()

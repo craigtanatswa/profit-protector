@@ -72,7 +72,12 @@ import { BrandLogo, ScreenHeader } from '../../src/components/layout'
 import { database } from '../../src/database'
 import Business from '../../src/database/models/Business'
 import { supabase } from '../../src/lib/supabase'
-import { createBusinessProfile } from '../../src/lib/createAccount'
+import { getPersonalisation } from '../../src/lib/appPersonalisation'
+import {
+  clearPendingBusinessProfile,
+  createBusinessProfile,
+  savePendingBusinessProfile,
+} from '../../src/lib/createAccount'
 import {
   buildSupabaseEmailFromPhone,
   isValidOptionalLoginUsername,
@@ -331,7 +336,7 @@ export default function RegisterScreen() {
     businessId: string
     email: string
   } | null>(null)
-  /** OTP entry on step 3; successful verify signs in before preferences + createBusinessProfile (step 4). */
+  /** OTP entry on step 3; successful verify creates the business profile and enters the app. */
   const [smsOtp, setSmsOtp] = useState('')
   const scrollRef = useRef<ScrollView>(null)
   const scrollContentRef = useRef<View>(null)
@@ -443,11 +448,34 @@ export default function RegisterScreen() {
   // Navigation
   // -------------------------------------------------------------------------
 
+  const capturePendingProfile = () => {
+    const vals = getValues()
+    void savePendingBusinessProfile({
+      businessName: vals.businessName,
+      ownerName: vals.ownerName,
+      phone: vals.phone,
+      businessType: vals.businessType,
+      currency: vals.currency || getPersonalisation(vals.businessType).currencyDefault || 'usd',
+      loginUsername: vals.loginUsername || undefined,
+    })
+  }
+
+  const goToSignIn = async () => {
+    capturePendingProfile()
+    try {
+      await supabase.auth.signOut()
+    } catch {
+      /* already signed out */
+    }
+    setUser(null)
+    setBusiness(null)
+    router.replace('/(auth)/login')
+  }
+
   const goBack = async () => {
     if (currentStep === 1) {
       if (resumeRegistration) {
-        await supabase.auth.signOut()
-        router.replace('/(auth)/login')
+        await goToSignIn()
         return
       }
       if (fromOnboardingRef.current) {
@@ -502,6 +530,7 @@ export default function RegisterScreen() {
       Alert.alert('Enter code', 'Enter the 4-digit verification code from your SMS.')
       return
     }
+    capturePendingProfile()
     setIsLoading(true)
     try {
       const result = await verifySignupOtp(ph, smsOtp.trim(), pwd)
@@ -525,7 +554,40 @@ export default function RegisterScreen() {
         return
       }
 
-      setCurrentStep(4)
+      const vals = getValues()
+      const currency =
+        vals.currency ||
+        getPersonalisation(vals.businessType).currencyDefault ||
+        'usd'
+      const profile = await createBusinessProfile({
+        businessName: vals.businessName,
+        ownerName: vals.ownerName,
+        phone: vals.phone,
+        businessType: vals.businessType,
+        currency,
+        loginUsername: vals.loginUsername || undefined,
+      })
+
+      if (!profile.success) {
+        Alert.alert(
+          'Phone verified',
+          profile.error +
+            '\n\nSign in with the same phone and password to finish opening your account.',
+        )
+        return
+      }
+
+      await clearPendingBusinessProfile()
+      setBusiness(profile.business)
+      setUser(profile.user)
+
+      if (profile.pendingRecoveryEmailVerification) {
+        const { businessId, email: recoveryEmail } = profile.pendingRecoveryEmailVerification
+        setPendingRecoveryVerify({ businessId, email: recoveryEmail })
+        return
+      }
+
+      router.replace('/(app)')
     } finally {
       setIsLoading(false)
     }
@@ -573,6 +635,7 @@ export default function RegisterScreen() {
             )
             return
           }
+          capturePendingProfile()
           setSmsOtp('')
           setCurrentStep(3)
           return
@@ -583,6 +646,7 @@ export default function RegisterScreen() {
           Alert.alert('Could not send code', sent.error ?? 'Please try again.')
           return
         }
+        capturePendingProfile()
         setSmsOtp('')
         setCurrentStep(3)
       } finally {
@@ -1099,8 +1163,8 @@ export default function RegisterScreen() {
           {/* Login link */}
           <View style={styles.loginRow}>
             <Text style={styles.loginText}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
-              <Text style={styles.loginLink}>Login</Text>
+            <TouchableOpacity onPress={() => void goToSignIn()} disabled={isLoading}>
+              <Text style={styles.loginLink}>Sign in</Text>
             </TouchableOpacity>
           </View>
         </View>

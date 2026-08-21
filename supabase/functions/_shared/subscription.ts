@@ -7,8 +7,10 @@ export type PlanTier = 'pro' | 'pro_plus'
 const SUBSCRIPTION_DURATION_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
 const PLAN_PRICE_CENTS: Record<PlanTier, number> = {
-  pro: 500,
-  pro_plus: 1000,
+  // pro: 500,       // live: $5.00
+  // pro_plus: 1000, // live: $10.00
+  pro: 20,       // TEST: $0.20 — restore 500 before Play Store release
+  pro_plus: 30,  // TEST: $0.30 — restore 1000 before Play Store release
 }
 
 /**

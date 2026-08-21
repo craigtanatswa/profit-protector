@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, AppState, StyleSheet, View } from 'react-native'
 import { Tabs, router, type Href, useSegments, useUnstableGlobalHref } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
@@ -28,6 +28,7 @@ import {
 } from '../../src/components/modals/FirstRunWelcomeModals'
 import { clearShopkeeperSession as clearStoredShopkeeperSession } from '../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../src/lib/activityLogger'
+import { ensureBusinessProfileForVerifiedSession } from '../../src/lib/createAccount'
 
 const ACTIVE_COLOR = '#0047AB'
 const INACTIVE_COLOR = '#718096'
@@ -160,10 +161,12 @@ export default function AppLayout() {
   const isLoadingAuth = useAuthStore((s) => s.isLoading)
   const user = useAuthStore((s) => s.user)
   const business = useAuthStore((s) => s.business)
+  const setBusiness = useAuthStore((s) => s.setBusiness)
   const activeRole = useAuthStore((s) => s.activeRole)
   const shopkeeperSession = useAuthStore((s) => s.shopkeeperSession)
   const clearShopkeeperSession = useAuthStore((s) => s.clearShopkeeperSession)
   const isShopkeeper = activeRole === 'shopkeeper'
+  const ensuringBusinessProfileRef = useRef(false)
   const [showTrialWelcome, setShowTrialWelcome] = useState(false)
   const [showInventoryPrompt, setShowInventoryPrompt] = useState(false)
   useApplyFirstRunUxReset(business?.id, activeRole === 'owner' && !isShopkeeper)
@@ -270,11 +273,24 @@ export default function AppLayout() {
     markInventoryPromptSeen()
   }, [markInventoryPromptSeen])
 
-  /** Accounts that verified phone but never finished `createBusinessProfile` (e.g. older builds). */
+  /** Finish a verified owner profile in-place. Never send them back to signup. */
   useEffect(() => {
-    if (isShopkeeper || isLoadingAuth || !user || business != null) return
-    router.replace('/(auth)/register?resume=1')
-  }, [business, isLoadingAuth, isShopkeeper, user])
+    if (!user) {
+      ensuringBusinessProfileRef.current = false
+      return
+    }
+    if (isShopkeeper || isLoadingAuth || business != null) return
+    if (ensuringBusinessProfileRef.current) return
+    ensuringBusinessProfileRef.current = true
+    void (async () => {
+      const result = await ensureBusinessProfileForVerifiedSession('')
+      if (result.success) {
+        setBusiness(result.business)
+        return
+      }
+      ensuringBusinessProfileRef.current = false
+    })()
+  }, [business, isLoadingAuth, isShopkeeper, setBusiness, user])
 
   const { bannerProps, showBanner, hideBanner } = useNotificationBanner()
 
