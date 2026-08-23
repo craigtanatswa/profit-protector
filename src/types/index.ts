@@ -130,6 +130,8 @@ export interface Payment {
   phoneNumber: string | null
   status: 'pending' | 'paid' | 'failed' | 'cancelled'
   paynowStatus: string | null
+  planTier: 'pro' | 'pro_plus'
+  isUpgrade: boolean
   createdAt: string
 }
 

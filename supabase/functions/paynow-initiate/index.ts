@@ -263,6 +263,7 @@ serve(async (req) => {
       authemail: MERCHANT_EMAIL,
       phone,
       method: paymentMethod,
+      merchanttrace: merchantTrace,
       status: 'Message',
     }
     expressParams.hash = await buildHash(expressParams)
@@ -289,6 +290,7 @@ serve(async (req) => {
       resulturl: RESULT_URL,
       authemail: MERCHANT_EMAIL,
       method: 'innbucks',
+      merchanttrace: merchantTrace,
       status: 'Message',
     }
     innbucksParams.hash = await buildHash(innbucksParams)
@@ -319,6 +321,7 @@ serve(async (req) => {
       returnurl: CARD_RETURN_URL,
       resulturl: RESULT_URL,
       authemail: cardAuthEmail,
+      merchanttrace: merchantTrace,
       status: 'Message',
     }
     cardParams.hash = await buildHash(cardParams)

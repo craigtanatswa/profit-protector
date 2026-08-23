@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Animated,
+  AppState,
   Easing,
   KeyboardAvoidingView,
   Linking,
@@ -396,6 +397,7 @@ export default function PaywallScreen() {
   const scrollRef = useRef<ScrollView>(null)
   const scrollContentRef = useRef<View>(null)
   const phoneSectionRef = useRef<View>(null)
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false)
 
   const scrollPhoneFieldIntoView = useCallback(() => {
     const content = scrollContentRef.current
@@ -413,49 +415,93 @@ export default function PaywallScreen() {
     )
   }, [])
 
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current)
-    }
-  }, [])
-
-  // Polling loop
-  useEffect(() => {
-    if (paymentState !== 'initiated' && paymentState !== 'polling') return
-    if (!pollUrl || !paymentId) return
-
-    const interval = setInterval(async () => {
-      try {
-        const result = await pollPaymentStatus(paymentId, pollUrl)
-        if (result.isPaid) {
-          clearInterval(interval)
-          pollingRef.current = null
-          setPaymentState('success')
-          await refetch()
-        } else if (
-          result.status?.toLowerCase() === 'cancelled' ||
-          result.status?.toLowerCase() === 'failed'
-        ) {
-          clearInterval(interval)
-          pollingRef.current = null
-          setPaymentState('failed')
-        }
-      } catch (e) {
-        console.warn('Poll error:', e)
-      }
-    }, 5000)
-
-    pollingRef.current = interval
-    return () => clearInterval(interval)
-  }, [paymentState, pollUrl, paymentId, refetch])
-
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current)
       pollingRef.current = null
     }
   }, [])
+
+  const checkPaymentNow = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!paymentId || !pollUrl) return false
+      if (!opts?.silent) setIsCheckingStatus(true)
+      try {
+        const result = await pollPaymentStatus(paymentId, pollUrl)
+        if (result.isPaid) {
+          stopPolling()
+          setPaymentState('success')
+          await refetch()
+          return true
+        }
+        const status = (result.status ?? '').toLowerCase()
+        if (status === 'cancelled' || status === 'failed' || status === 'disputed') {
+          stopPolling()
+          setPaymentState('failed')
+          return true
+        }
+        if (!opts?.silent) {
+          Alert.alert(
+            'Payment pending',
+            'Paynow has not confirmed this payment yet. If you already entered your PIN, wait a moment and tap Check payment status again. Do not pay twice.',
+          )
+        }
+      } catch (e) {
+        if (!opts?.silent) {
+          const msg = e instanceof Error ? e.message : 'Could not check payment status'
+          Alert.alert('Could not check payment', msg)
+        } else {
+          console.warn('Poll error:', e)
+        }
+      } finally {
+        if (!opts?.silent) setIsCheckingStatus(false)
+      }
+      return false
+    },
+    [paymentId, pollUrl, refetch, stopPolling],
+  )
+
+  // Poll immediately, every few seconds, and when the user returns from EcoCash PIN
+  useEffect(() => {
+    if (paymentState !== 'initiated' && paymentState !== 'polling') return
+    if (!pollUrl || !paymentId) return
+
+    let cancelled = false
+    let attempts = 0
+    const MAX_ATTEMPTS = 60
+
+    const tick = async () => {
+      if (cancelled) return
+      attempts++
+      const done = await checkPaymentNow({ silent: true })
+      if (done || cancelled) {
+        stopPolling()
+        return
+      }
+      if (attempts === MAX_ATTEMPTS) {
+        Alert.alert(
+          'Still waiting for confirmation',
+          'If money left your wallet, do not pay again. Tap Check payment status, or contact support.',
+        )
+      }
+    }
+
+    void tick()
+    const interval = setInterval(() => {
+      void tick()
+    }, 4000)
+    pollingRef.current = interval
+
+    const appSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void tick()
+    })
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      appSub.remove()
+    }
+  }, [paymentState, pollUrl, paymentId, checkPaymentNow, stopPolling])
 
   const resetForm = useCallback(() => {
     stopPolling()
@@ -551,16 +597,13 @@ export default function PaywallScreen() {
       setPaymentState('idle')
       return
     }
-    try {
-      const result = await pollPaymentStatus(paymentId, pollUrl)
-      if (result.isPaid) {
-        setPaymentState('success')
-        await refetch()
-      } else {
-        setPaymentState('idle')
-      }
-    } catch {
-      setPaymentState('idle')
+    setPaymentState('polling')
+    const done = await checkPaymentNow({ silent: true })
+    if (!done) {
+      Alert.alert(
+        'Payment pending',
+        'If you completed the card payment, tap Check payment status in a moment. Do not pay twice.',
+      )
     }
   }
 
@@ -930,6 +973,19 @@ export default function PaywallScreen() {
 
                 <View style={{ marginTop: 16 }}>
                   <Button
+                    label="Check payment status"
+                    variant="secondary"
+                    size="md"
+                    fullWidth
+                    loading={isCheckingStatus}
+                    disabled={isCheckingStatus}
+                    onPress={() => {
+                      void checkPaymentNow()
+                    }}
+                  />
+                </View>
+                <View style={{ marginTop: 8 }}>
+                  <Button
                     label="Cancel"
                     variant="ghost"
                     size="md"
@@ -970,28 +1026,10 @@ export default function PaywallScreen() {
                     variant="secondary"
                     size="md"
                     fullWidth
-                    onPress={async () => {
-                      try {
-                        const result = await pollPaymentStatus(paymentId, pollUrl)
-                        if (result.isPaid) {
-                          setPaymentState('success')
-                          await refetch()
-                        } else if (
-                          result.status?.toLowerCase() === 'cancelled' ||
-                          result.status?.toLowerCase() === 'failed'
-                        ) {
-                          setPaymentState('failed')
-                        } else {
-                          Alert.alert(
-                            'Payment Pending',
-                            'We have not received the payment yet. Please try again in a moment.',
-                          )
-                        }
-                      } catch (e) {
-                        const msg =
-                          e instanceof Error ? e.message : 'Could not check status'
-                        Alert.alert('Error', msg)
-                      }
+                    loading={isCheckingStatus}
+                    disabled={isCheckingStatus}
+                    onPress={() => {
+                      void checkPaymentNow()
                     }}
                   />
                 </View>

@@ -55,6 +55,11 @@ export function formatPaymentMethod(method: string): string {
     cash_usd: 'Cash (USD)',
     cash_zig: 'Cash (ZiG)',
     ecocash: 'EcoCash',
+    onemoney: 'OneMoney',
+    innbucks: 'InnBucks',
+    card: 'Zimswitch',
+    zimswitch: 'Zimswitch',
+    vmc: 'Visa / Mastercard',
     bank_transfer: 'Bank Transfer',
     credit: 'Credit / Owing',
   }

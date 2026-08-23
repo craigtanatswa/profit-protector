@@ -2,13 +2,16 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { activateSubscription, upgradeSubscriptionTier } from '../_shared/subscription.ts'
+import {
+  fetchPaynowPollBody,
+  looksLikePaynowStatusBody,
+  paynowHashMatches,
+  settlePaymentFromPaynow,
+} from '../_shared/paynow.ts'
 
+const INTEGRATION_KEY = Deno.env.get('PAYNOW_INTEGRATION_KEY') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-
-const PAID_STATUSES = ['Paid', 'Awaiting Delivery']
-const FAILED_STATUSES = ['Cancelled', 'Disputed']
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,7 +40,7 @@ serve(async (req) => {
     return jsonResponse({ error: 'Server misconfiguration' }, 500)
   }
 
-  let body: { paymentId?: string; pollUrl?: string }
+  let body: { paymentId?: string; pollUrl?: string; pollBody?: string }
   try {
     body = await req.json()
   } catch {
@@ -45,17 +48,17 @@ serve(async (req) => {
   }
 
   const { paymentId, pollUrl } = body
+  let pollBody = typeof body.pollBody === 'string' ? body.pollBody : ''
 
-  if (!paymentId || !pollUrl) {
-    return jsonResponse({ error: 'Missing required fields: paymentId, pollUrl' }, 400)
+  if (!paymentId) {
+    return jsonResponse({ error: 'Missing required field: paymentId' }, 400)
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-  // Fetch payment record to get business_id, plan tier, and upgrade metadata
   const { data: paymentRecord, error: fetchErr } = await supabase
     .from('payments')
-    .select('id, business_id, status, plan_tier, is_upgrade, amount_cents')
+    .select('id, business_id, status, plan_tier, is_upgrade, amount_cents, paynow_reference, paynow_poll_url')
     .eq('id', paymentId)
     .maybeSingle()
 
@@ -68,7 +71,6 @@ serve(async (req) => {
     return jsonResponse({ error: 'Payment not found' }, 404)
   }
 
-  // If already in a terminal state, return current status without polling again
   if (paymentRecord.status === 'paid' || paymentRecord.status === 'cancelled') {
     return jsonResponse({
       status: paymentRecord.status,
@@ -76,61 +78,71 @@ serve(async (req) => {
     })
   }
 
-  // Poll Paynow for current status
-  let paynowStatus: string
-  try {
-    const pollResp = await fetch(pollUrl)
-    const pollText = await pollResp.text()
-    const pollFields = new URLSearchParams(pollText)
-    paynowStatus = pollFields.get('status') ?? ''
-  } catch (e) {
-    console.error(JSON.stringify({ tag: 'paynow_poll_fetch_url', paymentId, error: String(e) }))
-    return jsonResponse({ error: 'Failed to reach Paynow' }, 502)
-  }
+  const resolvedPollUrl = pollUrl || paymentRecord.paynow_poll_url || ''
 
-  const isPaid = PAID_STATUSES.includes(paynowStatus)
-  const isCancelled = FAILED_STATUSES.includes(paynowStatus)
-
-  // Build update payload
-  const updateData: Record<string, string> = { paynow_status: paynowStatus }
-  if (isPaid) {
-    updateData.status = 'paid'
-  } else if (isCancelled) {
-    updateData.status = 'cancelled'
-  }
-
-  const { error: updateErr } = await supabase
-    .from('payments')
-    .update(updateData)
-    .eq('id', paymentId)
-
-  if (updateErr) {
-    console.error(
-      JSON.stringify({ tag: 'paynow_poll_update_payment', paymentId, error: String(updateErr) }),
-    )
-  }
-
-  // Activate or upgrade subscription on successful payment
-  if (isPaid && paymentRecord.business_id) {
-    const tier = paymentRecord.plan_tier === 'pro_plus' ? 'pro_plus' : 'pro'
+  if (!looksLikePaynowStatusBody(pollBody) && resolvedPollUrl) {
     try {
-      if (paymentRecord.is_upgrade) {
-        await upgradeSubscriptionTier(supabase, paymentRecord.business_id, tier, paymentRecord.amount_cents ?? 0)
-      } else {
-        await activateSubscription(supabase, paymentRecord.business_id, tier)
-      }
+      pollBody = await fetchPaynowPollBody(resolvedPollUrl)
     } catch (e) {
-      console.error(
-        JSON.stringify({
-          tag: 'paynow_poll_activate_subscription',
-          paymentId,
-          businessId: paymentRecord.business_id,
-          isUpgrade: paymentRecord.is_upgrade,
-          error: String(e),
-        }),
-      )
+      console.error(JSON.stringify({ tag: 'paynow_poll_fetch_url', paymentId, error: String(e) }))
+      return jsonResponse({ error: 'Failed to reach Paynow' }, 502)
     }
   }
 
-  return jsonResponse({ status: paynowStatus, isPaid })
+  if (!looksLikePaynowStatusBody(pollBody)) {
+    console.error(JSON.stringify({ tag: 'paynow_poll_invalid_body', paymentId }))
+    return jsonResponse({ error: 'Could not read Paynow status' }, 502)
+  }
+
+  async function verifiedStatus(raw: string): Promise<{ ok: boolean; status: string; reference: string }> {
+    if (!INTEGRATION_KEY) {
+      const fields = new URLSearchParams(raw)
+      return {
+        ok: true,
+        status: fields.get('status') ?? '',
+        reference: fields.get('reference') ?? '',
+      }
+    }
+    const verified = await paynowHashMatches(raw, INTEGRATION_KEY)
+    return {
+      ok: verified.matches,
+      status: verified.map['status'] ?? '',
+      reference: verified.map['reference'] ?? '',
+    }
+  }
+
+  let checked = await verifiedStatus(pollBody)
+  if (!checked.ok && resolvedPollUrl) {
+    try {
+      pollBody = await fetchPaynowPollBody(resolvedPollUrl)
+      checked = await verifiedStatus(pollBody)
+    } catch (e) {
+      console.error(JSON.stringify({ tag: 'paynow_poll_fetch_url', paymentId, error: String(e) }))
+    }
+  }
+
+  if (!checked.ok) {
+    console.error(JSON.stringify({ tag: 'paynow_poll_hash_mismatch', paymentId, status: checked.status }))
+    return jsonResponse({ status: checked.status, isPaid: false, error: 'Could not verify Paynow status' }, 400)
+  }
+
+  const paynowStatus = checked.status
+  if (checked.reference && paymentRecord.paynow_reference && checked.reference !== paymentRecord.paynow_reference) {
+    return jsonResponse({ error: 'Paynow reference mismatch' }, 400)
+  }
+
+  try {
+    const settled = await settlePaymentFromPaynow(supabase, paymentRecord, paynowStatus)
+    return jsonResponse({ status: paynowStatus || (settled.isPaid ? 'Paid' : paymentRecord.status), isPaid: settled.isPaid })
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        tag: 'paynow_poll_activate_subscription',
+        paymentId,
+        businessId: paymentRecord.business_id,
+        error: String(e),
+      }),
+    )
+    return jsonResponse({ error: 'Failed to activate subscription' }, 500)
+  }
 })

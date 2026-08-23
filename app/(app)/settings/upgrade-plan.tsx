@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Animated,
+  AppState,
   Easing,
   KeyboardAvoidingView,
   Linking,
@@ -130,6 +131,8 @@ export default function UpgradePlanScreen() {
   const [errorMsg, setErrorMsg] = useState('')
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const appSubRef = useRef<{ remove: () => void } | null>(null)
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false)
 
   const authEmail = user?.email ?? business?.recoveryEmail ?? 'noreply@profitprotector.app'
   const businessId = business?.id ?? ''
@@ -143,28 +146,48 @@ export default function UpgradePlanScreen() {
     (pid: string, pUrl: string) => {
       let attempts = 0
       const MAX_ATTEMPTS = 60
+      let cancelled = false
 
-      pollingRef.current = setInterval(async () => {
+      const tick = async () => {
+        if (cancelled) return
         attempts++
         try {
           const result = await pollPaymentStatus(pid, pUrl)
           if (result.isPaid) {
-            clearInterval(pollingRef.current!)
+            cancelled = true
+            if (pollingRef.current) clearInterval(pollingRef.current)
             await refetch()
             setState('success')
-          } else if (result.status === 'Cancelled' || result.status === 'Disputed') {
-            clearInterval(pollingRef.current!)
+            return
+          }
+          const status = (result.status ?? '').toLowerCase()
+          if (status === 'cancelled' || status === 'disputed' || status === 'failed') {
+            cancelled = true
+            if (pollingRef.current) clearInterval(pollingRef.current)
             setState('failed')
             setErrorMsg('Payment was cancelled or disputed.')
-          } else if (attempts >= MAX_ATTEMPTS) {
-            clearInterval(pollingRef.current!)
-            setState('failed')
-            setErrorMsg('Payment timed out. If you completed the payment, please contact support.')
+            return
           }
-        } catch {
-          // ignore transient errors during polling
+          if (attempts >= MAX_ATTEMPTS) {
+            cancelled = true
+            if (pollingRef.current) clearInterval(pollingRef.current)
+            setState('failed')
+            setErrorMsg('Payment timed out. If you completed the payment, do not pay again — contact support.')
+          }
+        } catch (e) {
+          console.warn('Upgrade poll error:', e)
         }
-      }, 5000)
+      }
+
+      void tick()
+      pollingRef.current = setInterval(() => {
+        void tick()
+      }, 4000)
+
+      appSubRef.current?.remove()
+      appSubRef.current = AppState.addEventListener('change', (state) => {
+        if (state === 'active') void tick()
+      })
     },
     [refetch],
   )
@@ -172,6 +195,7 @@ export default function UpgradePlanScreen() {
   useEffect(() => {
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current)
+      appSubRef.current?.remove()
     }
   }, [])
 
@@ -353,7 +377,42 @@ export default function UpgradePlanScreen() {
               )}
             </View>
           )}
-          <Text style={styles.pollingNote}>This page will update automatically.</Text>
+          <Text style={styles.pollingNote}>This page will update automatically after you enter your PIN.</Text>
+          <View style={{ marginTop: 16, width: '100%' }}>
+            <Button
+              label="Check payment status"
+              onPress={async () => {
+                if (!paymentId || !pollUrl) return
+                setIsCheckingStatus(true)
+                try {
+                  const result = await pollPaymentStatus(paymentId, pollUrl)
+                  if (result.isPaid) {
+                    if (pollingRef.current) clearInterval(pollingRef.current)
+                    await refetch()
+                    setState('success')
+                  } else if (['cancelled', 'disputed', 'failed'].includes((result.status ?? '').toLowerCase())) {
+                    if (pollingRef.current) clearInterval(pollingRef.current)
+                    setState('failed')
+                    setErrorMsg('Payment was cancelled or disputed.')
+                  } else {
+                    Alert.alert(
+                      'Payment pending',
+                      'Paynow has not confirmed this payment yet. If you already entered your PIN, wait a moment and try again. Do not pay twice.',
+                    )
+                  }
+                } catch (e) {
+                  Alert.alert(
+                    'Could not check payment',
+                    e instanceof Error ? e.message : 'Please try again.',
+                  )
+                } finally {
+                  setIsCheckingStatus(false)
+                }
+              }}
+              loading={isCheckingStatus}
+              disabled={isCheckingStatus}
+            />
+          </View>
         </View>
       </SafeAreaView>
     )

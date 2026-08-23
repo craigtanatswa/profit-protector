@@ -31,7 +31,11 @@ export default function SettingsLayout() {
         name="terms-of-service"
         options={{ title: 'Terms of Service', headerShown: false }}
       />
-      <Stack.Screen name="payments" options={{ title: 'Payment History', headerShown: false }} />
+      <Stack.Screen name="payments/index" options={{ title: 'Payment History', headerShown: false }} />
+      <Stack.Screen
+        name="payments/[id]"
+        options={{ title: 'Payment Receipt', headerShown: false }}
+      />
       <Stack.Screen name="upgrade-plan" options={{ title: 'Upgrade Plan', headerShown: false, presentation: 'modal' }} />
     </Stack>
   )

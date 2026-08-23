@@ -76,6 +76,11 @@ verify_jwt = false
 import_map = "./functions/paynow-webhook/deno.json"
 entrypoint = "./functions/paynow-webhook/index.ts"
 
+[functions.paynow-confirm]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/paynow-confirm/index.ts"
+
 [functions.active-session]
 enabled = true
 verify_jwt = true

@@ -10,12 +10,13 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 
-import { Badge, Card, EmptyState } from '../../../src/components/ui'
-import { ScreenHeader } from '../../../src/components/layout'
-import { useAuthStore } from '../../../src/stores/authStore'
-import { fetchPaymentHistory } from '../../../src/lib/subscription'
-import { formatDateTime } from '../../../src/lib/formatters'
-import type { Payment } from '../../../src/types'
+import { Badge, Card, EmptyState } from '../../../../src/components/ui'
+import { ScreenHeader } from '../../../../src/components/layout'
+import { useAuthStore } from '../../../../src/stores/authStore'
+import { fetchPaymentHistory } from '../../../../src/lib/subscription'
+import { formatDateTime, formatPaymentMethod } from '../../../../src/lib/formatters'
+import { paymentDescription, formatPaymentAmount } from '../../../../src/lib/subscriptionReceipt'
+import type { Payment } from '../../../../src/types'
 
 const C = {
   background: '#F4F6FB',
@@ -48,33 +49,9 @@ function statusMeta(status: Payment['status']): StatusMeta {
 }
 
 function methodIcon(method: string): keyof typeof import('@expo/vector-icons').Ionicons.glyphMap {
-  if (method === 'card') return 'card'
+  if (method === 'card' || method === 'zimswitch' || method === 'vmc') return 'card'
   if (method === 'innbucks') return 'wallet'
   return 'phone-portrait'
-}
-
-function methodLabel(method: string): string {
-  switch (method) {
-    case 'ecocash':
-      return 'EcoCash'
-    case 'onemoney':
-      return 'OneMoney'
-    case 'innbucks':
-      return 'InnBucks'
-    case 'card':
-    case 'zimswitch':
-      return 'Zimswitch'
-    case 'vmc':
-      return 'Visa / Mastercard'
-    default:
-      return method
-  }
-}
-
-function formatAmount(cents: number, currency: string): string {
-  const amount = (cents / 100).toFixed(2)
-  if (currency === 'USD') return `$${amount}`
-  return `${currency} ${amount}`
 }
 
 export default function PaymentHistoryScreen() {
@@ -127,32 +104,40 @@ export default function PaymentHistoryScreen() {
             const meta = statusMeta(payment.status)
             const createdMs = Date.parse(payment.createdAt)
             return (
-              <Card key={payment.id} padding="md" style={styles.card}>
+              <Card
+                key={payment.id}
+                padding="md"
+                style={styles.card}
+                onPress={() => router.push(`/(app)/settings/payments/${payment.id}`)}
+              >
                 <View style={styles.topRow}>
                   <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={styles.title}>Profit Protector Pro</Text>
+                    <Text style={styles.title}>{paymentDescription(payment)}</Text>
                     <Text style={styles.subtitle}>
                       {Number.isFinite(createdMs) ? formatDateTime(createdMs) : '—'}
                     </Text>
                   </View>
                   <View style={{ alignItems: 'flex-end', gap: 6 }}>
                     <Text style={styles.amount}>
-                      {formatAmount(payment.amountCents, payment.currency)}
+                      {formatPaymentAmount(payment.amountCents, payment.currency)}
                     </Text>
                     <Badge label={meta.label} variant={meta.variant} size="sm" />
                   </View>
                 </View>
 
-                <View style={styles.methodRow}>
-                  <Ionicons
-                    name={methodIcon(payment.paymentMethod)}
-                    size={14}
-                    color={C.textSecondary}
-                  />
-                  <Text style={styles.methodText}>
-                    {methodLabel(payment.paymentMethod)}
-                    {payment.phoneNumber ? ` · ${payment.phoneNumber}` : ''}
-                  </Text>
+                <View style={styles.bottomRow}>
+                  <View style={styles.methodRow}>
+                    <Ionicons
+                      name={methodIcon(payment.paymentMethod)}
+                      size={14}
+                      color={C.textSecondary}
+                    />
+                    <Text style={styles.methodText}>
+                      {formatPaymentMethod(payment.paymentMethod)}
+                      {payment.phoneNumber ? ` · ${payment.phoneNumber}` : ''}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
                 </View>
               </Card>
             )
@@ -190,15 +175,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: C.textPrimary,
   },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
   methodRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 10,
+    flex: 1,
+    paddingRight: 8,
   },
   methodText: {
     fontSize: 12,
     color: C.textSecondary,
+    flexShrink: 1,
   },
   center: {
     flex: 1,

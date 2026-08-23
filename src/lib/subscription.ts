@@ -28,6 +28,7 @@ function mapSubscription(data: Record<string, unknown>): Subscription {
 }
 
 function mapPayment(data: Record<string, unknown>): Payment {
+  const rawTier = data.plan_tier as string | null | undefined
   return {
     id: data.id as string,
     businessId: data.business_id as string,
@@ -40,6 +41,8 @@ function mapPayment(data: Record<string, unknown>): Payment {
     phoneNumber: (data.phone_number as string | null) ?? null,
     status: data.status as Payment['status'],
     paynowStatus: (data.paynow_status as string | null) ?? null,
+    planTier: rawTier === 'pro_plus' ? 'pro_plus' : 'pro',
+    isUpgrade: data.is_upgrade === true,
     createdAt: data.created_at as string,
   }
 }
@@ -362,9 +365,58 @@ export async function confirmFreeUpgrade(businessId: string): Promise<InitiatePa
   return { success: false, message: 'Payment required — please select a payment method.' }
 }
 
+/**
+ * Polls Paynow from the device (same reason initiate is client-side: Paynow
+ * may block Supabase EU IPs), then asks paynow-poll to verify the hash and
+ * activate the subscription immediately when status is Paid.
+ */
+async function fetchPaynowPollBodyFromDevice(pollUrl: string): Promise<string> {
+  const post = await fetch(pollUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: '',
+  })
+  const postText = await post.text()
+  if (post.ok && /(?:^|&)status=/i.test(postText) && !postText.includes('Length Required')) {
+    return postText
+  }
+
+  const get = await fetch(pollUrl)
+  return get.text()
+}
+
 export async function pollPaymentStatus(paymentId: string, pollUrl: string): Promise<PollResult> {
-  const result = await callFunction('paynow-poll', { paymentId, pollUrl })
-  return result as unknown as PollResult
+  let pollBody = ''
+  if (pollUrl) {
+    try {
+      pollBody = await fetchPaynowPollBodyFromDevice(pollUrl)
+    } catch (e) {
+      console.warn('[pollPaymentStatus] device poll failed, server will retry:', e)
+    }
+  }
+
+  const result = await callFunction('paynow-poll', { paymentId, pollUrl, pollBody })
+  if (result.error && result.isPaid !== true) {
+    throw new Error(String(result.error))
+  }
+  return {
+    status: String(result.status ?? ''),
+    isPaid: result.isPaid === true,
+  }
+}
+
+export async function fetchPaymentById(paymentId: string): Promise<Payment | null> {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('id', paymentId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`fetchPaymentById: ${error.message}`)
+  }
+  if (!data) return null
+  return mapPayment(data as Record<string, unknown>)
 }
 
 export async function fetchPaymentHistory(businessId: string): Promise<Payment[]> {
