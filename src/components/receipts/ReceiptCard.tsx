@@ -2,6 +2,7 @@ import React from 'react'
 import { Image, StyleSheet, Text, View } from 'react-native'
 import type { Sale, SaleItem, Business, Customer } from '../../types'
 import { formatCurrency, formatDateTime, formatPaymentMethod } from '../../lib/formatters'
+import { formatQty, lineTotalCents } from '../../lib/quantity'
 import { Card } from '../ui/Card'
 
 interface ReceiptCardProps {
@@ -25,7 +26,7 @@ export function ReceiptCard({
   creditDepositMethod,
   headerLogoUri,
 }: ReceiptCardProps) {
-  const subtotal = saleItems.reduce((sum, item) => sum + item.unitPriceCents * item.qty, 0)
+  const subtotal = saleItems.reduce((sum, item) => sum + lineTotalCents(item.qty, item.unitPriceCents), 0)
   const currency = business.currency || 'USD'
   const zigRate = business.zigRatePerUsd ?? 1
 
@@ -65,10 +66,10 @@ export function ReceiptCard({
           <Text style={styles.itemName} numberOfLines={3}>
             {item.productNameSnapshot}
           </Text>
-          <Text style={styles.itemQty}>{item.qty}</Text>
+          <Text style={styles.itemQty}>{formatQty(item.qty)}</Text>
           <Text style={styles.itemPrice}>{formatCurrency(item.unitPriceCents, currency, zigRate)}</Text>
           <Text style={styles.itemTotal}>
-            {formatCurrency(item.unitPriceCents * item.qty, currency, zigRate)}
+            {formatCurrency(lineTotalCents(item.qty, item.unitPriceCents), currency, zigRate)}
           </Text>
         </View>
       ))}

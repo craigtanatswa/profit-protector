@@ -121,6 +121,8 @@ import { database } from '../../../src/database'
 import { appendReceiptSuffix, formatShortReceipt6 } from '../../../src/lib/receiptNumber'
 import { wmRaw } from '../../../src/lib/watermelonRaw'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
+import { isCutProduct } from '../../../src/lib/cutProducts'
+import { formatQty, formatQtyWithUnit, lineTotalCents, parseQty, subtractQty } from '../../../src/lib/quantity'
 import type { Product, Customer } from '../../../src/types'
 import type ProductModel from '../../../src/database/models/Product'
 import type SaleModel from '../../../src/database/models/Sale'
@@ -201,7 +203,7 @@ export default function NewSaleScreen() {
   }, [activeRole, paymentMethod, setPaymentMethod])
 
   const subtotalCents = useCartStore((s) =>
-    s.items.reduce((sum, i) => sum + i.qty * i.unitPriceCents, 0),
+    s.items.reduce((sum, i) => sum + lineTotalCents(i.qty, i.unitPriceCents), 0),
   )
   const totalCents = subtotalCents - discountCents
 
@@ -309,12 +311,19 @@ export default function NewSaleScreen() {
   const handleAddProduct = useCallback(
     (product: Product) => {
       if (product.stockQty <= 0) return
+      if (isCutProduct(product)) {
+        setSelectedProduct(product)
+        setShowQtyModal(true)
+        return
+      }
       addItem(
         {
           productId: product.id,
           productName: product.name,
           unitPriceCents: product.sellingPriceCents,
           costPriceCents: product.costPriceCents,
+          unit: product.unit,
+          trackingMode: product.trackingMode,
         },
         1,
       )
@@ -445,7 +454,7 @@ export default function NewSaleScreen() {
           })
 
           const productRecord = await database!.get<ProductModel>('products').find(item.productId)
-          const newStockQty = productRecord.stockQty - item.qty
+          const newStockQty = subtractQty(productRecord.stockQty, item.qty)
           await productRecord.update((p) => {
             p.stockQty = newStockQty
             wmRaw(p).updated_at = saleProductUpdatedMs
@@ -710,16 +719,17 @@ export default function NewSaleScreen() {
             const qtyInCart = cartItemMap.get(product.id) ?? 0
             const outOfStock = product.stockQty <= 0
             const atMax = qtyInCart >= product.stockQty
+            const cut = isCutProduct(product)
             const lowStock =
               product.stockQty > 0 && product.stockQty <= product.lowStockThreshold
 
             return (
               <View style={[styles.productRow, outOfStock && styles.productRowDisabled]}>
-                {/* Left: product info — tap to add if not in cart yet */}
+                {/* Left: product info — tap to add if not in cart yet (cut always opens size sheet) */}
                 <TouchableOpacity
                   style={styles.productLeft}
-                  activeOpacity={outOfStock || qtyInCart > 0 ? 1 : 0.6}
-                  disabled={outOfStock || qtyInCart > 0}
+                  activeOpacity={outOfStock || (!cut && qtyInCart > 0) ? 1 : 0.6}
+                  disabled={outOfStock || (!cut && qtyInCart > 0)}
                   onPress={() => handleAddProduct(product)}
                   onLongPress={() => handleProductLongPress(product)}
                 >
@@ -731,15 +741,25 @@ export default function NewSaleScreen() {
                   </View>
                   <Text style={styles.productMeta} numberOfLines={1}>
                     {product.category ? `${product.category} · ` : ''}
-                    {product.unit}
-                    {' · '}{formatMoney(product.sellingPriceCents)}
+                    {formatQtyWithUnit(product.stockQty, product.unit)} left
+                    {' · '}
+                    {formatMoney(product.sellingPriceCents)}/{product.unit}
                   </Text>
                 </TouchableOpacity>
 
-                {/* Right: add button OR inline qty stepper */}
+                {/* Right: add button, cut-size chip, or packed-item stepper */}
                 <View style={styles.productRight}>
                   {outOfStock ? (
                     <Badge label="Out of stock" variant="danger" size="sm" />
+                  ) : cut && qtyInCart > 0 ? (
+                    <TouchableOpacity
+                      style={styles.cutQtyChip}
+                      onPress={() => handleProductLongPress(product)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={styles.cutQtyChipText}>{formatQty(qtyInCart)}</Text>
+                      <Text style={styles.cutQtyChipUnit}>{product.unit}</Text>
+                    </TouchableOpacity>
                   ) : qtyInCart > 0 ? (
                     <View style={styles.stepperRow}>
                       <TouchableOpacity
@@ -753,7 +773,7 @@ export default function NewSaleScreen() {
                           color={qtyInCart === 1 ? COLORS.danger : COLORS.textPrimary}
                         />
                       </TouchableOpacity>
-                      <Text style={styles.stepperQty}>{qtyInCart}</Text>
+                      <Text style={styles.stepperQty}>{formatQty(qtyInCart)}</Text>
                       <TouchableOpacity
                         style={[styles.stepperBtn, styles.stepperBtnAdd, atMax && styles.stepperBtnDisabled]}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -769,7 +789,7 @@ export default function NewSaleScreen() {
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       onPress={() => handleAddProduct(product)}
                     >
-                      <Ionicons name="add" size={20} color={COLORS.primary} />
+                      <Ionicons name={cut ? 'cut-outline' : 'add'} size={20} color={COLORS.primary} />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -848,6 +868,8 @@ export default function NewSaleScreen() {
                     productName: selectedProduct.name,
                     unitPriceCents: selectedProduct.sellingPriceCents,
                     costPriceCents: selectedProduct.costPriceCents,
+                    unit: selectedProduct.unit,
+                    trackingMode: selectedProduct.trackingMode,
                   },
                   qty,
                 )
@@ -893,7 +915,14 @@ export default function NewSaleScreen() {
 // ---------------------------------------------------------------------------
 
 interface CartPanelProps {
-  items: { productId: string; productName: string; qty: number; unitPriceCents: number }[]
+  items: {
+    productId: string
+    productName: string
+    qty: number
+    unitPriceCents: number
+    unit?: string
+    trackingMode?: 'count' | 'cut'
+  }[]
   subtotalCents: number
   totalCents: number
   discountCents: number
@@ -996,11 +1025,15 @@ function CartPanel({
               {item.productName}
             </Text>
             <View style={cartStyles.qtyPill}>
-              <Text style={cartStyles.qtyPillText}>×{item.qty}</Text>
+              <Text style={cartStyles.qtyPillText}>
+                {item.trackingMode === 'cut'
+                  ? formatQtyWithUnit(item.qty, item.unit ?? '')
+                  : `×${formatQty(item.qty)}`}
+              </Text>
             </View>
           </View>
           <Text style={cartStyles.itemTotal}>
-            {formatMoney(item.qty * item.unitPriceCents)}
+            {formatMoney(lineTotalCents(item.qty, item.unitPriceCents))}
           </Text>
         </TouchableOpacity>
       ))}
@@ -1195,62 +1228,119 @@ interface QtyModalProps {
 
 function QuantityEditorModal({ product, currentQty, onUpdate, onRemove, onClose }: QtyModalProps) {
   const { formatMoney } = useMoneyFormat()
-  const [qty, setQty] = useState(Math.max(currentQty, 1))
+  const insets = useSafeAreaInsets()
+  const cut = isCutProduct(product)
+  const [qty, setQty] = useState(Math.max(currentQty, cut ? 0 : 1))
+  const [cutInput, setCutInput] = useState(currentQty > 0 ? formatQty(currentQty) : '')
+  const [keyboardHeight, setKeyboardHeight] = useState(0)
   const isInCart = currentQty > 0
+  const cutQty = parseQty(cutInput)
+  const cutValid = cutQty != null && cutQty > 0 && cutQty <= product.stockQty
+  const displayQty = cut ? (cutQty ?? 0) : qty
+  const keyboardLift =
+    keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height)
+    })
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0)
+    })
+    return () => {
+      showSub.remove()
+      hideSub.remove()
+    }
+  }, [])
 
   return (
     <Modal transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={modalStyles.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={modalStyles.sheet}>
-          <View style={modalStyles.handle} />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={modalStyles.kav}
+          pointerEvents="box-none"
+          keyboardVerticalOffset={insets.bottom}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={[modalStyles.sheet, keyboardLift > 0 && { marginBottom: keyboardLift }]}
+          >
+            <View style={modalStyles.handle} />
 
-          <Text style={modalStyles.productName}>{product.name}</Text>
-          <Text style={modalStyles.pricePerUnit}>
-            {formatMoney(product.sellingPriceCents)} per {product.unit}
-          </Text>
+            <Text style={modalStyles.productName}>{product.name}</Text>
+            <Text style={modalStyles.pricePerUnit}>
+              {formatMoney(product.sellingPriceCents)} per {product.unit}
+            </Text>
 
-          <View style={modalStyles.qtyRow}>
-            <TouchableOpacity
-              style={[modalStyles.qtyButton, qty <= 1 && modalStyles.qtyButtonDisabled]}
-              disabled={qty <= 1}
-              onPress={() => setQty((q) => Math.max(1, q - 1))}
-            >
-              <Text style={modalStyles.qtyButtonText}>−</Text>
-            </TouchableOpacity>
-            <Text style={modalStyles.qtyNumber}>{qty}</Text>
-            <TouchableOpacity
-              style={[
-                modalStyles.qtyButton,
-                qty >= product.stockQty && modalStyles.qtyButtonDisabled,
-              ]}
-              disabled={qty >= product.stockQty}
-              onPress={() => setQty((q) => Math.min(product.stockQty, q + 1))}
-            >
-              <Text style={modalStyles.qtyButtonText}>+</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={modalStyles.stockInfo}>{product.stockQty} in stock</Text>
-          <Text style={modalStyles.lineTotal}>
-            Total: {formatMoney(qty * product.sellingPriceCents)}
-          </Text>
-
-          <View style={modalStyles.actions}>
-            {isInCart && (
-              <View style={{ flex: 1, marginRight: 6 }}>
-                <Button label="Remove from cart" variant="danger" size="md" onPress={onRemove} />
+            {cut ? (
+              <View style={modalStyles.cutField}>
+                <Text style={modalStyles.cutLabel}>Cut size ({product.unit})</Text>
+                <TextInput
+                  style={modalStyles.cutInput}
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                  placeholderTextColor={COLORS.textSecondary}
+                  value={cutInput}
+                  onChangeText={setCutInput}
+                  autoFocus
+                />
+                {cutInput.length > 0 && cutQty != null && cutQty > product.stockQty && (
+                  <Text style={modalStyles.cutError}>
+                    Only {formatQtyWithUnit(product.stockQty, product.unit)} remaining
+                  </Text>
+                )}
+              </View>
+            ) : (
+              <View style={modalStyles.qtyRow}>
+                <TouchableOpacity
+                  style={[modalStyles.qtyButton, qty <= 1 && modalStyles.qtyButtonDisabled]}
+                  disabled={qty <= 1}
+                  onPress={() => setQty((q) => Math.max(1, q - 1))}
+                >
+                  <Text style={modalStyles.qtyButtonText}>−</Text>
+                </TouchableOpacity>
+                <Text style={modalStyles.qtyNumber}>{formatQty(qty)}</Text>
+                <TouchableOpacity
+                  style={[
+                    modalStyles.qtyButton,
+                    qty >= product.stockQty && modalStyles.qtyButtonDisabled,
+                  ]}
+                  disabled={qty >= product.stockQty}
+                  onPress={() => setQty((q) => Math.min(product.stockQty, q + 1))}
+                >
+                  <Text style={modalStyles.qtyButtonText}>+</Text>
+                </TouchableOpacity>
               </View>
             )}
-            <View style={{ flex: 1, marginLeft: isInCart ? 6 : 0 }}>
-              <Button
-                label={isInCart ? 'Update' : 'Add to cart'}
-                variant="primary"
-                size="md"
-                onPress={() => onUpdate(qty)}
-              />
+
+            <Text style={modalStyles.stockInfo}>
+              {formatQtyWithUnit(product.stockQty, product.unit)} remaining
+            </Text>
+            <Text style={modalStyles.lineTotal}>
+              Total: {formatMoney(lineTotalCents(displayQty, product.sellingPriceCents))}
+            </Text>
+
+            <View style={modalStyles.actions}>
+              {isInCart && (
+                <View style={{ flex: 1, marginRight: 6 }}>
+                  <Button label="Remove from cart" variant="danger" size="md" onPress={onRemove} />
+                </View>
+              )}
+              <View style={{ flex: 1, marginLeft: isInCart ? 6 : 0 }}>
+                <Button
+                  label={isInCart ? 'Update' : 'Add to cart'}
+                  variant="primary"
+                  size="md"
+                  disabled={cut ? !cutValid : qty <= 0}
+                  onPress={() => onUpdate(cut ? (cutQty ?? 0) : qty)}
+                />
+              </View>
             </View>
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </TouchableOpacity>
     </Modal>
   )
@@ -1660,6 +1750,24 @@ const styles = StyleSheet.create({
     minWidth: 20,
     textAlign: 'center',
   },
+  cutQtyChip: {
+    minWidth: 56,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+  },
+  cutQtyChipText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  cutQtyChipUnit: {
+    fontSize: 10,
+    color: COLORS.textSecondary,
+    marginTop: 1,
+  },
   confirmButton: {
     backgroundColor: COLORS.primary,
     height: 56,
@@ -1912,6 +2020,9 @@ const modalStyles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
+  kav: {
+    width: '100%',
+  },
   sheet: {
     backgroundColor: COLORS.card,
     borderTopLeftRadius: 20,
@@ -1969,6 +2080,34 @@ const modalStyles = StyleSheet.create({
     color: COLORS.primary,
     minWidth: 80,
     textAlign: 'center',
+  },
+  cutField: {
+    marginTop: 20,
+  },
+  cutLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  cutInput: {
+    height: 56,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    fontSize: 28,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textAlign: 'center',
+    backgroundColor: COLORS.background,
+  },
+  cutError: {
+    fontSize: 12,
+    color: COLORS.danger,
+    textAlign: 'center',
+    marginTop: 8,
   },
   stockInfo: {
     fontSize: 12,

@@ -11,6 +11,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function roundQty(n: number): number {
+  if (!Number.isFinite(n)) return 0
+  return Math.round(n * 1000) / 1000
+}
+
 function monthWindowValid(startIso: string, endIso: string): boolean {
   const a = Date.parse(startIso)
   const b = Date.parse(endIso)
@@ -555,7 +560,7 @@ serve(async (req) => {
           const { error: stockErr } = await supabase.rpc('decrement_product_stock_for_sale', {
             p_product_id: pid,
             p_business_id: canonicalBizId,
-            p_qty: Math.floor(qty),
+            p_qty: roundQty(qty),
           })
           if (stockErr) return error(`[push_sale:decrement_stock] ${stockErr.message}`)
         }
@@ -651,7 +656,7 @@ serve(async (req) => {
         if (!productId || !Number.isFinite(stockQty)) continue
 
         const updateRow: Record<string, unknown> = {
-          stock_qty: Math.floor(stockQty),
+          stock_qty: roundQty(stockQty),
           updated_at: updatedAt,
         }
 
@@ -745,7 +750,7 @@ serve(async (req) => {
       const { error: upErr } = await supabase
         .from('products')
         .update({
-          stock_qty: Math.floor(stockQty),
+          stock_qty: roundQty(stockQty),
           updated_at: updatedAt,
         })
         .eq('id', productId)
@@ -908,7 +913,7 @@ serve(async (req) => {
       if (!activityId) return error('Invalid activity log.')
 
       const updateRow: Record<string, unknown> = {
-        stock_qty: Math.floor(stockQty),
+        stock_qty: roundQty(stockQty),
         updated_at: updatedAt,
       }
       if (

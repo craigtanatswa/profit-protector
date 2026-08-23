@@ -444,6 +444,12 @@ function SettingsScreen() {
               </Text>
             </View>
             <View style={sub.rowKV}>
+              <Text style={isProPlus ? sub.kProPlus : sub.k}>Cut-to-order stock</Text>
+              <Text style={isProPlus ? sub.vProPlus : sub.v}>
+                {isProPlus ? 'Meat, cloth, and similar' : 'Pro+ only'}
+              </Text>
+            </View>
+            <View style={sub.rowKV}>
               <Text style={isProPlus ? sub.kProPlus : sub.k}>Next renewal</Text>
               <Text style={isProPlus ? sub.vProPlus : sub.v}>
                 {nextBillingDate != null && !Number.isNaN(nextBillingDate.getTime())

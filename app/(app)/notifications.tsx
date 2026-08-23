@@ -18,6 +18,7 @@ import { useAuthStore } from '../../src/stores/authStore'
 import { database } from '../../src/database'
 import type ProductModel from '../../src/database/models/Product'
 import type { Product } from '../../src/types'
+import { normalizeTrackingMode } from '../../src/lib/cutProducts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +46,7 @@ function mapProductRecord(record: ProductModel): Product {
     name: record.name,
     category: record.category ?? undefined,
     unit: record.unit,
+    trackingMode: normalizeTrackingMode(record.trackingMode),
     costPriceCents: record.costPriceCents,
     sellingPriceCents: record.sellingPriceCents,
     stockQty: record.stockQty,

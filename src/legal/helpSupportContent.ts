@@ -15,6 +15,12 @@ export const HELP_SUPPORT_FAQS: HelpFaqItem[] = [
       'Open Stock & Products from the bottom menu, then tap Add Product (or the + button). Enter the product name, selling price, cost price if you track it, and optional details like SKU or low-stock alert level. Save to add it to your inventory.',
   },
   {
+    id: 'cut-products',
+    question: 'How do I sell meat or cloth cut from one piece?',
+    answer:
+      'On Pro+ (and during the trial), choose Cut from a piece when adding a product. Set a rate per kg or metre and the leftover amount on the piece. At sale time, type the cut size — the price is calculated automatically and remaining stock updates. Packed items stay on the Pro plan.',
+  },
+  {
     id: 'make-sale',
     question: 'How do I record a sale?',
     answer:

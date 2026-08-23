@@ -38,6 +38,8 @@ import { useShopkeeperStockAccessGate } from '../../../src/hooks/useShopkeeperSt
 import { StockAccessPendingModal } from '../../../src/components/modals/StockAccessPendingModal'
 import { logActivity } from '../../../src/lib/activityLogger'
 import { wmRaw } from '../../../src/lib/watermelonRaw'
+import { isCutProduct } from '../../../src/lib/cutProducts'
+import { addQty, formatQty, formatQtyWithUnit, parseQty } from '../../../src/lib/quantity'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -46,10 +48,10 @@ const purchaseSchema = z.object({
   qtyReceived: z
     .string()
     .min(1, 'Quantity is required')
-    .refine(
-      (v) => !isNaN(parseInt(v, 10)) && parseInt(v, 10) > 0,
-      'Quantity must be greater than 0',
-    ),
+    .refine((v) => {
+      const n = parseQty(v)
+      return n != null && n > 0
+    }, 'Quantity must be greater than 0'),
   costPerUnit: z
     .string()
     .optional()
@@ -170,11 +172,12 @@ export default function PurchaseScreen() {
   }, [business?.id])
 
   // Derived values
-  const qtyNum = parseInt(watchedQty, 10)
-  const validQty = !isNaN(qtyNum) && qtyNum > 0
+  const qtyNum = parseQty(watchedQty)
+  const validQty = qtyNum != null && qtyNum > 0
   const costNum = parseFloat(watchedCost ?? '')
   const validCost = watchedCost && watchedCost.length > 0 && !isNaN(costNum) && costNum >= 0
-  const newStockQty = selectedProduct && validQty ? selectedProduct.stockQty + qtyNum : null
+  const newStockQty =
+    selectedProduct && validQty && qtyNum != null ? addQty(selectedProduct.stockQty, qtyNum) : null
   const costDifferentFromProduct =
     selectedProduct &&
     validCost &&
@@ -214,7 +217,17 @@ export default function PurchaseScreen() {
 
     setIsSaving(true)
     try {
-      const qty = parseInt(values.qtyReceived, 10)
+      const qty = parseQty(values.qtyReceived)
+      if (qty == null || qty <= 0) {
+        Alert.alert('Invalid quantity', 'Enter a quantity greater than 0.')
+        setIsSaving(false)
+        return
+      }
+      if (selectedProduct && !isCutProduct(selectedProduct) && !Number.isInteger(qty)) {
+        Alert.alert('Invalid quantity', 'Packed items must be received as a whole number.')
+        setIsSaving(false)
+        return
+      }
       const costCents =
         values.costPerUnit && values.costPerUnit.length > 0
           ? Math.round(parseFloat(values.costPerUnit) * 100)
@@ -378,7 +391,7 @@ export default function PurchaseScreen() {
                   <View style={styles.selectedProductInfo}>
                     <Text style={styles.selectedProductName}>{selectedProduct.name}</Text>
                     <Text style={styles.selectedProductStock}>
-                      Current stock: {selectedProduct.stockQty} {selectedProduct.unit}
+                      Current stock: {formatQtyWithUnit(selectedProduct.stockQty, selectedProduct.unit)}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -417,9 +430,19 @@ export default function PurchaseScreen() {
                 render={({ field: { value, onChange } }) => (
                   <View>
                     <Input
-                      label="Quantity Received"
-                      keyboardType="number-pad"
-                      placeholder="0"
+                      label={
+                        selectedProduct
+                          ? `Quantity Received (${selectedProduct.unit})`
+                          : 'Quantity Received'
+                      }
+                      keyboardType={
+                        selectedProduct && isCutProduct(selectedProduct)
+                          ? 'decimal-pad'
+                          : 'number-pad'
+                      }
+                      placeholder={
+                        selectedProduct && isCutProduct(selectedProduct) ? '0.00' : '0'
+                      }
                       leftIcon={
                         <Ionicons name="add-circle-outline" size={18} color="#0047AB" />
                       }
@@ -428,10 +451,10 @@ export default function PurchaseScreen() {
                       error={errors.qtyReceived?.message}
                       hint={
                         selectedProduct
-                          ? `Current stock: ${selectedProduct.stockQty} → will become ${
-                              validQty
-                                ? selectedProduct.stockQty + qtyNum
-                                : selectedProduct.stockQty + ' + qty'
+                          ? `Current stock: ${formatQty(selectedProduct.stockQty)} → will become ${
+                              newStockQty != null
+                                ? formatQty(newStockQty)
+                                : `${formatQty(selectedProduct.stockQty)} + qty`
                             }`
                           : 'Select a product first'
                       }
@@ -440,7 +463,7 @@ export default function PurchaseScreen() {
                       <View style={styles.projectedRow}>
                         <Text style={styles.projectedLabel}>New stock level:</Text>
                         <Text style={styles.projectedValue}>
-                          {newStockQty} {selectedProduct.unit}
+                          {formatQtyWithUnit(newStockQty, selectedProduct.unit)}
                         </Text>
                       </View>
                     )}

@@ -276,6 +276,19 @@ function PlanCard({ tier, selected, onPress }: PlanCardProps) {
           Cloud sync & backup
         </Text>
       </View>
+      {isProPlus ? (
+        <View style={planStyles.featureRow}>
+          <Ionicons name="cut-outline" size={14} color={selected ? C.primary : C.textSecondary} />
+          <Text style={[planStyles.featureText, selected && planStyles.featureTextSelected]}>
+            Cut-to-order stock (meat, cloth)
+          </Text>
+        </View>
+      ) : (
+        <View style={planStyles.featureRow}>
+          <Ionicons name="remove-outline" size={14} color={C.textSecondary} />
+          <Text style={planStyles.featureText}>Packed items only</Text>
+        </View>
+      )}
     </TouchableOpacity>
   )
 }

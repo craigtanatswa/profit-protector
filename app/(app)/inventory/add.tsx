@@ -1,4 +1,7 @@
 /*
+ * For cut-from-piece products, also run supabase/sql/cut_products.sql
+ * (tracking_mode + numeric stock/sale qty).
+ *
  * Run this SQL in Supabase SQL Editor if not already done:
  *
  * create table products (
@@ -7,10 +10,11 @@
  *   name text not null,
  *   category text,
  *   unit text not null,
+ *   tracking_mode text not null default 'count', -- count | cut
  *   cost_price_cents integer not null default 0,
  *   selling_price_cents integer not null default 0,
- *   stock_qty integer not null default 0,
- *   low_stock_threshold integer not null default 5,
+ *   stock_qty numeric(12,3) not null default 0,
+ *   low_stock_threshold numeric(12,3) not null default 5,
  *   is_active boolean not null default true,
  *   created_at timestamptz default now(),
  *   updated_at timestamptz default now()
@@ -51,52 +55,79 @@ import { supabase } from '../../../src/lib/supabase'
 import type ProductModel from '../../../src/database/models/Product'
 import type StockMovementModel from '../../../src/database/models/StockMovement'
 import { wmRaw } from '../../../src/lib/watermelonRaw'
+import { useSubscription } from '../../../src/hooks/useSubscription'
+import { formatQty } from '../../../src/lib/quantity'
+import { CutProductUpgradeModal } from '../../../src/components/modals/CutProductUpgradeModal'
+import { normalizeTrackingMode } from '../../../src/lib/cutProducts'
+import type { ProductTrackingMode } from '../../../src/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STANDARD_UNITS = ['Each', 'Plate', 'kg', 'g', 'litre', 'ml', 'box', 'dozen', 'pair'] as const
+const STANDARD_UNITS = ['Each', 'Plate', 'kg', 'g', 'm', 'cm', 'litre', 'ml', 'box', 'dozen', 'pair'] as const
 const ALL_UNITS = [...STANDARD_UNITS, 'other'] as const
+
+function parseMeasure(raw: string): number | null {
+  const n = parseFloat(raw.replace(',', '.').trim())
+  if (!Number.isFinite(n) || n < 0) return null
+  return Math.round(n * 1000) / 1000
+}
 
 // ─── Zod Schema ───────────────────────────────────────────────────────────────
 
-const productSchema = z.object({
-  name: z
-    .string()
-    .min(1, 'Product name is required')
-    .min(2, 'Product name must be at least 2 characters')
-    .max(80, 'Product name is too long'),
-  category: z.string().max(40).optional(),
-  unit: z.string().min(1, 'Please select a unit of measure'),
-  customUnit: z.string().optional(),
-  costPrice: z
-    .string()
-    .min(1, 'Cost price is required')
-    .refine(
-      (v) => !isNaN(parseFloat(v)) && parseFloat(v) >= 0,
-      'Enter a valid price',
-    ),
-  sellingPrice: z
-    .string()
-    .min(1, 'Selling price is required')
-    .refine(
-      (v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0,
-      'Selling price must be greater than 0',
-    ),
-  stockQty: z
-    .string()
-    .min(1, 'Stock quantity is required')
-    .refine(
-      (v) => !isNaN(parseInt(v, 10)) && parseInt(v, 10) >= 0,
-      'Enter a valid quantity',
-    ),
-  lowStockThreshold: z
-    .string()
-    .min(1, 'Low stock threshold is required')
-    .refine(
-      (v) => !isNaN(parseInt(v, 10)) && parseInt(v, 10) >= 0,
-      'Enter a valid number',
-    ),
-})
+const productSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1, 'Product name is required')
+      .min(2, 'Product name must be at least 2 characters')
+      .max(80, 'Product name is too long'),
+    category: z.string().max(40).optional(),
+    trackingMode: z.enum(['count', 'cut']),
+    unit: z.string().min(1, 'Please select a unit of measure'),
+    customUnit: z.string().optional(),
+    costPrice: z
+      .string()
+      .min(1, 'Cost price is required')
+      .refine(
+        (v) => !isNaN(parseFloat(v)) && parseFloat(v) >= 0,
+        'Enter a valid price',
+      ),
+    sellingPrice: z
+      .string()
+      .min(1, 'Selling price is required')
+      .refine(
+        (v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0,
+        'Selling price must be greater than 0',
+      ),
+    stockQty: z.string().min(1, 'Stock quantity is required'),
+    lowStockThreshold: z.string().min(1, 'Low stock threshold is required'),
+  })
+  .superRefine((data, ctx) => {
+    const qty = parseMeasure(data.stockQty)
+    const threshold = parseMeasure(data.lowStockThreshold)
+    if (qty == null) {
+      ctx.addIssue({ code: 'custom', path: ['stockQty'], message: 'Enter a valid quantity' })
+    } else if (data.trackingMode === 'count' && !Number.isInteger(qty)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['stockQty'],
+        message: 'Packed items must be a whole number',
+      })
+    }
+    if (threshold == null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['lowStockThreshold'],
+        message: 'Enter a valid number',
+      })
+    } else if (data.trackingMode === 'count' && !Number.isInteger(threshold)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['lowStockThreshold'],
+        message: 'Use a whole number for packed items',
+      })
+    }
+  })
 
 type ProductFormValues = z.infer<typeof productSchema>
 
@@ -161,10 +192,14 @@ export default function AddProductScreen() {
   const { productId } = useLocalSearchParams<{ productId?: string }>()
   const isEditMode = !!productId
   const business = useAuthStore((s) => s.business)
+  const { canUseCutProducts, upgradeProration } = useSubscription()
 
   const [isSaving, setIsSaving] = useState(false)
   const [isLoaded, setIsLoaded] = useState(!isEditMode)
   const [existingCategories, setExistingCategories] = useState<string[]>([])
+  const [savedTrackingMode, setSavedTrackingMode] = useState<ProductTrackingMode>('count')
+  const [showCutUpgradeModal, setShowCutUpgradeModal] = useState(false)
+  const cutLocked = !canUseCutProducts && savedTrackingMode !== 'cut'
 
   const {
     control,
@@ -176,6 +211,7 @@ export default function AddProductScreen() {
     defaultValues: {
       name: '',
       category: '',
+      trackingMode: 'count',
       unit: '',
       customUnit: '',
       costPrice: '',
@@ -186,9 +222,16 @@ export default function AddProductScreen() {
   })
 
   const watchedUnit = useWatch({ control, name: 'unit' })
+  const watchedCustomUnit = useWatch({ control, name: 'customUnit' })
+  const watchedTrackingMode = useWatch({ control, name: 'trackingMode' })
   const watchedCostPrice = useWatch({ control, name: 'costPrice' })
   const watchedSellingPrice = useWatch({ control, name: 'sellingPrice' })
   const watchedLowStockThreshold = useWatch({ control, name: 'lowStockThreshold' })
+  const isCut = watchedTrackingMode === 'cut'
+  const measureLabel =
+    watchedUnit === 'other'
+      ? (watchedCustomUnit?.trim() || 'unit')
+      : watchedUnit || 'unit'
 
   const personalisation = React.useMemo(
     () => getPersonalisation(normalizeBusinessType(business?.businessType ?? 'other')),
@@ -218,14 +261,17 @@ export default function AddProductScreen() {
       .find(productId)
       .then((record) => {
         const isStandard = (STANDARD_UNITS as readonly string[]).includes(record.unit)
+        const mode = normalizeTrackingMode(record.trackingMode)
+        setSavedTrackingMode(mode)
         setValue('name', record.name)
         setValue('category', record.category ?? '')
+        setValue('trackingMode', mode)
         setValue('unit', isStandard ? record.unit : 'other')
         setValue('customUnit', isStandard ? '' : record.unit)
         setValue('costPrice', (record.costPriceCents / 100).toFixed(2))
         setValue('sellingPrice', (record.sellingPriceCents / 100).toFixed(2))
-        setValue('stockQty', record.stockQty.toString())
-        setValue('lowStockThreshold', record.lowStockThreshold.toString())
+        setValue('stockQty', formatQty(record.stockQty))
+        setValue('lowStockThreshold', formatQty(record.lowStockThreshold))
         setIsLoaded(true)
       })
       .catch(() => {
@@ -324,10 +370,16 @@ export default function AddProductScreen() {
     }
     setIsSaving(true)
     try {
+      if (values.trackingMode === 'cut' && cutLocked) {
+        setShowCutUpgradeModal(true)
+        setIsSaving(false)
+        return
+      }
       const costPriceCents = Math.round(parseFloat(values.costPrice) * 100)
       const sellingPriceCents = Math.round(parseFloat(values.sellingPrice) * 100)
-      const stockQty = parseInt(values.stockQty, 10)
-      const lowStockThreshold = parseInt(values.lowStockThreshold, 10)
+      const stockQty = parseMeasure(values.stockQty) ?? 0
+      const lowStockThreshold = parseMeasure(values.lowStockThreshold) ?? 0
+      const trackingMode = values.trackingMode
       const finalUnit =
         values.unit === 'other'
           ? (values.customUnit?.trim() || 'other')
@@ -341,6 +393,7 @@ export default function AddProductScreen() {
             product.name = values.name.trim()
             product.category = values.category?.trim() ?? ''
             product.unit = finalUnit
+            product.trackingMode = trackingMode
             product.costPriceCents = costPriceCents
             product.sellingPriceCents = sellingPriceCents
             product.stockQty = stockQty
@@ -372,6 +425,7 @@ export default function AddProductScreen() {
             name: values.name.trim(),
             category: values.category?.trim() ?? '',
             unit: finalUnit,
+            tracking_mode: trackingMode,
             cost_price_cents: costPriceCents,
             selling_price_cents: sellingPriceCents,
             stock_qty: stockQty,
@@ -404,6 +458,7 @@ export default function AddProductScreen() {
             p.name = values.name.trim()
             p.category = values.category?.trim() ?? ''
             p.unit = finalUnit
+            p.trackingMode = trackingMode
             p.costPriceCents = costPriceCents
             p.sellingPriceCents = sellingPriceCents
             p.stockQty = stockQty
@@ -434,6 +489,7 @@ export default function AddProductScreen() {
             name: values.name.trim(),
             category: values.category?.trim() ?? '',
             unit: finalUnit,
+            tracking_mode: trackingMode,
             cost_price_cents: costPriceCents,
             selling_price_cents: sellingPriceCents,
             stock_qty: stockQty,
@@ -566,6 +622,90 @@ export default function AddProductScreen() {
 
               <View style={styles.fieldSpacer} />
 
+              {/* Packed vs cut-from-piece */}
+              <Controller
+                control={control}
+                name="trackingMode"
+                render={({ field: { value, onChange } }) => {
+                  const selectMode = (mode: ProductTrackingMode) => {
+                    if (mode === 'cut' && cutLocked) {
+                      setShowCutUpgradeModal(true)
+                      return
+                    }
+                    onChange(mode)
+                    if (
+                      mode === 'cut' &&
+                      (watchedUnit === '' || watchedUnit === 'Each' || watchedUnit === 'Plate')
+                    ) {
+                      setValue('unit', 'kg')
+                    }
+                  }
+                  return (
+                    <View>
+                      <Text style={styles.fieldLabel}>How do you sell this?</Text>
+                      <View style={styles.modeRow}>
+                        <TouchableOpacity
+                          onPress={() => selectMode('count')}
+                          activeOpacity={0.8}
+                          style={[
+                            styles.modeCard,
+                            value === 'count' ? styles.modeCardSelected : styles.modeCardUnselected,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.modeTitle,
+                              value === 'count' && styles.modeTitleSelected,
+                            ]}
+                          >
+                            Packed items
+                          </Text>
+                          <Text style={styles.modeHint}>Bottles, bags, each</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => selectMode('cut')}
+                          activeOpacity={0.8}
+                          style={[
+                            styles.modeCard,
+                            cutLocked
+                              ? styles.modeCardLocked
+                              : value === 'cut'
+                                ? styles.modeCardSelected
+                                : styles.modeCardUnselected,
+                          ]}
+                        >
+                          <View style={styles.modeTitleRow}>
+                            {cutLocked && (
+                              <Ionicons name="lock-closed-outline" size={12} color="#8A94A8" />
+                            )}
+                            <Text
+                              style={[
+                                styles.modeTitle,
+                                cutLocked
+                                  ? styles.modeTitleLocked
+                                  : value === 'cut' && styles.modeTitleSelected,
+                              ]}
+                            >
+                              Cut from a piece
+                            </Text>
+                            <View style={[styles.proPlusPill, cutLocked && styles.proPlusPillLocked]}>
+                              <Text style={[styles.proPlusPillText, cutLocked && styles.proPlusPillTextLocked]}>
+                                Pro+
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.modeHint, cutLocked && styles.modeHintLocked]}>
+                            Meat, cloth — sold by size
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )
+                }}
+              />
+
+              <View style={styles.fieldSpacer} />
+
               {/* Unit of Measure */}
               <Controller
                 control={control}
@@ -640,8 +780,8 @@ export default function AddProductScreen() {
                 name="costPrice"
                 render={({ field: { value, onChange } }) => (
                   <Input
-                    label="Cost Price"
-                    hint="What you paid for this item"
+                    label={isCut ? `Cost Price (per ${measureLabel})` : 'Cost Price'}
+                    hint={isCut ? `What you paid per ${measureLabel}` : 'What you paid for this item'}
                     keyboardType="decimal-pad"
                     leftIcon={<Text style={styles.currencySymbol}>$</Text>}
                     placeholder="0.00"
@@ -660,8 +800,12 @@ export default function AddProductScreen() {
                 name="sellingPrice"
                 render={({ field: { value, onChange } }) => (
                   <Input
-                    label="Selling Price"
-                    hint="What you charge customers"
+                    label={isCut ? `Selling Price (per ${measureLabel})` : 'Selling Price'}
+                    hint={
+                      isCut
+                        ? `Rate charged per ${measureLabel}`
+                        : 'What you charge customers'
+                    }
                     keyboardType="decimal-pad"
                     leftIcon={<Text style={styles.currencySymbol}>$</Text>}
                     placeholder="0.00"
@@ -709,12 +853,16 @@ export default function AddProductScreen() {
                   <Input
                     label={isEditMode ? 'Current Stock' : 'Opening Stock'}
                     hint={
-                      isEditMode
-                        ? 'Update the current stock count'
-                        : 'How many units do you have right now?'
+                      isCut
+                        ? isEditMode
+                          ? `Remaining ${measureLabel} on this piece`
+                          : `How many ${measureLabel} do you have right now?`
+                        : isEditMode
+                          ? 'Update the current stock count'
+                          : 'How many units do you have right now?'
                     }
-                    keyboardType="number-pad"
-                    placeholder="0"
+                    keyboardType={isCut ? 'decimal-pad' : 'number-pad'}
+                    placeholder={isCut ? '0.00' : '0'}
                     leftIcon={
                       <Ionicons name="cube-outline" size={18} color="#5A6A8A" />
                     }
@@ -735,9 +883,13 @@ export default function AddProductScreen() {
                   <View>
                     <Input
                       label="Low Stock Alert"
-                      hint="Get warned when stock drops to this level"
-                      keyboardType="number-pad"
-                      placeholder="5"
+                      hint={
+                        isCut
+                          ? `Get warned when remaining ${measureLabel} drop to this level`
+                          : 'Get warned when stock drops to this level'
+                      }
+                      keyboardType={isCut ? 'decimal-pad' : 'number-pad'}
+                      placeholder={isCut ? '2' : '5'}
                       leftIcon={
                         <Ionicons
                           name="warning-outline"
@@ -750,12 +902,11 @@ export default function AddProductScreen() {
                       error={errors.lowStockThreshold?.message}
                     />
                     {watchedLowStockThreshold.length > 0 &&
-                      !isNaN(parseInt(watchedLowStockThreshold, 10)) && (
+                      parseMeasure(watchedLowStockThreshold) != null && (
                         <Text style={styles.thresholdHelper}>
-                          {`Currently: alert when stock reaches ${parseInt(
-                            watchedLowStockThreshold,
-                            10,
-                          )} units`}
+                          {`Currently: alert when stock reaches ${formatQty(
+                            parseMeasure(watchedLowStockThreshold) ?? 0,
+                          )} ${isCut ? measureLabel : 'units'}`}
                         </Text>
                       )}
                   </View>
@@ -789,6 +940,17 @@ export default function AddProductScreen() {
           />
         </View>
       </View>
+
+      <CutProductUpgradeModal
+        visible={showCutUpgradeModal}
+        upgradeChargeCents={upgradeProration?.chargeCents}
+        upgradeIsFree={upgradeProration?.isFree}
+        onClose={() => setShowCutUpgradeModal(false)}
+        onUpgrade={() => {
+          setShowCutUpgradeModal(false)
+          router.push('/(app)/settings/upgrade-plan')
+        }}
+      />
     </View>
   )
 }
@@ -843,6 +1005,72 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#0D1B3E',
+  },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  modeCard: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+  },
+  modeCardSelected: {
+    backgroundColor: '#E6EEFF',
+    borderColor: '#0047AB',
+  },
+  modeCardUnselected: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#DDE3F0',
+  },
+  modeCardLocked: {
+    backgroundColor: '#F4F6FB',
+    borderColor: '#E2E8F0',
+  },
+  modeTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  modeTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0D1B3E',
+  },
+  modeTitleSelected: {
+    color: '#0047AB',
+  },
+  modeTitleLocked: {
+    color: '#8A94A8',
+  },
+  modeHint: {
+    fontSize: 11,
+    color: '#5A6A8A',
+    marginTop: 4,
+  },
+  modeHintLocked: {
+    color: '#A0A8B8',
+  },
+  proPlusPill: {
+    backgroundColor: '#F3EEFF',
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  proPlusPillLocked: {
+    backgroundColor: '#E8E4F0',
+  },
+  proPlusPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  proPlusPillTextLocked: {
+    color: '#9B8FBF',
   },
   optionalSuffix: {
     fontSize: 13,

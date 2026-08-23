@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Q } from '@nozbe/watermelondb'
 import { database } from '../database'
 import type { PaymentMethod } from '../types'
+import { lineTotalCents, roundQty } from '../lib/quantity'
 import type SaleModel from '../database/models/Sale'
 import type SaleItemModel from '../database/models/SaleItem'
 
@@ -206,8 +207,8 @@ export function useReports(businessId: string, startMs: number, endMs: number) {
           // Items: COGS, qty, product aggregation
           const items = itemsBySaleId.get(sale.id) ?? []
           for (const item of items) {
-            cogsCents += item.costPriceCents * item.qty
-            totalQtySold += item.qty
+            cogsCents += lineTotalCents(item.qty, item.costPriceCents)
+            totalQtySold = roundQty(totalQtySold + item.qty)
 
             const prev = productMap.get(item.productId) ?? {
               name: item.productNameSnapshot,
@@ -217,9 +218,9 @@ export function useReports(businessId: string, startMs: number, endMs: number) {
             }
             productMap.set(item.productId, {
               name: prev.name,
-              qtySold: prev.qtySold + item.qty,
-              revenueCents: prev.revenueCents + item.unitPriceCents * item.qty,
-              costCents: prev.costCents + item.costPriceCents * item.qty,
+              qtySold: roundQty(prev.qtySold + item.qty),
+              revenueCents: prev.revenueCents + lineTotalCents(item.qty, item.unitPriceCents),
+              costCents: prev.costCents + lineTotalCents(item.qty, item.costPriceCents),
             })
           }
         }

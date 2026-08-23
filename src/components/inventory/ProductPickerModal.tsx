@@ -13,6 +13,7 @@ import {
 
 import { EmptyState } from '../ui'
 import { useProducts } from '../../hooks/useProducts'
+import { formatQty } from '../../lib/quantity'
 import type { Product } from '../../types'
 
 interface ProductPickerModalProps {
@@ -69,7 +70,7 @@ export function ProductPickerModal({
         </View>
         <View style={styles.stockInfo}>
           <Text style={[styles.stockQty, { color: stockColor(item) }]}>
-            {item.stockQty}
+            {formatQty(item.stockQty)}
           </Text>
           <Text style={styles.stockUnit}>{item.unit} in stock</Text>
         </View>

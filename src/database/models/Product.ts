@@ -8,6 +8,7 @@ export default class Product extends Model {
   @field('name') name!: string
   @field('category') category!: string | null
   @field('unit') unit!: string
+  @field('tracking_mode') trackingMode!: string | null
   @field('cost_price_cents') costPriceCents!: number
   @field('selling_price_cents') sellingPriceCents!: number
   @field('stock_qty') stockQty!: number

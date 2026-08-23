@@ -3,6 +3,7 @@ import React from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 
 import type { ActivityLog } from '../../types'
+import { formatQty } from '../../lib/quantity'
 import { Badge, Card } from '../ui'
 
 const ACTION_LABELS: Record<string, string> = {
@@ -71,14 +72,14 @@ function stockQtyMeta(log: ActivityLog): { text: string; color: string; bgColor:
     const unit = String(log.details?.unit ?? 'units')
     if (qtyChange > 0) {
       return {
-        text: `+${qtyChange} ${unit}`,
+        text: `+${formatQty(qtyChange)} ${unit}`,
         color: STOCK_SUCCESS,
         bgColor: STOCK_SUCCESS_BG,
       }
     }
     if (qtyChange < 0) {
       return {
-        text: `\u2212${Math.abs(qtyChange)} ${unit}`,
+        text: `\u2212${formatQty(Math.abs(qtyChange))} ${unit}`,
         color: STOCK_DANGER,
         bgColor: STOCK_DANGER_BG,
       }
@@ -91,7 +92,7 @@ function stockQtyMeta(log: ActivityLog): { text: string; color: string; bgColor:
     if (!Number.isFinite(qty) || qty <= 0) return null
     const unit = String(log.details?.unit ?? 'units')
     return {
-      text: `+${qty} ${unit}`,
+      text: `+${formatQty(qty)} ${unit}`,
       color: STOCK_SUCCESS,
       bgColor: STOCK_SUCCESS_BG,
     }

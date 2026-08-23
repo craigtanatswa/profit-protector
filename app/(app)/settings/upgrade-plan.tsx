@@ -332,7 +332,7 @@ export default function UpgradePlanScreen() {
           </View>
           <Text style={styles.successTitle}>You're on Pro+!</Text>
           <Text style={styles.successBody}>
-            Your plan has been upgraded. You can now add up to 5 staff members and unlock all Pro+ features.
+            Your plan has been upgraded. You can now add up to 5 staff members and record cut-to-order stock such as meat and cloth.
           </Text>
           <View style={styles.successCard}>
             <Text style={styles.successCardLabel}>Next renewal</Text>
@@ -517,9 +517,15 @@ export default function UpgradePlanScreen() {
           </Card>
 
           {/* Feature highlight */}
-          <View style={styles.featureRow}>
-            <Ionicons name="people-outline" size={18} color={C.purple} />
-            <Text style={styles.featureText}>Unlock up to 5 staff accounts</Text>
+          <View style={styles.featureBlock}>
+            <View style={styles.featureRow}>
+              <Ionicons name="people-outline" size={18} color={C.purple} />
+              <Text style={styles.featureText}>Unlock up to 5 staff accounts</Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="cut-outline" size={18} color={C.purple} />
+              <Text style={styles.featureText}>Cut-to-order stock (meat, cloth)</Text>
+            </View>
           </View>
 
           {isFree ? (
@@ -605,7 +611,8 @@ const styles = StyleSheet.create({
   prorationRenewal: { fontSize: 12, color: C.muted, marginTop: 6 },
 
   // Feature highlight
-  featureRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20, paddingHorizontal: 4 },
+  featureBlock: { marginBottom: 20, paddingHorizontal: 4, gap: 10 },
+  featureRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   featureText: { fontSize: 14, color: C.purple, fontWeight: '500' },
 
   // Payment method

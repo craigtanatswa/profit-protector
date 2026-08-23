@@ -2,6 +2,7 @@ import * as Print from 'expo-print'
 import * as Sharing from 'expo-sharing'
 import { getBusinessLogoDataUri } from './businessLogo'
 import { formatCurrency, formatDate, formatDateTime, formatPaymentMethod } from './formatters'
+import { formatQty } from './quantity'
 import type { PaymentBreakdownItem, TopProduct } from '../hooks/useReports'
 
 // ---------------------------------------------------------------------------
@@ -87,7 +88,7 @@ function buildReportHTML(params: ExportReportPDFParams, logoDataUri: string | nu
       </div>
       <div class="metric-card">
         <div class="metric-label">Items Sold</div>
-        <div class="metric-value">${totalQtySold} units</div>
+        <div class="metric-value">${formatQty(totalQtySold)} units</div>
         <div class="metric-sub">${topProducts.length} product${topProducts.length !== 1 ? 's' : ''}</div>
       </div>
       <div class="metric-card">
@@ -143,7 +144,7 @@ function buildReportHTML(params: ExportReportPDFParams, logoDataUri: string | nu
     <tr>
       <td>${i + 1}</td>
       <td>${escapeHtml(p.productName)}</td>
-      <td style="text-align:right">${p.qtySold}</td>
+      <td style="text-align:right">${formatQty(p.qtySold)}</td>
       <td style="text-align:right">${escapeHtml(formatCurrency(p.revenueCents, currency, zigRate))}</td>
       <td style="text-align:right" class="${p.profitCents > 0 ? 'profit-positive' : p.profitCents < 0 ? 'profit-negative' : ''}">${escapeHtml(formatCurrency(p.profitCents, currency, zigRate))}</td>
       <td style="text-align:right">${p.marginPercent}%</td>

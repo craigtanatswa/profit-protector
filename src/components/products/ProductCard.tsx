@@ -4,6 +4,8 @@ import { StyleSheet, Text, View, type ViewStyle } from 'react-native'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { useMoneyFormat } from '../../hooks/useMoneyFormat'
+import { isCutProduct } from '../../lib/cutProducts'
+import { formatQtyWithUnit } from '../../lib/quantity'
 import type { Product } from '../../types'
 
 interface ProductCardProps {
@@ -47,7 +49,9 @@ export const ProductCard = React.memo(function ProductCard({ product, onPress }:
         </View>
         <View style={styles.priceContainer}>
           <Text style={styles.price}>{formatMoney(sellingPriceCents)}</Text>
-          <Text style={styles.unitLabel}>per {unit}</Text>
+          <Text style={styles.unitLabel}>
+            {isCutProduct(product) ? `rate / ${unit}` : `per ${unit}`}
+          </Text>
         </View>
       </View>
 
@@ -57,7 +61,7 @@ export const ProductCard = React.memo(function ProductCard({ product, onPress }:
         <View style={styles.stockInfo}>
           <Ionicons name="cube-outline" size={14} color="#5A6A8A" />
           <Text style={styles.stockText}>
-            {stockQty} {unit} in stock
+            {formatQtyWithUnit(stockQty, unit)} in stock
           </Text>
         </View>
         <Badge variant={badgeVariant} label={badgeLabel} size="sm" />

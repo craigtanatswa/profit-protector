@@ -136,5 +136,14 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      toVersion: 12,
+      steps: [
+        addColumns({
+          table: 'products',
+          columns: [{ name: 'tracking_mode', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
   ],
 })

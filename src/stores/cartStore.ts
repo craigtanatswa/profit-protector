@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { lineTotalCents } from '../lib/quantity'
+import type { ProductTrackingMode } from '../types'
 
 type PaymentMethod = 'cash_usd' | 'cash_zig' | 'ecocash' | 'bank_transfer' | 'credit'
 
@@ -8,6 +10,8 @@ interface CartItem {
   qty: number
   unitPriceCents: number
   costPriceCents: number
+  unit?: string
+  trackingMode?: ProductTrackingMode
 }
 
 interface CartState {
@@ -76,7 +80,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     }),
 
   get subtotalCents(): number {
-    return get().items.reduce((sum, i) => sum + i.qty * i.unitPriceCents, 0)
+    return get().items.reduce((sum, i) => sum + lineTotalCents(i.qty, i.unitPriceCents), 0)
   },
 
   get totalCents(): number {

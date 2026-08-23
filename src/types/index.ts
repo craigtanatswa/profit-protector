@@ -16,12 +16,17 @@ export interface Business {
   recoveryEmailVerified: boolean
 }
 
+/** Packed SKUs vs leftover measure sold in varying cut sizes (meat, cloth). */
+export type ProductTrackingMode = 'count' | 'cut'
+
 export interface Product {
   id: string
   businessId: string
   name: string
   category?: string
   unit: string
+  /** Defaults to 'count' for legacy rows. */
+  trackingMode: ProductTrackingMode
   costPriceCents: number
   sellingPriceCents: number
   stockQty: number
@@ -275,6 +280,8 @@ export interface CartItem {
   qty: number
   unitPriceCents: number
   costPriceCents: number
+  unit?: string
+  trackingMode?: ProductTrackingMode
 }
 
 export interface DashboardMetrics {

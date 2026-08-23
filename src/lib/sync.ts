@@ -11,6 +11,7 @@ import type CreditSale from '../database/models/CreditSale'
 import type PaymentRecord from '../database/models/PaymentRecord'
 import type ActivityLog from '../database/models/ActivityLog'
 import { wmRaw } from './watermelonRaw'
+import { normalizeTrackingMode } from './cutProducts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -88,6 +89,7 @@ export type SupabaseProductRow = {
   name: string
   category: string | null
   unit: string
+  tracking_mode?: string | null
   cost_price_cents: number
   selling_price_cents: number
   stock_qty: number
@@ -134,6 +136,7 @@ export async function mergeRemoteProductsIntoWatermelon(
             r.name = remote.name
             r.category = remote.category
             r.unit = remote.unit
+            r.trackingMode = normalizeTrackingMode(remote.tracking_mode)
             r.costPriceCents = remote.cost_price_cents
             r.sellingPriceCents = remote.selling_price_cents
             r.stockQty = remote.stock_qty
@@ -152,6 +155,7 @@ export async function mergeRemoteProductsIntoWatermelon(
           r.name = remote.name
           r.category = remote.category
           r.unit = remote.unit
+          r.trackingMode = normalizeTrackingMode(remote.tracking_mode)
           r.costPriceCents = remote.cost_price_cents
           r.sellingPriceCents = remote.selling_price_cents
           r.stockQty = remote.stock_qty
@@ -352,6 +356,7 @@ async function syncProducts(
         name: r.name,
         category: r.category,
         unit: r.unit,
+        tracking_mode: normalizeTrackingMode(r.trackingMode),
         cost_price_cents: r.costPriceCents,
         selling_price_cents: r.sellingPriceCents,
         stock_qty: r.stockQty,

@@ -34,6 +34,7 @@ import { useShopkeeperStockAccessGate } from '../../../src/hooks/useShopkeeperSt
 import { StockAccessPendingModal } from '../../../src/components/modals/StockAccessPendingModal'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
+import { lineTotalCents } from '../../../src/lib/quantity'
 
 // Stable separator — module-level avoids creating a new component every render
 const ItemSeparator = () => <View style={styles.itemSep} />
@@ -195,7 +196,7 @@ export default function InventoryScreen() {
   const stockValue = useMemo(
     () =>
       filteredProducts.reduce(
-        (sum, p) => sum + p.sellingPriceCents * p.stockQty,
+        (sum, p) => sum + lineTotalCents(p.stockQty, p.sellingPriceCents),
         0,
       ),
     [filteredProducts],

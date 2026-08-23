@@ -9,6 +9,7 @@ import type SaleItemModel from '../database/models/SaleItem'
 import type CreditSaleModel from '../database/models/CreditSale'
 import type CustomerModel from '../database/models/Customer'
 import type ProductModel from '../database/models/Product'
+import { formatQty, lineTotalCents } from './quantity'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -183,7 +184,7 @@ export async function exportReportCSV(params: ExportReportCSVParams): Promise<vo
 
     // Accumulate using actual revenue (after discount) and COGS
     totalRevenueCents += sale.totalCents
-    const saleCogs = saleItems.reduce((s, item) => s + item.costPriceCents * item.qty, 0)
+    const saleCogs = saleItems.reduce((s, item) => s + lineTotalCents(item.qty, item.costPriceCents), 0)
     totalCogsCents += saleCogs
 
     if (saleItems.length === 0) {
@@ -206,8 +207,8 @@ export async function exportReportCSV(params: ExportReportCSVParams): Promise<vo
       )
     } else {
       for (const item of saleItems) {
-        const lineTotal = item.unitPriceCents * item.qty
-        const lineCost = item.costPriceCents * item.qty
+        const lineTotal = lineTotalCents(item.qty, item.unitPriceCents)
+        const lineCost = lineTotalCents(item.qty, item.costPriceCents)
         const lineProfit = lineTotal - lineCost
         const category = productCategoryMap.get(item.productId) ?? ''
         rows.push(
@@ -217,7 +218,7 @@ export async function exportReportCSV(params: ExportReportCSVParams): Promise<vo
             escapeCsvField(sale.receiptNumber),
             escapeCsvField(item.productNameSnapshot),
             escapeCsvField(category),
-            escapeCsvField(item.qty),
+            escapeCsvField(formatQty(item.qty)),
             escapeCsvField(fmtUsdCents(item.unitPriceCents)),
             escapeCsvField(fmtUsdCents(item.costPriceCents)),
             escapeCsvField(fmtUsdCents(lineTotal)),

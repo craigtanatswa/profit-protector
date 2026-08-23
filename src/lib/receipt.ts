@@ -7,6 +7,7 @@ import type { Sale, SaleItem, Business, Customer } from '../types'
 import { getPersonalisation, normalizeBusinessType } from './appPersonalisation'
 import { getBusinessLogoDataUri } from './businessLogo'
 import { formatCurrency, formatDateTime, formatPaymentMethod } from './formatters'
+import { formatQty, lineTotalCents } from './quantity'
 
 interface ReceiptParams {
   sale: Sale
@@ -78,16 +79,16 @@ function buildReceiptHTML(
   const currency = business.currency || 'USD'
   const zigRate = business.zigRatePerUsd ?? 1
 
-  const subtotal = saleItems.reduce((sum, item) => sum + item.unitPriceCents * item.qty, 0)
+  const subtotal = saleItems.reduce((sum, item) => sum + lineTotalCents(item.qty, item.unitPriceCents), 0)
 
   const itemsHTML = saleItems
     .map(
       (item) => `
     <div class="item-row">
       <div class="item-name">${escapeHtml(item.productNameSnapshot)}</div>
-      <div class="item-qty">${item.qty}</div>
+      <div class="item-qty">${formatQty(item.qty)}</div>
       <div class="item-price">${escapeHtml(formatCurrency(item.unitPriceCents, currency, zigRate))}</div>
-      <div class="item-total">${escapeHtml(formatCurrency(item.unitPriceCents * item.qty, currency, zigRate))}</div>
+      <div class="item-total">${escapeHtml(formatCurrency(lineTotalCents(item.qty, item.unitPriceCents), currency, zigRate))}</div>
     </div>`,
     )
     .join('')

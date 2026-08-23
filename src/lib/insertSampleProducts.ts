@@ -25,6 +25,7 @@ export async function insertSampleProductsForBusiness(businessId: string): Promi
         p.name = sp.name
         p.category = sp.category
         p.unit = sp.unit
+        p.trackingMode = 'count'
         p.costPriceCents = sp.suggestedCostCents
         p.sellingPriceCents = sp.suggestedPriceCents
         p.stockQty = 10
@@ -40,6 +41,7 @@ export async function insertSampleProductsForBusiness(businessId: string): Promi
           name: sp.name,
           category: sp.category,
           unit: sp.unit,
+          tracking_mode: 'count',
           cost_price_cents: sp.suggestedCostCents,
           selling_price_cents: sp.suggestedPriceCents,
           stock_qty: 10,

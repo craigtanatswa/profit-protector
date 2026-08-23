@@ -18,6 +18,7 @@ import WMBusiness from '../database/models/Business'
 import { getPersonalisation, normalizeBusinessType } from './appPersonalisation'
 import { shouldScheduleOsLocalBusinessAlerts } from './notificationDeliveryMode'
 import { requestLowStockRemotePushIfOwner } from './expoPushRemote'
+import { formatQty } from './quantity'
 import { logStaffSaleNotify } from './staffSaleNotifyDebug'
 
 // ---------------------------------------------------------------------------
@@ -179,7 +180,7 @@ export async function sendLowStockNotification(params: {
   const title = isOutOfStock ? '🚨 Out of Stock!' : '⚠️ Low Stock Alert'
   const bodyText = isOutOfStock
     ? `${prefix} — ${params.productName} is out of stock. Tap to reorder now.`
-    : `${prefix} — ${params.productName} has only ${params.currentStock} ${params.unit} left (threshold: ${params.threshold}). Time to reorder!`
+    : `${prefix} — ${params.productName} has only ${formatQty(params.currentStock)} ${params.unit} left (threshold: ${formatQty(params.threshold)}). Time to reorder!`
   const dataFields = {
     productId: params.productId,
     type: isOutOfStock ? 'out_of_stock' : 'low_stock',
@@ -279,9 +280,9 @@ export async function notifyOwnerStaffStockAdjustment(params: {
   const unit = params.unit?.trim() || 'units'
   const qtyLabel =
     params.qtyChange > 0
-      ? `+${params.qtyChange} ${unit}`
+      ? `+${formatQty(params.qtyChange)} ${unit}`
       : params.qtyChange < 0
-        ? `−${Math.abs(params.qtyChange)} ${unit}`
+        ? `−${formatQty(Math.abs(params.qtyChange))} ${unit}`
         : `0 ${unit}`
   const title =
     params.qtyChange >= 0 ? '📦 Staff Stock Added' : '📦 Staff Stock Removed'
@@ -317,7 +318,7 @@ export async function notifyOwnerStaffStockReceived(params: {
   if (status !== 'granted') return
 
   const unit = params.unit?.trim() || 'units'
-  const qtyLabel = `+${params.qty} ${unit}`
+  const qtyLabel = `+${formatQty(params.qty)} ${unit}`
   const title = '📦 Staff Stock Received'
   const body = `${params.staffLabel} received ${qtyLabel} of ${params.productName}`
 

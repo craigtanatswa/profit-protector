@@ -39,6 +39,8 @@ import { StockAccessPendingModal } from '../../../src/components/modals/StockAcc
 import { logActivity } from '../../../src/lib/activityLogger'
 import { sendLowStockNotification } from '../../../src/lib/notifications'
 import { wmRaw } from '../../../src/lib/watermelonRaw'
+import { isCutProduct } from '../../../src/lib/cutProducts'
+import { addQty, formatQty, formatQtyWithUnit, parseQty, subtractQty } from '../../../src/lib/quantity'
 
 type AdjustmentDirection = 'remove' | 'add'
 
@@ -53,10 +55,10 @@ function buildAdjustmentSchema(isShopkeeper: boolean) {
       qty: z
         .string()
         .min(1, 'Quantity is required')
-        .refine(
-          (v) => !isNaN(parseInt(v, 10)) && parseInt(v, 10) > 0,
-          'Quantity must be greater than 0',
-        ),
+        .refine((v) => {
+          const n = parseQty(v)
+          return n != null && n > 0
+        }, 'Quantity must be greater than 0'),
       description: z.string().max(150).optional(),
       adjustmentDate: z.number(),
     })
@@ -239,13 +241,17 @@ export default function AdjustStockScreen() {
 
   // ── Derived values ──────────────────────────────────────────────────────────
 
-  const parsedQty = parseInt(watchedQty, 10)
-  const validQty = !isNaN(parsedQty) && parsedQty > 0
+  const parsedQty = parseQty(watchedQty)
+  const validQty = parsedQty != null && parsedQty > 0
   const isRemoval = selectedReason !== 'correction' || direction === 'remove'
   const currentQty = selectedProduct?.stockQty ?? 0
 
   const projectedQty =
-    validQty ? (isRemoval ? currentQty - parsedQty : currentQty + parsedQty) : null
+    validQty && parsedQty != null
+      ? isRemoval
+        ? subtractQty(currentQty, parsedQty)
+        : addQty(currentQty, parsedQty)
+      : null
 
   function stockAfterColor(qty: number): string {
     if (!selectedProduct) return '#5A6A8A'
@@ -298,7 +304,15 @@ export default function AdjustStockScreen() {
       return
     }
 
-    const qty = parseInt(values.qty, 10)
+    const qty = parseQty(values.qty)
+    if (qty == null || qty <= 0) {
+      Alert.alert('Invalid quantity', 'Enter a quantity greater than 0.')
+      return
+    }
+    if (!isCutProduct(selectedProduct) && !Number.isInteger(qty)) {
+      Alert.alert('Invalid quantity', 'Packed items must be adjusted by a whole number.')
+      return
+    }
     const isRemoving =
       values.reason !== 'correction' || values.direction === 'remove'
 
@@ -306,7 +320,7 @@ export default function AdjustStockScreen() {
     if (isRemoving && qty > selectedProduct.stockQty) {
       Alert.alert(
         'Cannot Remove Stock',
-        `Cannot remove ${qty} units. Current stock is only ${selectedProduct.stockQty} ${selectedProduct.unit}.`,
+        `Cannot remove ${formatQtyWithUnit(qty, selectedProduct.unit)}. Current stock is only ${formatQtyWithUnit(selectedProduct.stockQty, selectedProduct.unit)}.`,
       )
       return
     }
@@ -314,7 +328,9 @@ export default function AdjustStockScreen() {
     setIsLoading(true)
     try {
       const qtyChange = isRemoving ? -qty : qty
-      const newStockQty = selectedProduct.stockQty + qtyChange
+      const newStockQty = isRemoving
+        ? subtractQty(selectedProduct.stockQty, qty)
+        : addQty(selectedProduct.stockQty, qty)
       const reasonString = values.description
         ? `${values.reason}: ${values.description}`
         : values.reason
@@ -446,8 +462,8 @@ export default function AdjustStockScreen() {
         REASON_CONFIG[values.reason as AdjustmentReason]?.label ?? values.reason
 
       const successMessage = isRemoving
-        ? `${qty} ${unit} of ${productName} removed.\nReason: ${reasonLabel}\nNew stock: ${newStockQty} ${unit}`
-        : `${qty} ${unit} of ${productName} added.\nReason: Correction\nNew stock: ${newStockQty} ${unit}`
+        ? `${formatQtyWithUnit(qty, unit)} of ${productName} removed.\nReason: ${reasonLabel}\nNew stock: ${formatQtyWithUnit(newStockQty, unit)}`
+        : `${formatQtyWithUnit(qty, unit)} of ${productName} added.\nReason: Correction\nNew stock: ${formatQtyWithUnit(newStockQty, unit)}`
 
       Alert.alert('Stock Adjusted', successMessage, [
         {
@@ -583,7 +599,7 @@ export default function AdjustStockScreen() {
                       {selectedProduct.name}
                     </Text>
                     <Text style={styles.selectedProductStock}>
-                      Current stock: {selectedProduct.stockQty} {selectedProduct.unit}
+                      Current stock: {formatQtyWithUnit(selectedProduct.stockQty, selectedProduct.unit)}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -670,9 +686,21 @@ export default function AdjustStockScreen() {
                 render={({ field: { value, onChange } }) => (
                   <View>
                     <Input
-                      label={isRemoval ? 'Quantity to Remove' : 'Quantity to Add'}
-                      keyboardType="number-pad"
-                      placeholder="0"
+                      label={
+                        selectedProduct
+                          ? `${isRemoval ? 'Quantity to Remove' : 'Quantity to Add'} (${selectedProduct.unit})`
+                          : isRemoval
+                            ? 'Quantity to Remove'
+                            : 'Quantity to Add'
+                      }
+                      keyboardType={
+                        selectedProduct && isCutProduct(selectedProduct)
+                          ? 'decimal-pad'
+                          : 'number-pad'
+                      }
+                      placeholder={
+                        selectedProduct && isCutProduct(selectedProduct) ? '0.00' : '0'
+                      }
                       leftIcon={
                         <Ionicons
                           name={
@@ -699,7 +727,7 @@ export default function AdjustStockScreen() {
                             { color: stockAfterColor(projectedQty) },
                           ]}
                         >
-                          {projectedQty} {selectedProduct.unit}
+                          {formatQtyWithUnit(projectedQty, selectedProduct.unit)}
                         </Text>
                       </View>
                     )}
@@ -708,7 +736,7 @@ export default function AdjustStockScreen() {
                       isRemoval &&
                       parsedQty > currentQty && (
                         <Text style={styles.overStockError}>
-                          Cannot remove more than current stock ({currentQty})
+                          Cannot remove more than current stock ({formatQty(currentQty)})
                         </Text>
                       )}
                   </View>
@@ -818,7 +846,7 @@ export default function AdjustStockScreen() {
                       ]}
                     >
                       {isRemoval ? '−' : '+'}
-                      {parsedQty} {selectedProduct.unit}
+                      {formatQtyWithUnit(parsedQty ?? 0, selectedProduct.unit)}
                     </Text>
                   </View>
 
@@ -827,7 +855,7 @@ export default function AdjustStockScreen() {
                   <View style={styles.summaryRow}>
                     <Text style={styles.summaryKey}>Stock before:</Text>
                     <Text style={[styles.summaryValue, { color: '#5A6A8A' }]}>
-                      {currentQty} {selectedProduct.unit}
+                      {formatQtyWithUnit(currentQty, selectedProduct.unit)}
                     </Text>
                   </View>
 
@@ -840,7 +868,7 @@ export default function AdjustStockScreen() {
                           { color: stockAfterColor(projectedQty) },
                         ]}
                       >
-                        {projectedQty} {selectedProduct.unit}
+                        {formatQtyWithUnit(projectedQty, selectedProduct.unit)}
                       </Text>
                     </View>
                   )}

@@ -17,6 +17,8 @@ import { useProductDetail } from '../../../src/hooks/useProductDetail'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import type { StockMovement } from '../../../src/types'
+import { isCutProduct } from '../../../src/lib/cutProducts'
+import { formatQty, formatQtyWithUnit, lineTotalCents, roundQty } from '../../../src/lib/quantity'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { useShopkeeperStockAccessGate } from '../../../src/hooks/useShopkeeperStockAccessGate'
 import { StockAccessPendingModal } from '../../../src/components/modals/StockAccessPendingModal'
@@ -104,9 +106,9 @@ function parseReasonSubLabel(m: StockMovement): string {
 
 function formatQtyChange(m: StockMovement, unit: string): { text: string; color: string } {
   if (m.qtyChange > 0) {
-    return { text: `+${m.qtyChange} ${unit}`, color: '#0A7A4B' }
+    return { text: `+${formatQtyWithUnit(m.qtyChange, unit)}`, color: '#0A7A4B' }
   }
-  return { text: `\u2212${Math.abs(m.qtyChange)} ${unit}`, color: '#C0152A' }
+  return { text: `\u2212${formatQtyWithUnit(Math.abs(m.qtyChange), unit)}`, color: '#C0152A' }
 }
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
@@ -192,7 +194,7 @@ export default function ProductDetailScreen() {
     let balance = product.stockQty
     return movements.map((m) => {
       const balanceAfter = balance
-      balance -= m.qtyChange
+      balance = roundQty(balance - m.qtyChange)
       return { ...m, balance: balanceAfter }
     })
   }, [movements, product])
@@ -216,7 +218,7 @@ export default function ProductDetailScreen() {
     [movements],
   )
   const totalSold = useMemo(
-    () => salesMovements.reduce((sum, m) => sum + Math.abs(m.qtyChange), 0),
+    () => roundQty(salesMovements.reduce((sum, m) => sum + Math.abs(m.qtyChange), 0)),
     [salesMovements],
   )
 
@@ -303,9 +305,9 @@ export default function ProductDetailScreen() {
       ? '#B45309'
       : '#0A7A4B'
 
-  const stockValueCents = stockQty * sellingPriceCents
-  const totalRevenueCents = totalSold * sellingPriceCents
-  const totalProfitCents = totalSold * profitCents
+  const stockValueCents = lineTotalCents(stockQty, sellingPriceCents)
+  const totalRevenueCents = lineTotalCents(totalSold, sellingPriceCents)
+  const totalProfitCents = lineTotalCents(totalSold, profitCents)
 
   // ── Navigation helpers ────────────────────────────────────────────────────
   const goToReceive = () => {
@@ -363,7 +365,11 @@ export default function ProductDetailScreen() {
                   <Text style={styles.categoryPillText}>{category}</Text>
                 </View>
               )}
-              <Text style={styles.heroUnit}>Sold by the {unit}</Text>
+              <Text style={styles.heroUnit}>
+                {isCutProduct(product)
+                  ? `Cut and sold by the ${unit}`
+                  : `Sold by the ${unit}`}
+              </Text>
             </View>
 
             {/* Right: price, cost, margin */}
@@ -396,7 +402,7 @@ export default function ProductDetailScreen() {
             <View style={styles.stockCol}>
               <Text style={styles.stockLabel}>In Stock</Text>
               <Text style={[styles.stockValueLarge, { color: stockColor }]}>
-                {stockQty} {unit}
+                {formatQtyWithUnit(stockQty, unit)}
               </Text>
             </View>
 
@@ -416,7 +422,7 @@ export default function ProductDetailScreen() {
             <View style={styles.stockCol}>
               <Text style={styles.stockLabel}>Alert At</Text>
               <Text style={[styles.stockValueMed, { color: '#0D1B3E' }]}>
-                {lowStockThreshold} {unit}
+                {formatQtyWithUnit(lowStockThreshold, unit)}
               </Text>
             </View>
           </View>
@@ -436,7 +442,7 @@ export default function ProductDetailScreen() {
             <View style={styles.lowStockBanner}>
               <Ionicons name="warning" size={16} color="#B45309" />
               <Text style={styles.lowStockText}>
-                Low stock — only {stockQty} {unit} remaining
+                Low stock — only {formatQtyWithUnit(stockQty, unit)} remaining
               </Text>
             </View>
           )}
@@ -445,7 +451,7 @@ export default function ProductDetailScreen() {
         {/* ── Stat Summary Row ────────────────────────────────────────── */}
         <View style={styles.statSummaryRow}>
           <View style={styles.statSummaryCol}>
-            <Text style={styles.statSummaryValue}>{totalSold}</Text>
+            <Text style={styles.statSummaryValue}>{formatQty(totalSold)}</Text>
             <Text style={styles.statSummaryLabel}>Total Sold</Text>
           </View>
           <View style={styles.statSummaryCol}>
@@ -662,7 +668,7 @@ export default function ProductDetailScreen() {
                         {parseReasonSubLabel(m)}
                       </Text>
                       <Text style={styles.movementBalance}>
-                        Balance: {m.balance} {unit}
+                        Balance: {formatQtyWithUnit(m.balance, unit)}
                       </Text>
                     </View>
                   </View>

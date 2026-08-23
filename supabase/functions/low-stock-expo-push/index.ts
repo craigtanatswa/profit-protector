@@ -129,7 +129,7 @@ serve(async (req) => {
     if (!pushBody) {
       pushBody = isOut
         ? `${name} is out of stock. Tap to reorder now.`
-        : `${name} has only ${stock} ${unit} left (threshold: ${threshold}). Time to reorder!`
+        : `${name} has only ${Number(stock.toFixed(3))} ${unit} left (threshold: ${Number(threshold.toFixed(3))}). Time to reorder!`
     }
     if (Object.keys(data).length === 0) {
       data = {

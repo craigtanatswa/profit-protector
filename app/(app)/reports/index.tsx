@@ -17,6 +17,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import * as SecureStore from 'expo-secure-store'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { useReports } from '../../../src/hooks/useReports'
+import { formatQty } from '../../../src/lib/quantity'
 import { exportReportPDF } from '../../../src/lib/reportPDF'
 import { exportReportCSV } from '../../../src/lib/reportCSV'
 import { formatCurrency, formatPaymentMethod } from '../../../src/lib/formatters'
@@ -1356,7 +1357,7 @@ function SummaryCards({
       <View style={{ width: cardWidth }}>
         <MetricCard
           label="Items Sold"
-          value={`${totalQtySold} units`}
+          value={`${formatQty(totalQtySold)} units`}
           subValue={`${topProductCount} product${topProductCount !== 1 ? 's' : ''}`}
           variant="default"
           icon={<Ionicons name="cube" size={20} color={THEME.textSecondary} />}
@@ -1527,9 +1528,9 @@ function TopProductsSection({ products, sort, onSortChange, currency, zigRatePer
         if (sort === 'revenue') {
           primaryValue = formatCurrency(product.revenueCents, currency, zigRatePerUsd)
           primaryColor = THEME.primary
-          secondaryValue = `${product.qtySold} sold`
+          secondaryValue = `${formatQty(product.qtySold)} sold`
         } else if (sort === 'quantity') {
-          primaryValue = `${product.qtySold} units`
+          primaryValue = `${formatQty(product.qtySold)} units`
           primaryColor = THEME.textPrimary
           secondaryValue = `${formatCurrency(product.revenueCents, currency, zigRatePerUsd)} revenue`
         } else {
@@ -1580,7 +1581,7 @@ function TopProductsSection({ products, sort, onSortChange, currency, zigRatePer
                     {product.productName}
                   </Text>
                   <Text style={{ fontSize: 12, color: THEME.textSecondary }}>
-                    {product.qtySold} units sold
+                    {formatQty(product.qtySold)} units sold
                   </Text>
                 </View>
               </View>

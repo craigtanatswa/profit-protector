@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { Card } from '../ui/Card'
 import { useMoneyFormat } from '../../hooks/useMoneyFormat'
 import type { Sale, SaleItem, PaymentMethod } from '../../types'
+import { formatQty, lineTotalCents } from '../../lib/quantity'
 
 interface SaleCardProps {
   sale: Sale
@@ -48,7 +49,9 @@ export function SaleCard({ sale, saleItems, onPress, staffLabel }: SaleCardProps
   const borderColor = BORDER_COLOR[sale.paymentMethod] ?? '#0047AB'
 
   const profitCents = saleItems.reduce(
-    (sum, item) => sum + (item.unitPriceCents - item.costPriceCents) * item.qty,
+    (sum, item) =>
+      sum +
+      (lineTotalCents(item.qty, item.unitPriceCents) - lineTotalCents(item.qty, item.costPriceCents)),
     0,
   )
 
@@ -89,7 +92,7 @@ export function SaleCard({ sale, saleItems, onPress, staffLabel }: SaleCardProps
         <View style={styles.itemCountRow}>
           <Ionicons name="cube-outline" size={13} color="#5A6A8A" />
           <Text style={styles.itemCountText}>
-            {itemCount} {itemCount === 1 ? 'item' : 'items'}
+            {formatQty(itemCount)} {itemCount === 1 ? 'item' : 'items'}
           </Text>
           {staffLabel != null && (
             <View style={styles.staffBadge}>

@@ -5,6 +5,8 @@ import { buildOutstandingMap } from '../lib/creditLedger'
 import { mapCustomerRecord } from './useCustomers'
 import { mapSaleRecord, mapSaleItemRecord } from './useSales'
 import type { Customer, PaymentMethod, Product, Sale, SaleItem } from '../types'
+import { normalizeTrackingMode } from '../lib/cutProducts'
+import { lineTotalCents } from '../lib/quantity'
 import type CreditSaleModel from '../database/models/CreditSale'
 import type CustomerModel from '../database/models/Customer'
 import type ProductModel from '../database/models/Product'
@@ -55,6 +57,7 @@ function mapProductRecord(record: ProductModel): Product {
     name: record.name,
     category: record.category ?? undefined,
     unit: record.unit,
+    trackingMode: normalizeTrackingMode(record.trackingMode),
     costPriceCents: record.costPriceCents,
     sellingPriceCents: record.sellingPriceCents,
     stockQty: record.stockQty,
@@ -224,7 +227,7 @@ export function useDashboard(businessId: string): DashboardData {
         for (const saleRecord of todaySalesRaw) {
           const items = itemsBySaleId[saleRecord.id] ?? []
           const cogForSale = items.reduce(
-            (sum, item) => sum + item.costPriceCents * item.qty,
+            (sum, item) => sum + lineTotalCents(item.qty, item.costPriceCents),
             0,
           )
           todaysProfitCents += saleRecord.totalCents - cogForSale
@@ -237,7 +240,7 @@ export function useDashboard(businessId: string): DashboardData {
         // ── Inventory metrics ──────────────────────────────────────────────
         const mappedProducts = allProductsRaw.map(mapProductRecord)
         const totalStockValueCents = mappedProducts.reduce(
-          (s, p) => s + p.sellingPriceCents * p.stockQty,
+          (s, p) => s + lineTotalCents(p.stockQty, p.sellingPriceCents),
           0,
         )
         const totalProductCount = mappedProducts.length

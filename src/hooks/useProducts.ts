@@ -3,6 +3,7 @@ import { Q } from '@nozbe/watermelondb'
 import { database } from '../database'
 import type { Product } from '../types'
 import type ProductModel from '../database/models/Product'
+import { normalizeTrackingMode } from '../lib/cutProducts'
 
 function mapProductRecord(record: ProductModel): Product {
   return {
@@ -11,6 +12,7 @@ function mapProductRecord(record: ProductModel): Product {
     name: record.name,
     category: record.category ?? undefined,
     unit: record.unit,
+    trackingMode: normalizeTrackingMode(record.trackingMode),
     costPriceCents: record.costPriceCents,
     sellingPriceCents: record.sellingPriceCents,
     stockQty: record.stockQty,
