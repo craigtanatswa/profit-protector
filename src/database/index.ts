@@ -13,6 +13,7 @@ import Customer from './models/Customer'
 import CreditSale from './models/CreditSale'
 import PaymentRecord from './models/PaymentRecord'
 import Shopkeeper from './models/Shopkeeper'
+import Shop from './models/Shop'
 import ActivityLog from './models/ActivityLog'
 
 const modelClasses = [
@@ -25,6 +26,7 @@ const modelClasses = [
   CreditSale,
   PaymentRecord,
   Shopkeeper,
+  Shop,
   ActivityLog,
 ]
 

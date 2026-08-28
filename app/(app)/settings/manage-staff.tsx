@@ -6,19 +6,22 @@ import React, { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { z } from 'zod'
 
 import { Badge, Button, Card, EmptyState, Input } from '../../../src/components/ui'
-import { ScreenHeader } from '../../../src/components/layout'
+import { ScreenHeader, useKeyboardHeight } from '../../../src/components/layout'
 import { SettingsRow } from '../../../src/components/settings/SettingsRow'
 import { database } from '../../../src/database'
 import ShopkeeperModel from '../../../src/database/models/Shopkeeper'
@@ -27,6 +30,8 @@ import { logActivity } from '../../../src/lib/activityLogger'
 import { supabase } from '../../../src/lib/supabase'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { useSubscription } from '../../../src/hooks/useSubscription'
+import { useShops } from '../../../src/hooks/useShops'
+import { formatShopLabel } from '../../../src/lib/shops'
 import { planLabel } from '../../../src/lib/plans'
 import type { Shopkeeper } from '../../../src/types'
 
@@ -72,6 +77,7 @@ function mapLocal(record: ShopkeeperModel): Shopkeeper {
     fullName: record.fullName,
     receiptSuffix: (record.receiptSuffix ?? '').trim().toUpperCase(),
     phone: record.phone ?? undefined,
+    shopId: record.shopId ?? null,
     isActive: record.isActive,
     createdAt: record.createdAt.getTime(),
     updatedAt: record.updatedAt.getTime(),
@@ -81,10 +87,12 @@ function mapLocal(record: ShopkeeperModel): Shopkeeper {
 function StaffCard({
   staff,
   deviceCount,
+  shopLabel,
   onPress,
 }: {
   staff: Shopkeeper
   deviceCount: number
+  shopLabel?: string
   onPress: () => void
 }) {
   return (
@@ -98,6 +106,7 @@ function StaffCard({
             <Text style={styles.staffName}>{staff.fullName}</Text>
             <Text style={styles.username}>@{staff.username}</Text>
             <Text style={styles.receiptSuffixLabel}>Receipt suffix · {staff.receiptSuffix || '—'}</Text>
+            {shopLabel ? <Text style={styles.receiptSuffixLabel}>{shopLabel}</Text> : null}
           </View>
         </View>
         <Badge label={staff.isActive ? 'Active' : 'Inactive'} variant={staff.isActive ? 'success' : 'neutral'} size="sm" />
@@ -120,6 +129,7 @@ function AddShopkeeperModal({
   onAdded: () => void
 }) {
   const insets = useSafeAreaInsets()
+  const { height: windowHeight } = useWindowDimensions()
   const business = useAuthStore((s) => s.business)
   const user = useAuthStore((s) => s.user)
   const [fullName, setFullName] = useState('')
@@ -131,6 +141,16 @@ function AddShopkeeperModal({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [available, setAvailable] = useState<boolean | null>(null)
+  const [shopId, setShopId] = useState<string | null>(null)
+  const { shops, hasMultipleShops } = useShops(business?.id ?? '')
+  const keyboardHeight = useKeyboardHeight(visible)
+  const keyboardLift =
+    keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0
+  const topSafeGap = insets.top + 8
+  const sheetMaxHeight =
+    keyboardLift > 0
+      ? Math.max(240, windowHeight - keyboardLift - topSafeGap)
+      : Math.min(windowHeight * 0.9, windowHeight - topSafeGap)
 
   useEffect(() => {
     if (!visible || !business?.id || username.trim().length < 3) {
@@ -161,6 +181,7 @@ function AddShopkeeperModal({
     setConfirmPassword('')
     setErrors({})
     setAvailable(null)
+    setShopId(null)
   }
 
   const save = async () => {
@@ -185,6 +206,10 @@ function AddShopkeeperModal({
     }
     if (available === false) {
       setErrors({ username: 'This username is already taken' })
+      return
+    }
+    if (hasMultipleShops && !shopId) {
+      setErrors({ shopId: 'Select the shop this staff member works at' })
       return
     }
 
@@ -215,6 +240,7 @@ function AddShopkeeperModal({
           full_name: cleanName,
           phone: phone.trim() || null,
           receipt_suffix: normalizedSuffix,
+          shop_id: hasMultipleShops ? shopId : null,
           is_active: true,
           created_by: user?.id ?? null,
         })
@@ -227,7 +253,7 @@ function AddShopkeeperModal({
         Alert.alert(
           isLimitError ? 'Staff limit reached' : 'Could not add staff member',
           isLimitError
-            ? 'Your plan does not allow more staff members. Upgrade to Pro+ to add up to 5.'
+            ? 'Upgrade to Pro+ for up to 5 staff, extra shops, and cut-to-order stock.'
             : msg,
         )
         return
@@ -243,6 +269,7 @@ function AddShopkeeperModal({
           record.fullName = cleanName
           record.receiptSuffix = normalizedSuffix
           record.phone = phone.trim() || null
+          record.shopId = hasMultipleShops ? shopId : null
           record.isActive = true
           ;(record._raw as Record<string, unknown>).created_at = now
           ;(record._raw as Record<string, unknown>).updated_at = now
@@ -283,13 +310,33 @@ function AddShopkeeperModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.modalRoot}>
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-          <View style={styles.handle} />
-          <Text style={styles.modalTitle}>Add Staff Member</Text>
-          <Text style={styles.modalSubtitle}>Create login credentials for your staff</Text>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={insets.bottom}
+      >
+        <View style={styles.modalRoot}>
+          <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} />
+          <View
+            style={[
+              styles.sheet,
+              {
+                paddingBottom: Math.max(insets.bottom, 16),
+                maxHeight: sheetMaxHeight,
+              },
+              keyboardLift > 0 && { marginBottom: keyboardLift },
+            ]}
+          >
+            <View style={styles.handle} />
+            <Text style={styles.modalTitle}>Add Staff Member</Text>
+            <Text style={styles.modalSubtitle}>Create login credentials for your staff</Text>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              automaticallyAdjustKeyboardInsets
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              contentContainerStyle={styles.sheetScrollContent}
+            >
             <View style={styles.fields}>
               <Input label="Full Name" placeholder="e.g. Farai Moyo" value={fullName} onChangeText={setFullName} autoCapitalize="words" error={errors.fullName} leftIcon={<Ionicons name="person-outline" size={18} color="#5A6A8A" />} />
               <Input label="Username" hint="Lowercase, no spaces." placeholder="e.g. farai.moyo" value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} error={errors.username} leftIcon={<Ionicons name="at-outline" size={18} color="#5A6A8A" />} />
@@ -310,6 +357,34 @@ function AddShopkeeperModal({
                 leftIcon={<Ionicons name="receipt-outline" size={18} color="#5A6A8A" />}
               />
               <Input label="Phone Number (optional)" hint="For your records only" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+              {hasMultipleShops ? (
+                <View>
+                  <Text style={styles.shopPickerLabel}>Shop</Text>
+                  <Text style={styles.shopPickerHint}>Required when you have more than one establishment</Text>
+                  {shops.map((shop) => {
+                    const selected = shopId === shop.id
+                    return (
+                      <TouchableOpacity
+                        key={shop.id}
+                        style={[styles.shopOption, selected && styles.shopOptionSelected]}
+                        onPress={() => {
+                          setShopId(shop.id)
+                          setErrors((prev) => ({ ...prev, shopId: '' }))
+                        }}
+                      >
+                        <View style={styles.flex}>
+                          <Text style={[styles.shopOptionName, selected && styles.shopOptionNameSelected]}>
+                            {shop.name}
+                          </Text>
+                          <Text style={styles.shopOptionAddress}>{shop.address}</Text>
+                        </View>
+                        {selected ? <Ionicons name="checkmark-circle" size={18} color="#0047AB" /> : null}
+                      </TouchableOpacity>
+                    )
+                  })}
+                  {errors.shopId ? <Text style={styles.shopError}>{errors.shopId}</Text> : null}
+                </View>
+              ) : null}
               <Input label="Password" hint="Minimum 8 characters" value={password} onChangeText={setPassword} secureTextEntry error={errors.password} leftIcon={<Ionicons name="lock-closed-outline" size={18} color="#5A6A8A" />} />
               <Input label="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry error={errors.confirmPassword} />
             </View>
@@ -318,8 +393,9 @@ function AddShopkeeperModal({
               <Button label="Cancel" onPress={onClose} variant="secondary" disabled={saving} />
             </View>
           </ScrollView>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   )
 }
@@ -345,6 +421,8 @@ function DetailModal({
   const [receiptSuffixDraft, setReceiptSuffixDraft] = useState('')
   const [receiptSuffixErr, setReceiptSuffixErr] = useState('')
   const [receiptSuffixSaving, setReceiptSuffixSaving] = useState(false)
+  const [shopSaving, setShopSaving] = useState(false)
+  const { shops, hasMultipleShops } = useShops(staff?.businessId ?? '')
 
   const loadDevices = useCallback(async () => {
     if (!staff) return
@@ -422,6 +500,40 @@ function DetailModal({
       Alert.alert('Saved', 'Receipt suffix updated. Staff may need to reopen the app to sell if already logged in.')
     } finally {
       setReceiptSuffixSaving(false)
+    }
+  }
+
+  const saveShop = async (nextShopId: string) => {
+    if (!staff || !hasMultipleShops) return
+    if (staff.shopId === nextShopId) return
+    setShopSaving(true)
+    try {
+      const { error } = await supabase
+        .from('shopkeepers')
+        .update({ shop_id: nextShopId })
+        .eq('id', staff.supabaseId)
+      if (error) {
+        Alert.alert('Could not update shop', error.message)
+        return
+      }
+      if (database) {
+        try {
+          const record = await database.get<ShopkeeperModel>('shopkeepers').find(staff.id)
+          await database.write(async () => {
+            await record.update((r) => {
+              r.shopId = nextShopId
+              ;(r._raw as Record<string, unknown>).updated_at = Date.now()
+            })
+          })
+        } catch {
+          /* no local mirror row */
+        }
+      }
+      const next: Shopkeeper = { ...staff, shopId: nextShopId, updatedAt: Date.now() }
+      onStaffUpdated?.(next)
+      onChanged()
+    } finally {
+      setShopSaving(false)
     }
   }
 
@@ -526,6 +638,32 @@ function DetailModal({
             <SettingsRow icon="calendar-outline" label="Added" value={staff ? formatDate(staff.createdAt) : '—'} showChevron={false} />
             <SettingsRow icon="shield-checkmark-outline" label="Status" value={staff?.isActive ? 'Active' : 'Inactive'} showChevron={false} />
 
+            {hasMultipleShops ? (
+              <>
+                <Text style={styles.sectionMiniTitle}>Shop</Text>
+                <Text style={styles.muted}>This staff member can only record sales for the assigned shop.</Text>
+                {shops.map((shop) => {
+                  const selected = staff?.shopId === shop.id
+                  return (
+                    <TouchableOpacity
+                      key={shop.id}
+                      style={[styles.shopOption, selected && styles.shopOptionSelected]}
+                      disabled={shopSaving}
+                      onPress={() => void saveShop(shop.id)}
+                    >
+                      <View style={styles.flex}>
+                        <Text style={[styles.shopOptionName, selected && styles.shopOptionNameSelected]}>
+                          {shop.name}
+                        </Text>
+                        <Text style={styles.shopOptionAddress}>{shop.address}</Text>
+                      </View>
+                      {selected ? <Ionicons name="checkmark-circle" size={18} color="#0047AB" /> : null}
+                    </TouchableOpacity>
+                  )
+                })}
+              </>
+            ) : null}
+
             <Text style={styles.sectionMiniTitle}>Receipt numbers</Text>
             <Text style={styles.muted}>
               Shown on receipts as RCP-…-SUFFIX so each staff member has their own sequence.
@@ -592,6 +730,7 @@ function ManageStaffScreen() {
   const business = useAuthStore((s) => s.business)
   const activeRole = useAuthStore((s) => s.activeRole)
   const { planTier, maxShopkeepers } = useSubscription()
+  const { shopById } = useShops(business?.id ?? '')
   const [staff, setStaff] = useState<Shopkeeper[]>([])
   const [deviceCounts, setDeviceCounts] = useState<Record<string, number>>({})
   const [addVisible, setAddVisible] = useState(false)
@@ -605,7 +744,7 @@ function ManageStaffScreen() {
     if (isAtLimit) {
       Alert.alert(
         'Staff limit reached',
-        `Your ${planLabel(planTier)} plan allows up to ${maxShopkeepers} staff member${maxShopkeepers === 1 ? '' : 's'}. Upgrade to Pro+ to add up to 5 staff members.`,
+        `Your ${planLabel(planTier)} plan includes you plus ${maxShopkeepers} staff account${maxShopkeepers === 1 ? '' : 's'}. Upgrade to Pro+ for up to 5 staff, extra shops, and cut-to-order stock.`,
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Upgrade to Pro+', onPress: () => router.push('/(app)/settings/upgrade-plan') },
@@ -641,6 +780,7 @@ function ManageStaffScreen() {
         fullName: row.full_name,
         receiptSuffix: String(row.receipt_suffix ?? '').trim().toUpperCase(),
         phone: row.phone ?? undefined,
+        shopId: row.shop_id ?? null,
         isActive: row.is_active === true,
         createdAt: new Date(row.created_at).getTime(),
         updatedAt: new Date(row.updated_at ?? row.created_at).getTime(),
@@ -730,7 +870,7 @@ function ManageStaffScreen() {
                     <Ionicons name="arrow-up-circle-outline" size={14} color="#FFFFFF" />
                     <Text style={styles.limitUpgradeBtnText}>Upgrade to Pro+</Text>
                   </TouchableOpacity>
-                  <Text style={styles.limitUpgradeHint}>for up to 5 staff members</Text>
+                  <Text style={styles.limitUpgradeHint}>5 staff, extra shops & cut-to-order</Text>
                 </View>
               )}
             </Card>
@@ -750,6 +890,7 @@ function ManageStaffScreen() {
           <StaffCard
             staff={item}
             deviceCount={deviceCounts[item.supabaseId] ?? 0}
+            shopLabel={item.shopId && shopById[item.shopId] ? formatShopLabel(shopById[item.shopId]) : undefined}
             onPress={() => setSelected(item)}
           />
         )}
@@ -815,9 +956,27 @@ const styles = StyleSheet.create({
   staffName: { fontSize: 15, fontWeight: '500', color: '#0D1B3E' },
   username: { fontSize: 13, color: '#5A6A8A', marginTop: 2 },
   receiptSuffixLabel: { fontSize: 12, color: '#5A6A8A', marginTop: 4 },
+  shopPickerLabel: { fontSize: 13, fontWeight: '600', color: '#0D1B3E' },
+  shopPickerHint: { fontSize: 12, color: '#5A6A8A', marginTop: 2, marginBottom: 8 },
+  shopOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#DDE3F0',
+    marginBottom: 8,
+  },
+  shopOptionSelected: { borderColor: '#0047AB', backgroundColor: '#F5F8FF' },
+  shopOptionName: { fontSize: 14, fontWeight: '600', color: '#0D1B3E' },
+  shopOptionNameSelected: { color: '#0047AB' },
+  shopOptionAddress: { fontSize: 12, color: '#5A6A8A', marginTop: 2 },
+  shopError: { fontSize: 12, color: '#C0152A', marginTop: 2 },
   devicesRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   devicesText: { marginLeft: 4, fontSize: 12, color: '#5A6A8A' },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  kav: { flex: 1 },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, maxHeight: '90%' },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#DDE3F0', alignSelf: 'center', marginTop: 12, marginBottom: 16 },
@@ -827,6 +986,7 @@ const styles = StyleSheet.create({
   preview: { color: '#0047AB', fontSize: 12, marginTop: -8 },
   previewBad: { color: '#C0152A' },
   modalActions: { gap: 10, marginTop: 20, marginBottom: 8 },
+  sheetScrollContent: { paddingBottom: 12 },
   sectionMiniTitle: { fontSize: 12, fontWeight: '700', color: '#5A6A8A', marginTop: 18, marginBottom: 8, textTransform: 'uppercase' },
   muted: { fontSize: 12, color: '#5A6A8A' },
   deviceRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#F4F6FB' },

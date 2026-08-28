@@ -25,11 +25,14 @@ import { ScreenHeader } from '../../../src/components/layout'
 import { AddProductTutorialModal } from '../../../src/components/inventory/AddProductTutorialModal'
 import { ProductCard } from '../../../src/components/products/ProductCard'
 import { SortModal, type SortOption } from '../../../src/components/products/SortModal'
+import { ShopPickerBar } from '../../../src/components/shops/ShopPickerBar'
 import { EmptyState } from '../../../src/components/ui'
+import { useActiveShop } from '../../../src/hooks/useActiveShop'
 import { useProducts } from '../../../src/hooks/useProducts'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useMoneyFormat } from '../../../src/hooks/useMoneyFormat'
 import { pullShopkeeperCloudSnapshotFast } from '../../../src/lib/shopkeeperAuth'
+import { formatShopLabel } from '../../../src/lib/shops'
 import { useShopkeeperStockAccessGate } from '../../../src/hooks/useShopkeeperStockAccessGate'
 import { StockAccessPendingModal } from '../../../src/components/modals/StockAccessPendingModal'
 import { useAuthStore } from '../../../src/stores/authStore'
@@ -66,7 +69,18 @@ export default function InventoryScreen() {
     shopkeeperName,
   } = useShopkeeperStockAccessGate()
 
-  const { products, isLoading, refetch } = useProducts(businessId)
+  const {
+    shops,
+    shopId,
+    activeShop,
+    hasMultipleShops,
+    shopsLoading,
+    setSelectedShopId,
+  } = useActiveShop()
+  const { products, isLoading, refetch } = useProducts(businessId, {
+    shopId,
+    scopedToShop: shopsLoading || hasMultipleShops,
+  })
 
   useQuietOfflineRefreshOnFocus(
     useCallback(() => {
@@ -104,6 +118,11 @@ export default function InventoryScreen() {
   const [showSortModal, setShowSortModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
+
+  useEffect(() => {
+    setSelectedCategory('All')
+    setSearchText('')
+  }, [shopId])
 
   // Show the add-product tutorial once when the owner has no products yet.
   useEffect(() => {
@@ -282,12 +301,16 @@ export default function InventoryScreen() {
       <EmptyState
         icon="cube-outline"
         title="No products yet"
-        subtitle="Add your first product to start tracking stock and recording sales"
+        subtitle={
+          hasMultipleShops && activeShop
+            ? `These products are only for ${formatShopLabel(activeShop)}. Add a product to this shop’s catalog.`
+            : 'Add your first product to start tracking stock and recording sales'
+        }
         actionLabel={isShopkeeper ? undefined : 'Add Product'}
         onAction={isShopkeeper ? undefined : navigateToAdd}
       />
     )
-  }, [isShopkeeper, searchText, selectedCategory, navigateToAdd])
+  }, [isShopkeeper, searchText, selectedCategory, navigateToAdd, hasMultipleShops, activeShop])
 
   // ---------------------------------------------------------------------------
   // Render
@@ -305,6 +328,16 @@ export default function InventoryScreen() {
           onPress: () => setShowSortModal(true),
         }}
       />
+
+      {hasMultipleShops ? (
+        <ShopPickerBar
+          shops={shops}
+          selectedId={shopId}
+          onSelect={setSelectedShopId}
+          kicker="Stock at"
+          readOnly={isShopkeeper}
+        />
+      ) : null}
 
       {/* Action row: receive stock + add product + adjust */}
       <View style={styles.actionRow}>

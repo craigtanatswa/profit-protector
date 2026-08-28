@@ -21,6 +21,8 @@ interface ProductPickerModalProps {
   onClose: () => void
   onSelect: (product: Product) => void
   businessId: string
+  shopId?: string | null
+  scopedToShop?: boolean
 }
 
 export function ProductPickerModal({
@@ -28,9 +30,11 @@ export function ProductPickerModal({
   onClose,
   onSelect,
   businessId,
+  shopId = null,
+  scopedToShop = false,
 }: ProductPickerModalProps) {
   const [search, setSearch] = useState('')
-  const { products } = useProducts(businessId)
+  const { products } = useProducts(businessId, { shopId, scopedToShop })
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()

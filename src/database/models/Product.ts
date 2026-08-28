@@ -14,6 +14,7 @@ export default class Product extends Model {
   @field('stock_qty') stockQty!: number
   @field('low_stock_threshold') lowStockThreshold!: number
   @field('is_active') isActive!: boolean
+  @field('shop_id') shopId!: string | null
   @field('supabase_id') supabaseId!: string | null
   @readonly @date('created_at') createdAt!: Date
   @date('updated_at') updatedAt!: Date

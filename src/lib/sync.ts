@@ -12,6 +12,7 @@ import type PaymentRecord from '../database/models/PaymentRecord'
 import type ActivityLog from '../database/models/ActivityLog'
 import { wmRaw } from './watermelonRaw'
 import { normalizeTrackingMode } from './cutProducts'
+import { fetchRemoteShops, mergeRemoteShopsIntoWatermelon } from './shops'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -95,6 +96,7 @@ export type SupabaseProductRow = {
   stock_qty: number
   low_stock_threshold: number
   is_active: boolean
+  shop_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -142,6 +144,7 @@ export async function mergeRemoteProductsIntoWatermelon(
             r.stockQty = remote.stock_qty
             r.lowStockThreshold = remote.low_stock_threshold
             r.isActive = remote.is_active
+            r.shopId = remote.shop_id ?? null
             r.supabaseId = remote.id
             wmRaw(r).updated_at = remoteMs
           }),
@@ -161,6 +164,7 @@ export async function mergeRemoteProductsIntoWatermelon(
           r.stockQty = remote.stock_qty
           r.lowStockThreshold = remote.low_stock_threshold
           r.isActive = remote.is_active
+          r.shopId = remote.shop_id ?? null
           r.supabaseId = remote.id
           wmRaw(r).created_at = new Date(remote.created_at).getTime()
           wmRaw(r).updated_at = remoteMs
@@ -191,6 +195,7 @@ export type SupabaseSaleRow = {
   note: string | null
   created_at: string
   created_by_shopkeeper_id?: string | null
+  shop_id?: string | null
 }
 
 export type SupabaseSaleItemRow = {
@@ -235,6 +240,7 @@ export async function mergeRemoteSalesAndItemsIntoWatermelon(
           s.receiptNumber = remoteSale.receipt_number
           s.note = remoteSale.note
           s.createdByShopkeeperId = remoteSale.created_by_shopkeeper_id ?? null
+          s.shopId = remoteSale.shop_id ?? null
           s.supabaseId = remoteSale.id
           wmRaw(s).created_at = new Date(remoteSale.created_at).getTime()
         })
@@ -362,6 +368,7 @@ async function syncProducts(
         stock_qty: r.stockQty,
         low_stock_threshold: r.lowStockThreshold,
         is_active: r.isActive,
+        shop_id: r.shopId ?? null,
         created_at: toISO(wmRaw(r).created_at as number),
         updated_at: toISO(wmRaw(r).updated_at as number),
       }))
@@ -663,6 +670,7 @@ async function syncSales(
         note: sale.note,
         created_at: toISO(wmRaw(sale).created_at as number),
         created_by_shopkeeper_id: sale.createdByShopkeeperId ?? null,
+        shop_id: sale.shopId ?? null,
       }
 
       const { error: saleError } = await supabase
@@ -741,6 +749,7 @@ async function syncSales(
               s.receiptNumber = remoteSale.receipt_number
               s.note = remoteSale.note
               s.createdByShopkeeperId = remoteSale.created_by_shopkeeper_id ?? null
+              s.shopId = remoteSale.shop_id ?? null
               s.supabaseId = remoteSale.id
               wmRaw(s).created_at = new Date(remoteSale.created_at).getTime()
             })
@@ -1299,6 +1308,20 @@ async function syncActivityLogs(
 // Main sync orchestrator
 // ---------------------------------------------------------------------------
 
+async function syncShops(businessId: string): Promise<TableResult> {
+  try {
+    const remote = await fetchRemoteShops(businessId)
+    await mergeRemoteShopsIntoWatermelon(businessId, remote)
+    return { pushed: 0, pulled: remote.length }
+  } catch (e) {
+    return {
+      pushed: 0,
+      pulled: 0,
+      error: `shops: ${e instanceof Error ? e.message : String(e)}`,
+    }
+  }
+}
+
 export async function syncAll(businessId: string): Promise<SyncResult> {
   if (!database) {
     return {
@@ -1318,6 +1341,7 @@ export async function syncAll(businessId: string): Promise<SyncResult> {
   // Phase 1: mutually independent tables — run in parallel for speed.
   // Each uses pull-first LWW (products, customers) or create-only append (sales, movements, logs).
   const phase1 = await Promise.allSettled([
+    syncShops(businessId),
     syncProducts(businessId, lastSyncedAt),
     syncCustomers(businessId, lastSyncedAt),
     syncSales(businessId, lastSyncedAt),

@@ -32,6 +32,8 @@ export interface Product {
   stockQty: number
   lowStockThreshold: number
   isActive: boolean
+  /** Catalog location. Null until the business has more than one shop. */
+  shopId?: string | null
   createdAt: number
   updatedAt: number
 }
@@ -46,7 +48,21 @@ export interface Sale {
   receiptNumber: string
   /** Present when the sale was recorded by a shopkeeper staff login */
   createdByShopkeeperId?: string | null
+  /** Establishment that recorded this sale. Null when the business has one implicit shop. */
+  shopId?: string | null
   createdAt: number
+}
+
+export interface Shop {
+  id: string
+  businessId: string
+  /** Auto name, e.g. "Shop 1" */
+  name: string
+  /** Short address used to tell shops apart */
+  address: string
+  shopNumber: number
+  createdAt: number
+  updatedAt: number
 }
 
 export interface SaleItem {
@@ -177,6 +193,10 @@ export interface Shopkeeper {
   phone?: string
   /** Unique per business; appended to auto receipt numbers for this staff member */
   receiptSuffix: string
+  /** Assigned establishment when the owner has more than one shop */
+  shopId?: string | null
+  /** Display label from login/session, e.g. "Shop 1 · Avondale" */
+  shopLabel?: string | null
   isActive: boolean
   createdAt: number
   updatedAt: number
@@ -211,6 +231,8 @@ export type ActivityAction =
   | 'device_denied'
   | 'stock_access_approved'
   | 'stock_access_denied'
+  | 'shop_added'
+  | 'shop_edited'
   | 'business_profile_updated'
   | 'password_changed'
   | 'data_exported'
@@ -225,6 +247,7 @@ export type EntityType =
   | 'customer'
   | 'shopkeeper'
   | 'business'
+  | 'shop'
   | 'report'
   | 'account'
   | 'stock_movement'

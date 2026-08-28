@@ -10,6 +10,8 @@ export interface PlanConfig {
   maxShopkeepers: number
   /** Cut-from-piece products (meat, cloth) sold by measure */
   canUseCutProducts: boolean
+  /** Maximum number of named shop locations (0 extra shops = one implicit shop) */
+  maxShops: number
   tagline: string
 }
 
@@ -22,7 +24,8 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
     priceCents: 20, // TEST: $0.20 — restore 500 before Play Store release
     maxShopkeepers: 1,
     canUseCutProducts: false,
-    tagline: 'Perfect for sole traders',
+    maxShops: 1,
+    tagline: 'One shop. Packed goods. You plus one helper.',
   },
   pro_plus: {
     tier: 'pro_plus',
@@ -32,9 +35,18 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
     priceCents: 30, // TEST: $0.30 — restore 1000 before Play Store release
     maxShopkeepers: 5,
     canUseCutProducts: true,
-    tagline: 'For businesses with staff',
+    maxShops: 5,
+    tagline: 'Extra shops, a team, and cut-to-order stock.',
   },
 }
+
+/** What Pro covers, for paywall and upgrade copy. */
+export const PRO_VALUE =
+  'one shop of packed goods — bottles, bags, and similar — with you plus one staff account'
+
+/** What Pro+ unlocks over Pro, for paywall and upgrade copy. */
+export const PRO_PLUS_VALUE =
+  'up to 5 shops with their own stock, up to 5 staff assigned per shop, and cut-to-order items such as meat and cloth'
 
 export function getMaxShopkeepers(tier: PlanTier | null | undefined): number {
   if (!tier) return PLANS.pro.maxShopkeepers
@@ -43,6 +55,21 @@ export function getMaxShopkeepers(tier: PlanTier | null | undefined): number {
 
 /** Trial unlocks Pro+ features so shops can evaluate cut-to-order stock. */
 export function canUseCutProducts(params: {
+  planTier?: PlanTier | null
+  status?: string | null
+}): boolean {
+  if (params.status === 'trial') return true
+  if (params.status !== 'active' && params.status !== 'grace') return false
+  return params.planTier === 'pro_plus'
+}
+
+export function getMaxShops(tier: PlanTier | null | undefined): number {
+  if (!tier) return PLANS.pro.maxShops
+  return PLANS[tier]?.maxShops ?? PLANS.pro.maxShops
+}
+
+/** Trial unlocks Pro+ features so shops can evaluate multiple locations. */
+export function canUseMultipleShops(params: {
   planTier?: PlanTier | null
   status?: string | null
 }): boolean {

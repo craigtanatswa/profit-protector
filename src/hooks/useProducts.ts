@@ -5,7 +5,7 @@ import type { Product } from '../types'
 import type ProductModel from '../database/models/Product'
 import { normalizeTrackingMode } from '../lib/cutProducts'
 
-function mapProductRecord(record: ProductModel): Product {
+export function mapProductRecord(record: ProductModel): Product {
   return {
     id: record.id,
     businessId: record.businessId,
@@ -18,6 +18,7 @@ function mapProductRecord(record: ProductModel): Product {
     stockQty: record.stockQty,
     lowStockThreshold: record.lowStockThreshold,
     isActive: record.isActive,
+    shopId: record.shopId ?? null,
     createdAt: record.createdAt instanceof Date ? record.createdAt.getTime() : Date.now(),
     updatedAt: record.updatedAt instanceof Date ? record.updatedAt.getTime() : Date.now(),
   }
@@ -29,48 +30,60 @@ export async function getProductById(id: string): Promise<Product> {
   return mapProductRecord(record)
 }
 
+export type UseProductsOptions = {
+  /** When set, only products in this shop's catalog. */
+  shopId?: string | null
+  /**
+   * When true, do not load the full business catalog if shopId is missing.
+   * Use while the active shop is still resolving.
+   */
+  scopedToShop?: boolean
+}
+
 /**
  * useProducts
  *
  * Subscribes to the products collection via WatermelonDB's `observe()`.
- * The subscription is permanent for the lifetime of a given businessId —
- * it is never torn down by `refetch()` calls, so there is no race window
- * where a background-sync write could be silently missed.
- *
- * When WatermelonDB is updated (e.g. by `mergeRemoteProductsIntoWatermelon`
- * after a sync), `observe()` fires immediately and `setProducts` pushes new
- * data into React state, re-rendering all subscribers without any manual
- * refresh trigger.
- *
- * `refetch()` is intentionally a no-op — the live observable already handles
- * all updates. Call sites that still invoke refetch() after a pull are safe
- * to leave as-is; they just become a harmless extra call.
+ * Optionally scoped to one shop catalog when the business has multiple locations.
  */
-export function useProducts(businessId: string) {
+export function useProducts(businessId: string, options?: UseProductsOptions) {
+  const shopId = options?.shopId ?? null
+  const scopedToShop = options?.scopedToShop === true
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const prevBusinessIdRef = useRef<string | undefined>(undefined)
+  const prevKeyRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
     if (!businessId || !database) {
       setProducts([])
       setIsLoading(false)
-      prevBusinessIdRef.current = undefined
+      prevKeyRef.current = undefined
       return
     }
 
-    const businessChanged = prevBusinessIdRef.current !== businessId
-    prevBusinessIdRef.current = businessId
-    if (businessChanged) setIsLoading(true)
+    if (scopedToShop && !shopId) {
+      setProducts([])
+      setIsLoading(false)
+      return
+    }
+
+    const key = `${businessId}:${shopId ?? ''}`
+    if (prevKeyRef.current !== key) {
+      prevKeyRef.current = key
+      setIsLoading(true)
+    }
+
+    const clauses = [
+      Q.where('business_id', businessId),
+      Q.where('is_active', true),
+      Q.sortBy('name', Q.asc),
+    ]
+    if (shopId) clauses.splice(2, 0, Q.where('shop_id', shopId))
 
     const subscription = database
       .get<ProductModel>('products')
-      .query(
-        Q.where('business_id', businessId),
-        Q.where('is_active', true),
-        Q.sortBy('name', Q.asc),
-      )
+      .query(...clauses)
       .observe()
       .subscribe({
         next: (records) => {
@@ -84,10 +97,8 @@ export function useProducts(businessId: string) {
       })
 
     return () => subscription.unsubscribe()
-  }, [businessId]) // No refreshTick — observe() is always live and fires on every write.
+  }, [businessId, shopId, scopedToShop])
 
-  // No-op: the live observable already fires on every WatermelonDB write.
-  // Kept for API compatibility with existing call sites.
   const refetch = useCallback(() => {}, [])
 
   return { products, isLoading, error, refetch }

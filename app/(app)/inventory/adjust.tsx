@@ -21,11 +21,13 @@ import * as Crypto from 'expo-crypto'
 
 import { KeyboardAvoidingWrapper, ScreenHeader } from '../../../src/components/layout'
 import { ProductPickerModal } from '../../../src/components/inventory/ProductPickerModal'
+import { ShopPickerBar } from '../../../src/components/shops/ShopPickerBar'
 import { Card, Input } from '../../../src/components/ui'
 import { database } from '../../../src/database'
 import type ProductModel from '../../../src/database/models/Product'
 import type StockMovementModel from '../../../src/database/models/StockMovement'
 import { formatDate } from '../../../src/lib/formatters'
+import { useActiveShop } from '../../../src/hooks/useActiveShop'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { getProductById } from '../../../src/hooks/useProducts'
 import type { AdjustmentReason, Product } from '../../../src/types'
@@ -164,6 +166,13 @@ export default function AdjustStockScreen() {
   const activeRole = useAuthStore((s) => s.activeRole)
   const isShopkeeper = activeRole === 'shopkeeper'
   const {
+    shops,
+    shopId,
+    hasMultipleShops,
+    shopsLoading,
+    setSelectedShopId,
+  } = useActiveShop()
+  const {
     ensureStockAccess,
     pendingVisible,
     pendingAccessType,
@@ -273,6 +282,13 @@ export default function AdjustStockScreen() {
     setValue('productId', '')
     setValue('qty', '')
   }
+
+  useEffect(() => {
+    if (!selectedProduct || !shopId) return
+    if (selectedProduct.shopId && selectedProduct.shopId !== shopId) {
+      handleClearProduct()
+    }
+  }, [shopId])
 
   function handleSelectReason(reason: AdjustmentReason) {
     setSelectedReason(reason)
@@ -536,6 +552,16 @@ export default function AdjustStockScreen() {
         leftAction={{ icon: 'arrow-back-outline', onPress: () => router.back() }}
         showBorder
       />
+
+      {hasMultipleShops ? (
+        <ShopPickerBar
+          shops={shops}
+          selectedId={shopId}
+          onSelect={setSelectedShopId}
+          kicker="Stock at"
+          readOnly={isShopkeeper}
+        />
+      ) : null}
 
       <View style={styles.body}>
         <KeyboardAvoidingWrapper>
@@ -909,6 +935,8 @@ export default function AdjustStockScreen() {
       <ProductPickerModal
         visible={showProductPicker}
         businessId={business?.id ?? ''}
+        shopId={shopId}
+        scopedToShop={shopsLoading || hasMultipleShops}
         onSelect={handleSelectProduct}
         onClose={() => setShowProductPicker(false)}
       />

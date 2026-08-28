@@ -30,7 +30,7 @@ import {
   initiateOnemoneyPayment,
   pollPaymentStatus,
 } from '../../../src/lib/subscription'
-import { formatPlanPrice } from '../../../src/lib/plans'
+import { formatPlanPrice, PRO_PLUS_VALUE } from '../../../src/lib/plans'
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -332,7 +332,7 @@ export default function UpgradePlanScreen() {
           </View>
           <Text style={styles.successTitle}>You're on Pro+!</Text>
           <Text style={styles.successBody}>
-            Your plan has been upgraded. You can now add up to 5 staff members and record cut-to-order stock such as meat and cloth.
+            You can now run {PRO_PLUS_VALUE}.
           </Text>
           <View style={styles.successCard}>
             <Text style={styles.successCardLabel}>Next renewal</Text>
@@ -519,12 +519,16 @@ export default function UpgradePlanScreen() {
           {/* Feature highlight */}
           <View style={styles.featureBlock}>
             <View style={styles.featureRow}>
-              <Ionicons name="people-outline" size={18} color={C.purple} />
-              <Text style={styles.featureText}>Unlock up to 5 staff accounts</Text>
+              <Ionicons name="storefront-outline" size={18} color={C.purple} />
+              <Text style={styles.featureText}>Up to 5 shops — each with its own stock and sales</Text>
             </View>
             <View style={styles.featureRow}>
               <Ionicons name="cut-outline" size={18} color={C.purple} />
-              <Text style={styles.featureText}>Cut-to-order stock (meat, cloth)</Text>
+              <Text style={styles.featureText}>Cut-to-order stock for meat, cloth, and similar</Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="people-outline" size={18} color={C.purple} />
+              <Text style={styles.featureText}>Up to 5 staff accounts, assigned to a shop</Text>
             </View>
           </View>
 

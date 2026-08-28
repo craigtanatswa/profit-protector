@@ -21,12 +21,16 @@ import type SaleItemModel from '../../../src/database/models/SaleItem'
 import type CustomerModel from '../../../src/database/models/Customer'
 import type CreditSaleModel from '../../../src/database/models/CreditSale'
 import type PaymentRecordModel from '../../../src/database/models/PaymentRecord'
+import { useShops } from '../../../src/hooks/useShops'
+import { formatShopLabel } from '../../../src/lib/shops'
 
 export default function SaleDetailScreen() {
   const router = useRouter()
   const { id, showReceipt } = useLocalSearchParams<{ id: string; showReceipt?: string }>()
   const isPostSale = showReceipt === 'true'
   const authBusiness = useAuthStore((state) => state.business)
+  const shopkeeperShopLabel = useAuthStore((s) => s.shopkeeperSession?.shopkeeper.shopLabel)
+  const { shopById } = useShops(authBusiness?.id ?? '')
 
   const [sale, setSale] = useState<Sale | null>(null)
   const [saleItems, setSaleItems] = useState<SaleItem[]>([])
@@ -150,6 +154,11 @@ export default function SaleDetailScreen() {
     recoveryEmailVerified: authBusiness?.recoveryEmailVerified ?? false,
   }
 
+  const shopLabel =
+    sale?.shopId && shopById[sale.shopId]
+      ? formatShopLabel(shopById[sale.shopId])
+      : shopkeeperShopLabel ?? undefined
+
   const handleShare = async () => {
     if (!sale) return
     setIsSharing(true)
@@ -161,6 +170,7 @@ export default function SaleDetailScreen() {
         customer: customer ?? undefined,
         creditPaidCents,
         creditDepositMethod,
+        shopLabel,
       })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong'
@@ -181,6 +191,7 @@ export default function SaleDetailScreen() {
         customer: customer ?? undefined,
         creditPaidCents,
         creditDepositMethod,
+        shopLabel,
       })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong'
@@ -279,6 +290,7 @@ export default function SaleDetailScreen() {
           creditPaidCents={creditPaidCents}
           creditDepositMethod={creditDepositMethod}
           headerLogoUri={headerLogoUri}
+          shopLabel={shopLabel}
         />
 
         {/* Share + Print buttons */}

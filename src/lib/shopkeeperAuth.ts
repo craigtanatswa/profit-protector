@@ -75,6 +75,8 @@ const SK = {
   skCreatedAt: 'pp_sk_sess_sk_created_at',
   skUpdatedAt: 'pp_sk_sess_sk_updated_at',
   skReceiptSuffix: 'pp_sk_sess_sk_receipt_suffix',
+  skShopId: 'pp_sk_sess_sk_shop_id',
+  skShopLabel: 'pp_sk_sess_sk_shop_label',
 } as const
 
 function receiptSuffixFromPayload(sk: Record<string, unknown>): string {
@@ -82,6 +84,18 @@ function receiptSuffixFromPayload(sk: Record<string, unknown>): string {
   return String(raw ?? '')
     .trim()
     .toUpperCase()
+}
+
+function shopIdFromPayload(sk: Record<string, unknown>): string | null {
+  const raw = sk.shopId ?? sk.shop_id
+  const id = String(raw ?? '').trim()
+  return id.length > 0 ? id : null
+}
+
+function shopLabelFromPayload(sk: Record<string, unknown>): string | null {
+  const raw = sk.shopLabel ?? sk.shop_label
+  const label = String(raw ?? '').trim()
+  return label.length > 0 ? label : null
 }
 
 const TOKEN_STORAGE_KEY = SK.token
@@ -199,6 +213,7 @@ export type ShopkeeperSalePushPayload = {
     receipt_number: string
     note: string | null
     created_at: string
+    shop_id?: string | null
   }
   sale_items: Array<{
     id: string
@@ -580,6 +595,7 @@ async function buildShopkeeperSalePayloadFromLocal(
         receipt_number: saleRow.receiptNumber,
         note: saleRow.note ?? null,
         created_at: createdAtIso,
+        shop_id: saleRow.shopId ?? null,
       },
       sale_items: itemRows.map((si) => ({
         id: si.id,
@@ -997,6 +1013,8 @@ async function persistShopkeeperSession(session: ShopkeeperSession): Promise<voi
   await SecureStore.setItemAsync(SK.skCreatedAt, String(sk.createdAt))
   await SecureStore.setItemAsync(SK.skUpdatedAt, String(sk.updatedAt))
   await SecureStore.setItemAsync(SK.skReceiptSuffix, sk.receiptSuffix ?? '')
+  await SecureStore.setItemAsync(SK.skShopId, sk.shopId ?? '')
+  await SecureStore.setItemAsync(SK.skShopLabel, sk.shopLabel ?? '')
   await SecureStore.deleteItemAsync(LEGACY_SESSION_KEY).catch(() => {})
 }
 
@@ -1016,6 +1034,8 @@ function assembleSession(parts: Record<string, string | null>): ShopkeeperSessio
   const skCreatedAtRaw = parts[SK.skCreatedAt]
   const skUpdatedAtRaw = parts[SK.skUpdatedAt]
   const skReceiptSuffixRaw = parts[SK.skReceiptSuffix]
+  const skShopIdRaw = parts[SK.skShopId]
+  const skShopLabelRaw = parts[SK.skShopLabel]
 
   if (
     !token ||
@@ -1051,6 +1071,8 @@ function assembleSession(parts: Record<string, string | null>): ShopkeeperSessio
       fullName: skFullName,
       phone: skPhone && skPhone.length > 0 ? skPhone : undefined,
       receiptSuffix: (skReceiptSuffixRaw ?? '').trim().toUpperCase(),
+      shopId: skShopIdRaw && skShopIdRaw.length > 0 ? skShopIdRaw : null,
+      shopLabel: skShopLabelRaw && skShopLabelRaw.length > 0 ? skShopLabelRaw : null,
       isActive: skIsActiveRaw === '1',
       createdAt,
       updatedAt,
@@ -1117,6 +1139,8 @@ export async function shopkeeperLogin(params: {
         fullName: String(rawShopkeeper.fullName),
         phone: rawShopkeeper.phone ? String(rawShopkeeper.phone) : undefined,
         receiptSuffix: receiptSuffixFromPayload(rawShopkeeper),
+        shopId: shopIdFromPayload(rawShopkeeper),
+        shopLabel: shopLabelFromPayload(rawShopkeeper),
         isActive: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1178,6 +1202,8 @@ export async function resumeShopkeeperAfterApproval(params: {
         fullName: String(rawShopkeeper.fullName),
         phone: rawShopkeeper.phone ? String(rawShopkeeper.phone) : undefined,
         receiptSuffix: receiptSuffixFromPayload(rawShopkeeper),
+        shopId: shopIdFromPayload(rawShopkeeper),
+        shopLabel: shopLabelFromPayload(rawShopkeeper),
         isActive: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1236,12 +1262,27 @@ export async function getStoredShopkeeperSession(): Promise<ShopkeeperSession | 
     const rawSk = data.shopkeeper as Record<string, unknown> | undefined
     if (rawSk && typeof rawSk.id === 'string') {
       const nextSuffix = receiptSuffixFromPayload(rawSk)
-      if (nextSuffix !== sessionOut.shopkeeper.receiptSuffix) {
+      const nextShopId = shopIdFromPayload(rawSk)
+      const nextShopLabel = shopLabelFromPayload(rawSk)
+      const suffixChanged = nextSuffix !== sessionOut.shopkeeper.receiptSuffix
+      const shopChanged =
+        nextShopId !== (sessionOut.shopkeeper.shopId ?? null) ||
+        nextShopLabel !== (sessionOut.shopkeeper.shopLabel ?? null)
+      if (suffixChanged || shopChanged) {
         sessionOut = {
           ...sessionOut,
-          shopkeeper: { ...sessionOut.shopkeeper, receiptSuffix: nextSuffix },
+          shopkeeper: {
+            ...sessionOut.shopkeeper,
+            receiptSuffix: nextSuffix,
+            shopId: nextShopId,
+            shopLabel: nextShopLabel,
+          },
         }
-        await SecureStore.setItemAsync(SK.skReceiptSuffix, nextSuffix)
+        if (suffixChanged) await SecureStore.setItemAsync(SK.skReceiptSuffix, nextSuffix)
+        if (shopChanged) {
+          await SecureStore.setItemAsync(SK.skShopId, nextShopId ?? '')
+          await SecureStore.setItemAsync(SK.skShopLabel, nextShopLabel ?? '')
+        }
       }
     }
 

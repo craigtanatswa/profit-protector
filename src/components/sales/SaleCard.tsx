@@ -12,6 +12,8 @@ interface SaleCardProps {
   onPress: () => void
   /** Owner view: who made this sale. Pass 'Owner' or the shopkeeper's name. */
   staffLabel?: string
+  /** Shown when the business has more than one establishment. */
+  shopLabel?: string
 }
 
 interface PaymentBadgeStyle {
@@ -43,7 +45,7 @@ function formatTime(timestamp: number): string {
   return `${h}:${m}`
 }
 
-export function SaleCard({ sale, saleItems, onPress, staffLabel }: SaleCardProps) {
+export function SaleCard({ sale, saleItems, onPress, staffLabel, shopLabel }: SaleCardProps) {
   const { formatMoney } = useMoneyFormat()
   const badge = PAYMENT_BADGE[sale.paymentMethod] ?? PAYMENT_BADGE.cash_usd
   const borderColor = BORDER_COLOR[sale.paymentMethod] ?? '#0047AB'
@@ -94,6 +96,12 @@ export function SaleCard({ sale, saleItems, onPress, staffLabel }: SaleCardProps
           <Text style={styles.itemCountText}>
             {formatQty(itemCount)} {itemCount === 1 ? 'item' : 'items'}
           </Text>
+          {shopLabel != null && shopLabel.length > 0 && (
+            <View style={styles.staffBadge}>
+              <Ionicons name="storefront-outline" size={11} color="#5A6A8A" />
+              <Text style={styles.staffBadgeText}>{shopLabel}</Text>
+            </View>
+          )}
           {staffLabel != null && (
             <View style={styles.staffBadge}>
               <Ionicons name="person-outline" size={11} color="#5A6A8A" />

@@ -15,6 +15,7 @@ interface ReceiptCardProps {
   creditDepositMethod?: string
   /** Local file URI of optional business logo (same as PDF/print). */
   headerLogoUri?: string | null
+  shopLabel?: string
 }
 
 export function ReceiptCard({
@@ -25,6 +26,7 @@ export function ReceiptCard({
   creditPaidCents = 0,
   creditDepositMethod,
   headerLogoUri,
+  shopLabel,
 }: ReceiptCardProps) {
   const subtotal = saleItems.reduce((sum, item) => sum + lineTotalCents(item.qty, item.unitPriceCents), 0)
   const currency = business.currency || 'USD'
@@ -46,6 +48,7 @@ export function ReceiptCard({
       {/* Receipt meta */}
       <Text style={styles.metaText}>{sale.receiptNumber}</Text>
       <Text style={styles.metaText}>{formatDateTime(sale.createdAt)}</Text>
+      {shopLabel ? <Text style={styles.metaText}>{shopLabel}</Text> : null}
 
       <View style={styles.dashedDivider} />
 

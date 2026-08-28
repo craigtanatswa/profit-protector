@@ -257,17 +257,35 @@ function PlanCard({ tier, selected, onPress }: PlanCardProps) {
       <Text style={planStyles.tagline}>{plan.tagline}</Text>
       <View style={planStyles.divider} />
       <View style={planStyles.featureRow}>
+        <Ionicons name="storefront-outline" size={14} color={selected ? C.primary : C.textSecondary} />
+        <Text style={[planStyles.featureText, selected && planStyles.featureTextSelected]}>
+          {isProPlus
+            ? `Up to ${plan.maxShops} shops, own stock each`
+            : '1 shop — your current location'}
+        </Text>
+      </View>
+      <View style={planStyles.featureRow}>
+        <Ionicons
+          name={isProPlus ? 'cut-outline' : 'cube-outline'}
+          size={14}
+          color={selected ? C.primary : C.textSecondary}
+        />
+        <Text style={[planStyles.featureText, selected && planStyles.featureTextSelected]}>
+          {isProPlus ? 'Cut-to-order (meat, cloth) + packed' : 'Packed items only'}
+        </Text>
+      </View>
+      <View style={planStyles.featureRow}>
         <Ionicons name="people-outline" size={14} color={selected ? C.primary : C.textSecondary} />
         <Text style={[planStyles.featureText, selected && planStyles.featureTextSelected]}>
           {plan.maxShopkeepers === 1
-            ? '1 staff account'
-            : `Up to ${plan.maxShopkeepers} staff accounts`}
+            ? 'You + 1 staff account'
+            : `Up to ${plan.maxShopkeepers} staff, assigned per shop`}
         </Text>
       </View>
       <View style={planStyles.featureRow}>
         <Ionicons name="checkmark-outline" size={14} color={selected ? C.primary : C.textSecondary} />
         <Text style={[planStyles.featureText, selected && planStyles.featureTextSelected]}>
-          All sales, stock & reports
+          Sales, stock, credit & reports
         </Text>
       </View>
       <View style={planStyles.featureRow}>
@@ -276,19 +294,6 @@ function PlanCard({ tier, selected, onPress }: PlanCardProps) {
           Cloud sync & backup
         </Text>
       </View>
-      {isProPlus ? (
-        <View style={planStyles.featureRow}>
-          <Ionicons name="cut-outline" size={14} color={selected ? C.primary : C.textSecondary} />
-          <Text style={[planStyles.featureText, selected && planStyles.featureTextSelected]}>
-            Cut-to-order stock (meat, cloth)
-          </Text>
-        </View>
-      ) : (
-        <View style={planStyles.featureRow}>
-          <Ionicons name="remove-outline" size={14} color={C.textSecondary} />
-          <Text style={planStyles.featureText}>Packed items only</Text>
-        </View>
-      )}
     </TouchableOpacity>
   )
 }
@@ -364,6 +369,7 @@ const planStyles = StyleSheet.create({
     color: C.textSecondary,
     marginTop: 2,
     marginBottom: 10,
+    lineHeight: 16,
   },
   divider: {
     height: 1,
@@ -762,7 +768,7 @@ export default function PaywallScreen() {
           color="rgba(255,255,255,0.9)"
         />
         <Text style={styles.headerTitle}>Profit Protector</Text>
-        <Text style={styles.headerSubtitle}>Keep your business protected</Text>
+        <Text style={styles.headerSubtitle}>One shop, or every shop you run</Text>
       </SafeAreaView>
 
       <KeyboardAvoidingView
@@ -789,15 +795,14 @@ export default function PaywallScreen() {
             </View>
 
             <Text style={styles.expiredBody}>
-              To keep accessing Profit Protector and all your business data,
-              subscribe for just {formatPlanPrice('pro')} per month.
+              Keep your sales, stock, customers, and reports. Then pick the plan
+              that matches how you trade — from {formatPlanPrice('pro')} / month.
             </Text>
 
             {[
-              'All your sales history',
-              'All products and stock records',
-              'All customer records and debts',
-              'All reports and receipts',
+              'Pro — one shop of packed goods, you plus one helper',
+              'Pro+ — extra shops, a team, and cut-to-order stock',
+              'Your history, receipts, and cloud backup stay with you',
             ].map((label) => (
               <View key={label} style={styles.checklistRow}>
                 <Ionicons name="checkmark-circle" size={16} color={C.success} />
@@ -811,6 +816,9 @@ export default function PaywallScreen() {
         {paymentState === 'idle' ? (
           <>
             <Text style={styles.sectionLabel}>Choose your plan</Text>
+            <Text style={styles.planIntro}>
+              Same sales, stock, and backup on both. Pro is one counter of packed goods. Pro+ is extra shops, a team, and items sold by the cut.
+            </Text>
             <View style={[styles.methodGrid, { marginBottom: 8 }]}>
               <View style={styles.methodRow}>
                 <PlanCard
@@ -1127,6 +1135,13 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
     paddingHorizontal: 16,
     marginBottom: 8,
+  },
+  planIntro: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: C.textSecondary,
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
   methodGrid: {
     paddingHorizontal: 16,

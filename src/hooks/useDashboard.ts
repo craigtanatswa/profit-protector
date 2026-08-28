@@ -63,6 +63,7 @@ function mapProductRecord(record: ProductModel): Product {
     stockQty: record.stockQty,
     lowStockThreshold: record.lowStockThreshold,
     isActive: record.isActive,
+    shopId: record.shopId ?? null,
     createdAt: record.createdAt instanceof Date ? record.createdAt.getTime() : Date.now(),
     updatedAt: record.updatedAt instanceof Date ? record.updatedAt.getTime() : Date.now(),
   }
@@ -109,7 +110,14 @@ const EMPTY: Omit<DashboardData, 'isLoading' | 'refetch'> = {
  * so it is safe to call from useFocusEffect or after a sync without risking a
  * dropped-write window.
  */
-export function useDashboard(businessId: string): DashboardData {
+export type UseDashboardOptions = {
+  shopId?: string | null
+  scopedToShop?: boolean
+}
+
+export function useDashboard(businessId: string, options?: UseDashboardOptions): DashboardData {
+  const shopId = options?.shopId ?? null
+  const scopedToShop = options?.scopedToShop === true
   const [isLoading, setIsLoading] = useState(true)
   const [data, setData] = useState<Omit<DashboardData, 'isLoading' | 'refetch'>>(EMPTY)
 
@@ -151,19 +159,42 @@ export function useDashboard(businessId: string): DashboardData {
           now.getDate(),
         ).getTime()
 
+        const waitForShop = scopedToShop && !shopId
+        if (waitForShop) {
+          if (!cancelledRef.current) setIsLoading(true)
+          isFetchingRef.current = false
+          return
+        }
+
+        const todaySaleClauses = [
+          Q.where('business_id', businessId),
+          Q.where('created_at', Q.gte(startOfToday)),
+        ]
+        const productClauses = [
+          Q.where('business_id', businessId),
+          Q.where('is_active', true),
+        ]
+        const recentSaleClauses = [
+          Q.where('business_id', businessId),
+          Q.sortBy('created_at', Q.desc),
+          Q.take(5),
+        ]
+        if (shopId) {
+          todaySaleClauses.splice(1, 0, Q.where('shop_id', shopId))
+          productClauses.splice(1, 0, Q.where('shop_id', shopId))
+          recentSaleClauses.splice(1, 0, Q.where('shop_id', shopId))
+        }
+
         // ── Parallel DB reads ──────────────────────────────────────────────
         const [todaySalesRaw, allProductsRaw, allCustomersRaw, recentSalesRaw] =
           await Promise.all([
             database!
               .get<SaleModel>('sales')
-              .query(
-                Q.where('business_id', businessId),
-                Q.where('created_at', Q.gte(startOfToday)),
-              )
+              .query(...todaySaleClauses)
               .fetch(),
             database!
               .get<ProductModel>('products')
-              .query(Q.where('business_id', businessId), Q.where('is_active', true))
+              .query(...productClauses)
               .fetch(),
             database!
               .get<CustomerModel>('customers')
@@ -171,11 +202,7 @@ export function useDashboard(businessId: string): DashboardData {
               .fetch(),
             database!
               .get<SaleModel>('sales')
-              .query(
-                Q.where('business_id', businessId),
-                Q.sortBy('created_at', Q.desc),
-                Q.take(5),
-              )
+              .query(...recentSaleClauses)
               .fetch(),
           ])
 
@@ -396,7 +423,7 @@ export function useDashboard(businessId: string): DashboardData {
       customersSub.unsubscribe()
       creditSalesSub.unsubscribe()
     }
-  }, [businessId]) // No refreshToken — subscriptions are permanent for a given businessId.
+  }, [businessId, shopId, scopedToShop]) // Recreate when the active shop catalog changes.
 
   // Directly trigger a fetchData pass without recreating subscriptions.
   // Safe to call from useFocusEffect, pull-to-refresh, or after any sync.

@@ -145,5 +145,39 @@ export const migrations = schemaMigrations({
         }),
       ],
     },
+    {
+      toVersion: 13,
+      steps: [
+        createTable({
+          name: 'shops',
+          columns: [
+            { name: 'business_id', type: 'string', isIndexed: true },
+            { name: 'name', type: 'string' },
+            { name: 'address', type: 'string' },
+            { name: 'shop_number', type: 'number' },
+            { name: 'supabase_id', type: 'string', isOptional: true },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        addColumns({
+          table: 'sales',
+          columns: [{ name: 'shop_id', type: 'string', isOptional: true }],
+        }),
+        addColumns({
+          table: 'shopkeepers',
+          columns: [{ name: 'shop_id', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
+    {
+      toVersion: 14,
+      steps: [
+        addColumns({
+          table: 'products',
+          columns: [{ name: 'shop_id', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
   ],
 })

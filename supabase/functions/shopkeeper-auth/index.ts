@@ -25,6 +25,46 @@ function monthWindowValid(startIso: string, endIso: string): boolean {
   return true
 }
 
+function formatShopLabel(name: unknown, address: unknown): string | null {
+  const shopName = String(name ?? '').trim()
+  const shopAddress = String(address ?? '').trim()
+  if (!shopName) return null
+  return shopAddress.length > 0 ? `${shopName} · ${shopAddress}` : shopName
+}
+
+async function shopLabelForId(
+  supabase: ReturnType<typeof createClient>,
+  shopId: unknown,
+): Promise<string | null> {
+  const id = String(shopId ?? '').trim()
+  if (!id) return null
+  const { data } = await supabase
+    .from('shops')
+    .select('name, address')
+    .eq('id', id)
+    .maybeSingle()
+  if (!data) return null
+  return formatShopLabel(data.name, data.address)
+}
+
+function shopkeeperPublic(
+  shopkeeper: Record<string, unknown>,
+  shopLabel: string | null,
+) {
+  return {
+    id: shopkeeper.id,
+    businessId: shopkeeper.business_id,
+    username: shopkeeper.username,
+    fullName: shopkeeper.full_name,
+    phone: shopkeeper.phone,
+    receiptSuffix: String(shopkeeper.receipt_suffix ?? '')
+      .trim()
+      .toUpperCase(),
+    shopId: shopkeeper.shop_id ?? null,
+    shopLabel,
+  }
+}
+
 /** Postgres UUID columns reject "" — use null instead (matches owner sync). */
 function nullableTextId(value: unknown, fallback?: unknown): string | null {
   const primary = value != null ? String(value).trim() : ''
@@ -158,16 +198,10 @@ serve(async (req) => {
       return json({
         status: 'approved',
         sessionToken: token,
-        shopkeeper: {
-          id: shopkeeper.id,
-          businessId: shopkeeper.business_id,
-          username: shopkeeper.username,
-          fullName: shopkeeper.full_name,
-          phone: shopkeeper.phone,
-          receiptSuffix: String(shopkeeper.receipt_suffix ?? '')
-            .trim()
-            .toUpperCase(),
-        },
+        shopkeeper: shopkeeperPublic(
+          shopkeeper as Record<string, unknown>,
+          await shopLabelForId(supabase, shopkeeper.shop_id),
+        ),
         businessId: business.id,
         businessName: business.name,
       })
@@ -204,16 +238,10 @@ serve(async (req) => {
       return json({
         status: 'valid',
         businessId: shopkeeper.business_id,
-        shopkeeper: {
-          id: shopkeeper.id,
-          businessId: shopkeeper.business_id,
-          username: shopkeeper.username,
-          fullName: shopkeeper.full_name,
-          phone: shopkeeper.phone,
-          receiptSuffix: String(shopkeeper.receipt_suffix ?? '')
-            .trim()
-            .toUpperCase(),
-        },
+        shopkeeper: shopkeeperPublic(
+          shopkeeper as Record<string, unknown>,
+          await shopLabelForId(supabase, shopkeeper.shop_id),
+        ),
       })
     }
 
@@ -258,6 +286,16 @@ serve(async (req) => {
         .from('products')
         .select('*')
         .eq('business_id', bizId)
+
+      const catalogShopId =
+        shopkeeper.shop_id != null && String(shopkeeper.shop_id).trim().length > 0
+          ? String(shopkeeper.shop_id)
+          : null
+      if (catalogShopId) {
+        query = query.eq('shop_id', catalogShopId)
+      } else {
+        query = query.is('shop_id', null)
+      }
 
       if (sinceIso !== null) {
         query = query.gt('updated_at', sinceIso)
@@ -407,6 +445,7 @@ serve(async (req) => {
         // from a session context variable that returns "" in the service role context, which
         // fails the uuid cast. Passing the validated shopkeeper UUID avoids the trigger path.
         created_by_shopkeeper_id: canonicalShopkeeperId,
+        shop_id: shopkeeper.shop_id ?? null,
       }
 
       let { error: upSale } = await supabase.from('sales').upsert(row, {
@@ -1202,16 +1241,10 @@ serve(async (req) => {
       return json({
         status: 'approved',
         sessionToken: token,
-        shopkeeper: {
-          id: shopkeeper.id,
-          businessId: shopkeeper.business_id,
-          username: shopkeeper.username,
-          fullName: shopkeeper.full_name,
-          phone: shopkeeper.phone,
-          receiptSuffix: String(shopkeeper.receipt_suffix ?? '')
-            .trim()
-            .toUpperCase(),
-        },
+        shopkeeper: shopkeeperPublic(
+          shopkeeper as Record<string, unknown>,
+          await shopLabelForId(supabase, shopkeeper.shop_id),
+        ),
         businessId: business.id,
         businessName: business.name,
       })

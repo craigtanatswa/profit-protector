@@ -16,6 +16,10 @@ export default function SettingsLayout() {
         options={{ title: 'Manage Staff', headerShown: false }}
       />
       <Stack.Screen
+        name="establishments"
+        options={{ title: 'Shops', headerShown: false }}
+      />
+      <Stack.Screen
         name="activity-log"
         options={{ title: 'Activity Log', headerShown: false }}
       />

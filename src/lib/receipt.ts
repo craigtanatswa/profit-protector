@@ -16,6 +16,7 @@ interface ReceiptParams {
   customer?: Customer
   creditPaidCents?: number
   creditDepositMethod?: string
+  shopLabel?: string
 }
 
 async function getReceiptFooterMessage(business: Business): Promise<string> {
@@ -75,7 +76,7 @@ function buildReceiptHTML(
   logoDataUri: string | null,
   footerMessage: string,
 ): string {
-  const { sale, saleItems, business, customer, creditPaidCents = 0, creditDepositMethod } = params
+  const { sale, saleItems, business, customer, creditPaidCents = 0, creditDepositMethod, shopLabel } = params
   const currency = business.currency || 'USD'
   const zigRate = business.zigRatePerUsd ?? 1
 
@@ -218,6 +219,11 @@ function buildReceiptHTML(
 
   <div class="receipt-meta">${escapeHtml(sale.receiptNumber)}</div>
   <div class="receipt-meta">${escapeHtml(formatDateTime(sale.createdAt))}</div>
+  ${
+    shopLabel
+      ? `<div class="receipt-meta">${escapeHtml(shopLabel)}</div>`
+      : ''
+  }
   <div class="divider"></div>
 
   <div class="items-header">

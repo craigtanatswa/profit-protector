@@ -48,6 +48,9 @@ import { Q } from '@nozbe/watermelondb'
 
 import { Button, Card, Input, LoadingScreen } from '../../../src/components/ui'
 import { KeyboardAvoidingWrapper, ScreenHeader } from '../../../src/components/layout'
+import { ShopPickerBar } from '../../../src/components/shops/ShopPickerBar'
+import { CutProductUpgradeModal } from '../../../src/components/modals/CutProductUpgradeModal'
+import { useActiveShop } from '../../../src/hooks/useActiveShop'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { database } from '../../../src/database'
 import { getPersonalisation, normalizeBusinessType } from '../../../src/lib/appPersonalisation'
@@ -57,7 +60,6 @@ import type StockMovementModel from '../../../src/database/models/StockMovement'
 import { wmRaw } from '../../../src/lib/watermelonRaw'
 import { useSubscription } from '../../../src/hooks/useSubscription'
 import { formatQty } from '../../../src/lib/quantity'
-import { CutProductUpgradeModal } from '../../../src/components/modals/CutProductUpgradeModal'
 import { normalizeTrackingMode } from '../../../src/lib/cutProducts'
 import type { ProductTrackingMode } from '../../../src/types'
 
@@ -193,6 +195,13 @@ export default function AddProductScreen() {
   const isEditMode = !!productId
   const business = useAuthStore((s) => s.business)
   const { canUseCutProducts, upgradeProration } = useSubscription()
+  const {
+    shops,
+    shopId,
+    hasMultipleShops,
+    setSelectedShopId,
+  } = useActiveShop()
+  const [editShopId, setEditShopId] = useState<string | null>(null)
 
   const [isSaving, setIsSaving] = useState(false)
   const [isLoaded, setIsLoaded] = useState(!isEditMode)
@@ -272,6 +281,7 @@ export default function AddProductScreen() {
         setValue('sellingPrice', (record.sellingPriceCents / 100).toFixed(2))
         setValue('stockQty', formatQty(record.stockQty))
         setValue('lowStockThreshold', formatQty(record.lowStockThreshold))
+        setEditShopId(record.shopId ?? null)
         setIsLoaded(true)
       })
       .catch(() => {
@@ -285,8 +295,14 @@ export default function AddProductScreen() {
     if (!business?.id) return
     const db = database
     if (!db) return
+    const catalogShopId = isEditMode ? editShopId : shopId
+    const clauses = [
+      Q.where('business_id', business.id),
+      Q.where('is_active', true),
+    ]
+    if (catalogShopId) clauses.push(Q.where('shop_id', catalogShopId))
     db.get<ProductModel>('products')
-      .query(Q.where('business_id', business.id), Q.where('is_active', true))
+      .query(...clauses)
       .fetch()
       .then((records) => {
         const cats = records
@@ -297,7 +313,7 @@ export default function AddProductScreen() {
         setExistingCategories(cats)
       })
       .catch(() => {})
-  }, [business?.id])
+  }, [business?.id, isEditMode, editShopId, shopId])
 
   // ── Profit margin calculation ──────────────────────────────────────────────
   const costValue = parseFloat(watchedCostPrice) || 0
@@ -366,6 +382,10 @@ export default function AddProductScreen() {
           ? 'Local database is not available (WatermelonDB requires a development build with native modules).'
           : 'Business is not loaded. Sign out and sign in again.',
       )
+      return
+    }
+    if (!isEditMode && hasMultipleShops && !shopId) {
+      Alert.alert('Choose a shop', 'Select which shop this product belongs to.')
       return
     }
     setIsSaving(true)
@@ -464,6 +484,7 @@ export default function AddProductScreen() {
             p.stockQty = stockQty
             p.lowStockThreshold = lowStockThreshold
             p.isActive = true
+            p.shopId = shopId ?? null
             p.updatedAt = new Date()
           })
           if (stockQty > 0) {
@@ -495,6 +516,7 @@ export default function AddProductScreen() {
             stock_qty: stockQty,
             low_stock_threshold: lowStockThreshold,
             is_active: true,
+            shop_id: shopId ?? null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
@@ -551,6 +573,16 @@ export default function AddProductScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {hasMultipleShops ? (
+        <ShopPickerBar
+          shops={shops}
+          selectedId={isEditMode ? editShopId : shopId}
+          onSelect={isEditMode ? undefined : setSelectedShopId}
+          kicker={isEditMode ? 'This shop' : 'Adding to'}
+          readOnly={isEditMode}
+        />
+      ) : null}
 
       {/* Body: scroll + absolute save bar */}
       <View style={styles.body}>

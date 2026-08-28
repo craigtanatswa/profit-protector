@@ -23,6 +23,7 @@ export function mapSaleRecord(record: SaleModel): Sale {
     note: record.note ?? undefined,
     receiptNumber: record.receiptNumber,
     createdByShopkeeperId: record.createdByShopkeeperId ?? undefined,
+    shopId: record.shopId ?? undefined,
     createdAt: record.createdAt instanceof Date ? record.createdAt.getTime() : Date.now(),
   }
 }

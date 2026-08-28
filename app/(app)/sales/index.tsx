@@ -21,7 +21,7 @@ import { EmptyState } from '../../../src/components/ui'
 import { SaleCard } from '../../../src/components/sales/SaleCard'
 import { SalesTutorialModal } from '../../../src/components/sales/SalesTutorialModal'
 import { FilterPanel, DEFAULT_FILTERS } from '../../../src/components/sales/FilterPanel'
-import type { FilterState, ShopkeeperOption } from '../../../src/components/sales/FilterPanel'
+import type { FilterState, ShopkeeperOption, ShopOption } from '../../../src/components/sales/FilterPanel'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { useSalesWithItems } from '../../../src/hooks/useSales'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
@@ -30,6 +30,8 @@ import type { SaleWithItems } from '../../../src/hooks/useSales'
 import { pullShopkeeperSalesForCurrentMonth } from '../../../src/lib/shopkeeperAuth'
 import { database } from '../../../src/database'
 import type ShopkeeperModel from '../../../src/database/models/Shopkeeper'
+import { useShops } from '../../../src/hooks/useShops'
+import { formatShopLabel } from '../../../src/lib/shops'
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -127,6 +129,12 @@ export default function SalesScreen() {
   }, [isShopkeeper, business?.id])
 
   // Build a lookup map for rendering staff labels on each card
+  const { shops, shopById, hasMultipleShops } = useShops(business?.id ?? '')
+  const shopOptions = useMemo<ShopOption[]>(
+    () => shops.map((shop) => ({ id: shop.id, label: formatShopLabel(shop) })),
+    [shops],
+  )
+
   const staffNameMap = useMemo<Record<string, string>>(() => {
     const map: Record<string, string> = {}
     for (const sk of shopkeeperOptions) {
@@ -142,7 +150,7 @@ export default function SalesScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
 
-  const { dateFilter, selectedMethods, sortOption, creatorFilter } = filters
+  const { dateFilter, selectedMethods, sortOption, creatorFilter, shopFilter } = filters
 
   // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -198,6 +206,10 @@ export default function SalesScreen() {
       result = result.filter(({ sale }) => selectedMethods.includes(sale.paymentMethod))
     }
 
+    if (shopFilter !== 'all') {
+      result = result.filter(({ sale }) => sale.shopId === shopFilter)
+    }
+
     if (searchText.trim()) {
       const q = searchText.toLowerCase().trim()
       result = result.filter(
@@ -222,7 +234,7 @@ export default function SalesScreen() {
     }
 
     return result
-  }, [salesWithItems, dateFilter, selectedMethods, sortOption, searchText])
+  }, [salesWithItems, dateFilter, selectedMethods, sortOption, searchText, shopFilter])
 
   // ─── Summary strip ────────────────────────────────────────────────────────────
 
@@ -262,6 +274,7 @@ export default function SalesScreen() {
     dateFilter !== 'all' ||
     (selectedMethods.length > 0 && !selectedMethods.includes('all')) ||
     creatorFilter !== 'all' ||
+    shopFilter !== 'all' ||
     searchText.trim().length > 0
 
   const activePills: { label: string; onRemove: () => void }[] = []
@@ -274,6 +287,14 @@ export default function SalesScreen() {
     activePills.push({
       label: `By: ${label}`,
       onRemove: () => setFilters((f) => ({ ...f, creatorFilter: 'all' })),
+    })
+  }
+
+  if (shopFilter !== 'all') {
+    const shop = shopById[shopFilter]
+    activePills.push({
+      label: shop ? formatShopLabel(shop) : 'Shop',
+      onRemove: () => setFilters((f) => ({ ...f, shopFilter: 'all' })),
     })
   }
 
@@ -339,6 +360,11 @@ export default function SalesScreen() {
           sale={entry.sale}
           saleItems={entry.saleItems}
           staffLabel={staffLabel}
+          shopLabel={
+            hasMultipleShops && entry.sale.shopId && shopById[entry.sale.shopId]
+              ? formatShopLabel(shopById[entry.sale.shopId])
+              : undefined
+          }
           onPress={() =>
             router.push({
               pathname: '/(app)/sales/[id]',
@@ -348,7 +374,7 @@ export default function SalesScreen() {
         />
       )
     },
-    [isShopkeeper, staffNameMap, router],
+    [isShopkeeper, staffNameMap, router, hasMultipleShops, shopById],
   )
 
   // ─── Refresh ──────────────────────────────────────────────────────────────────
@@ -527,6 +553,7 @@ export default function SalesScreen() {
         onApply={(next) => setFilters(next)}
         onClose={() => setShowFilterPanel(false)}
         shopkeepers={isShopkeeper ? undefined : shopkeeperOptions}
+        shops={hasMultipleShops ? shopOptions : undefined}
       />
 
       {!isShopkeeper ? (

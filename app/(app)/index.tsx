@@ -21,6 +21,8 @@ import { StatusBar } from 'expo-status-bar'
 import { useAppChrome } from '../../src/context/AppChromeContext'
 import { Button, Card, Badge, MetricCard, NotificationBanner } from '../../src/components/ui'
 import { useAuthStore } from '../../src/stores/authStore'
+import { ShopPickerBar } from '../../src/components/shops/ShopPickerBar'
+import { useActiveShop } from '../../src/hooks/useActiveShop'
 import { useDashboard } from '../../src/hooks/useDashboard'
 import { useQuietOfflineRefreshOnFocus } from '../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useSubscription } from '../../src/hooks/useSubscription'
@@ -747,6 +749,13 @@ export default function DashboardScreen() {
     : business?.ownerName ?? 'there'
   const recoveryVerified = business?.recoveryEmailVerified === true
   const { subscription, daysRemainingInTrial } = useSubscription()
+  const {
+    shops,
+    shopId,
+    hasMultipleShops,
+    shopsLoading,
+    setSelectedShopId,
+  } = useActiveShop()
 
   const {
     todaysSalesCents,
@@ -763,7 +772,10 @@ export default function DashboardScreen() {
     creditCustomers,
     isLoading,
     refetch,
-  } = useDashboard(businessId)
+  } = useDashboard(businessId, {
+    shopId,
+    scopedToShop: shopsLoading || hasMultipleShops,
+  })
 
   useQuietOfflineRefreshOnFocus(
     useCallback(() => {
@@ -1053,6 +1065,16 @@ export default function DashboardScreen() {
             />
           }
         >
+          {hasMultipleShops ? (
+            <ShopPickerBar
+              shops={shops}
+              selectedId={shopId}
+              onSelect={setSelectedShopId}
+              kicker="Viewing"
+              readOnly={isShopkeeper}
+            />
+          ) : null}
+
           {/* Metrics */}
           <MetricsSection
             todaysSalesCents={todaysSalesCents}

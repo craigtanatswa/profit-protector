@@ -14,11 +14,13 @@ import { AppState, Platform } from 'react-native'
 import { database } from '../database'
 import { Q } from '@nozbe/watermelondb'
 import type ProductModel from '../database/models/Product'
+import type ShopModel from '../database/models/Shop'
 import WMBusiness from '../database/models/Business'
 import { getPersonalisation, normalizeBusinessType } from './appPersonalisation'
 import { shouldScheduleOsLocalBusinessAlerts } from './notificationDeliveryMode'
 import { requestLowStockRemotePushIfOwner } from './expoPushRemote'
 import { formatQty } from './quantity'
+import { formatShopLabel, mapShopRecord } from './shops'
 import { logStaffSaleNotify } from './staffSaleNotifyDebug'
 
 // ---------------------------------------------------------------------------
@@ -392,6 +394,20 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
     )
     .fetch()
 
+  const shopRecords = await database
+    .get<ShopModel>('shops')
+    .query(Q.where('business_id', businessId))
+    .fetch()
+  const shopLabelById: Record<string, string> = {}
+  for (const shop of shopRecords) {
+    shopLabelById[shop.id] = formatShopLabel(mapShopRecord(shop))
+  }
+
+  const productLabel = (product: ProductModel) => {
+    const shopLabel = product.shopId ? shopLabelById[product.shopId] : null
+    return shopLabel ? `${product.name} (${shopLabel})` : product.name
+  }
+
   const lowStock = allProducts.filter(
     (p) => p.lowStockThreshold > 0 && p.stockQty <= p.lowStockThreshold,
   )
@@ -407,7 +423,7 @@ export async function checkAndNotifyLowStock(businessId: string): Promise<void> 
     await sendLowStockNotification({
       businessId,
       productId: product.id,
-      productName: product.name,
+      productName: productLabel(product),
       currentStock: product.stockQty,
       threshold: product.lowStockThreshold,
       unit: product.unit,

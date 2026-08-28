@@ -5,9 +5,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { Button } from '../ui'
 import { formatPlanPrice } from '../../lib/plans'
 
-export interface CutProductUpgradeModalProps {
+export interface MultiShopUpgradeModalProps {
   visible: boolean
-  /** Amount charged today for a mid-cycle Pro → Pro+ upgrade, in cents. */
   upgradeChargeCents?: number | null
   upgradeIsFree?: boolean
   onClose: () => void
@@ -18,13 +17,13 @@ function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
 }
 
-export function CutProductUpgradeModal({
+export function MultiShopUpgradeModal({
   visible,
   upgradeChargeCents,
   upgradeIsFree = false,
   onClose,
   onUpgrade,
-}: CutProductUpgradeModalProps) {
+}: MultiShopUpgradeModalProps) {
   const monthly = formatPlanPrice('pro_plus')
   const hasTodayAmount =
     upgradeIsFree || (upgradeChargeCents != null && Number.isFinite(upgradeChargeCents))
@@ -47,12 +46,12 @@ export function CutProductUpgradeModal({
         <View style={styles.overlay} />
         <View style={styles.card}>
           <View style={styles.iconWrap}>
-            <Ionicons name="cut-outline" size={32} color="#7C3AED" />
+            <Ionicons name="storefront-outline" size={32} color="#7C3AED" />
           </View>
-          <Text style={styles.title}>Cut-to-order on Pro+</Text>
+          <Text style={styles.title}>Multiple shops on Pro+</Text>
           <Text style={styles.body}>
-            Pro is packed items only. On Pro+, sell leftover meat, cloth, and similar by the
-            cut — stock updates as you go. {amountLine}
+            Pro covers one shop. On Pro+, add up to 5 locations, keep stock per shop, and
+            assign staff to each. {amountLine}
           </Text>
           <View style={styles.actions}>
             <Button label="Upgrade to Pro+" onPress={onUpgrade} variant="primary" fullWidth />

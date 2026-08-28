@@ -21,11 +21,18 @@ export interface FilterState {
   sortOption: SortOption
   /** Owner-only: which seller's sales to show. */
   creatorFilter: CreatorFilter
+  /** Owner-only: which shop's sales to show. */
+  shopFilter: 'all' | string
 }
 
 export interface ShopkeeperOption {
   id: string
   fullName: string
+}
+
+export interface ShopOption {
+  id: string
+  label: string
 }
 
 interface FilterPanelProps {
@@ -35,6 +42,7 @@ interface FilterPanelProps {
   onClose: () => void
   /** Pass the business's shopkeepers so the owner gets a "Sold by" section. */
   shopkeepers?: ShopkeeperOption[]
+  shops?: ShopOption[]
 }
 
 const DATE_OPTIONS: { value: DateFilter; label: string }[] = [
@@ -66,13 +74,15 @@ export const DEFAULT_FILTERS: FilterState = {
   selectedMethods: ['all'],
   sortOption: 'newest',
   creatorFilter: 'all',
+  shopFilter: 'all',
 }
 
-export function FilterPanel({ visible, current, onApply, onClose, shopkeepers }: FilterPanelProps) {
+export function FilterPanel({ visible, current, onApply, onClose, shopkeepers, shops }: FilterPanelProps) {
   const [dateFilter, setDateFilter] = useState<DateFilter>(current.dateFilter)
   const [selectedMethods, setSelectedMethods] = useState<string[]>(current.selectedMethods)
   const [sortOption, setSortOption] = useState<SortOption>(current.sortOption)
   const [creatorFilter, setCreatorFilter] = useState<CreatorFilter>(current.creatorFilter)
+  const [shopFilter, setShopFilter] = useState<FilterState['shopFilter']>(current.shopFilter)
 
   // Sync local state when panel opens
   React.useEffect(() => {
@@ -81,8 +91,9 @@ export function FilterPanel({ visible, current, onApply, onClose, shopkeepers }:
       setSelectedMethods(current.selectedMethods)
       setSortOption(current.sortOption)
       setCreatorFilter(current.creatorFilter)
+      setShopFilter(current.shopFilter)
     }
-  }, [visible, current.dateFilter, current.selectedMethods, current.sortOption, current.creatorFilter])
+  }, [visible, current.dateFilter, current.selectedMethods, current.sortOption, current.creatorFilter, current.shopFilter])
 
   function toggleMethod(value: string) {
     if (value === 'all') {
@@ -104,16 +115,18 @@ export function FilterPanel({ visible, current, onApply, onClose, shopkeepers }:
     setSelectedMethods(['all'])
     setSortOption('newest')
     setCreatorFilter('all')
+    setShopFilter('all')
     onApply(DEFAULT_FILTERS)
     onClose()
   }
 
   function handleApply() {
-    onApply({ dateFilter, selectedMethods, sortOption, creatorFilter })
+    onApply({ dateFilter, selectedMethods, sortOption, creatorFilter, shopFilter })
     onClose()
   }
 
   const showSoldBy = shopkeepers !== undefined && shopkeepers.length > 0
+  const showShops = shops !== undefined && shops.length > 1
 
   const creatorOptions: { value: CreatorFilter; label: string }[] = [
     { value: 'all', label: 'All' },
@@ -137,9 +150,39 @@ export function FilterPanel({ visible, current, onApply, onClose, shopkeepers }:
 
           <ScrollView showsVerticalScrollIndicator={false}>
             {/* Sold By — owner only */}
+            {showShops && (
+              <>
+                <Text style={styles.sectionLabel}>Shop</Text>
+                <View style={styles.pillRow}>
+                  {[{ id: 'all', label: 'All' }, ...shops!].map((opt) => (
+                    <TouchableOpacity
+                      key={opt.id}
+                      style={[
+                        styles.pill,
+                        shopFilter === opt.id ? styles.pillSelected : styles.pillUnselected,
+                      ]}
+                      onPress={() => setShopFilter(opt.id)}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={[
+                          styles.pillText,
+                          shopFilter === opt.id
+                            ? styles.pillTextSelected
+                            : styles.pillTextUnselected,
+                        ]}
+                      >
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
             {showSoldBy && (
               <>
-                <Text style={styles.sectionLabel}>Sold By</Text>
+                <Text style={[styles.sectionLabel, showShops && styles.sectionLabelSpaced]}>Sold By</Text>
                 <View style={styles.pillRow}>
                   {creatorOptions.map((opt) => (
                     <TouchableOpacity
@@ -168,7 +211,7 @@ export function FilterPanel({ visible, current, onApply, onClose, shopkeepers }:
             )}
 
             {/* Date Range */}
-            <Text style={[styles.sectionLabel, showSoldBy && styles.sectionLabelSpaced]}>
+            <Text style={[styles.sectionLabel, (showSoldBy || showShops) && styles.sectionLabelSpaced]}>
               Date Range
             </Text>
             <View style={styles.pillRow}>

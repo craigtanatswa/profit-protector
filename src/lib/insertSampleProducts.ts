@@ -4,7 +4,10 @@ import type ProductModel from '../database/models/Product'
 import { supabase } from './supabase'
 import { getPersonalisation, normalizeBusinessType } from './appPersonalisation'
 
-export async function insertSampleProductsForBusiness(businessId: string): Promise<void> {
+export async function insertSampleProductsForBusiness(
+  businessId: string,
+  shopId?: string | null,
+): Promise<void> {
   const db = database
   if (!db) return
 
@@ -31,6 +34,7 @@ export async function insertSampleProductsForBusiness(businessId: string): Promi
         p.stockQty = 10
         p.lowStockThreshold = 5
         p.isActive = true
+        p.shopId = shopId ?? null
         p.updatedAt = new Date()
       })
       supabase
@@ -38,6 +42,7 @@ export async function insertSampleProductsForBusiness(businessId: string): Promi
         .insert({
           id: product.id,
           business_id: businessId,
+          shop_id: shopId ?? null,
           name: sp.name,
           category: sp.category,
           unit: sp.unit,

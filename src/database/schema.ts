@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb'
 
 export const schema = appSchema({
-  version: 12,
+  version: 14,
   tables: [
     tableSchema({
       name: 'businesses',
@@ -21,6 +21,18 @@ export const schema = appSchema({
       ]
     }),
     tableSchema({
+      name: 'shops',
+      columns: [
+        { name: 'business_id', type: 'string', isIndexed: true },
+        { name: 'name', type: 'string' },
+        { name: 'address', type: 'string' },
+        { name: 'shop_number', type: 'number' },
+        { name: 'supabase_id', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ]
+    }),
+    tableSchema({
       name: 'products',
       columns: [
         { name: 'business_id', type: 'string', isIndexed: true },
@@ -33,6 +45,7 @@ export const schema = appSchema({
         { name: 'stock_qty', type: 'number' },
         { name: 'low_stock_threshold', type: 'number' },
         { name: 'is_active', type: 'boolean' },
+        { name: 'shop_id', type: 'string', isOptional: true, isIndexed: true },
         { name: 'supabase_id', type: 'string', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
@@ -49,6 +62,8 @@ export const schema = appSchema({
         { name: 'receipt_number', type: 'string' },
         /** When set, sale was recorded by this shopkeeper (UUID). Owner sales leave null. */
         { name: 'created_by_shopkeeper_id', type: 'string', isOptional: true, isIndexed: true },
+        /** Establishment that recorded this sale. Null when the business has one implicit shop. */
+        { name: 'shop_id', type: 'string', isOptional: true, isIndexed: true },
         { name: 'supabase_id', type: 'string', isOptional: true },
         { name: 'created_at', type: 'number' },
       ]
@@ -124,6 +139,7 @@ export const schema = appSchema({
         { name: 'full_name', type: 'string' },
         { name: 'receipt_suffix', type: 'string', isOptional: true },
         { name: 'phone', type: 'string', isOptional: true },
+        { name: 'shop_id', type: 'string', isOptional: true, isIndexed: true },
         { name: 'is_active', type: 'boolean' },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },

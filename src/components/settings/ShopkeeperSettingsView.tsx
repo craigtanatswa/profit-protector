@@ -56,6 +56,14 @@ export function ShopkeeperSettingsView() {
             value={shopkeeperSession?.businessName ?? ''}
             showChevron={false}
           />
+          {shopkeeperSession?.shopkeeper.shopLabel ? (
+            <SettingsRow
+              icon="storefront-outline"
+              label="Shop"
+              value={shopkeeperSession.shopkeeper.shopLabel}
+              showChevron={false}
+            />
+          ) : null}
           <SettingsRow
             icon="log-out-outline"
             iconColor="#B45309"

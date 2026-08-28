@@ -21,11 +21,13 @@ import * as Crypto from 'expo-crypto'
 
 import { KeyboardAvoidingWrapper, ScreenHeader } from '../../../src/components/layout'
 import { ProductPickerModal } from '../../../src/components/inventory/ProductPickerModal'
+import { ShopPickerBar } from '../../../src/components/shops/ShopPickerBar'
 import { Button, Card, Input } from '../../../src/components/ui'
 import { database } from '../../../src/database'
 import type ProductModel from '../../../src/database/models/Product'
 import type StockMovementModel from '../../../src/database/models/StockMovement'
 import { formatDate } from '../../../src/lib/formatters'
+import { useActiveShop } from '../../../src/hooks/useActiveShop'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
 import { getProductById } from '../../../src/hooks/useProducts'
@@ -91,6 +93,13 @@ export default function PurchaseScreen() {
   const business = useAuthStore((s) => s.business)
   const activeRole = useAuthStore((s) => s.activeRole)
   const isShopkeeper = activeRole === 'shopkeeper'
+  const {
+    shops,
+    shopId,
+    hasMultipleShops,
+    shopsLoading,
+    setSelectedShopId,
+  } = useActiveShop()
   const {
     ensureStockAccess,
     pendingVisible,
@@ -194,6 +203,13 @@ export default function PurchaseScreen() {
     setValue('productId', '')
     setValue('qtyReceived', '')
   }
+
+  useEffect(() => {
+    if (!selectedProduct || !shopId) return
+    if (selectedProduct.shopId && selectedProduct.shopId !== shopId) {
+      handleClearProduct()
+    }
+  }, [shopId])
 
   function handleDateChange(_event: DateTimePickerEvent, date?: Date) {
     setShowDatePicker(false)
@@ -378,6 +394,16 @@ export default function PurchaseScreen() {
         leftAction={{ icon: 'arrow-back-outline', onPress: () => router.back() }}
         showBorder
       />
+
+      {hasMultipleShops ? (
+        <ShopPickerBar
+          shops={shops}
+          selectedId={shopId}
+          onSelect={setSelectedShopId}
+          kicker="Stock at"
+          readOnly={isShopkeeper}
+        />
+      ) : null}
 
       <View style={styles.body}>
         <KeyboardAvoidingWrapper>
@@ -735,6 +761,8 @@ export default function PurchaseScreen() {
       <ProductPickerModal
         visible={showPicker}
         businessId={business?.id ?? ''}
+        shopId={shopId}
+        scopedToShop={shopsLoading || hasMultipleShops}
         onSelect={handleSelectProduct}
         onClose={() => setShowPicker(false)}
       />

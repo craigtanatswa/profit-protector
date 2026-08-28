@@ -4,7 +4,14 @@ import { AppState } from 'react-native'
 import { useAuthStore } from '../stores/authStore'
 import { useSubscriptionStore } from '../stores/subscriptionStore'
 import { fetchSubscription } from '../lib/subscription'
-import { canUseCutProducts, getMaxShopkeepers, PLANS, type PlanTier } from '../lib/plans'
+import {
+  canUseCutProducts,
+  canUseMultipleShops,
+  getMaxShopkeepers,
+  getMaxShops,
+  PLANS,
+  type PlanTier,
+} from '../lib/plans'
 
 export function useSubscription() {
   const businessId = useAuthStore((s) => s.business?.id)
@@ -60,7 +67,12 @@ export function useSubscription() {
 
   const planTier: PlanTier = subscription?.planTier ?? 'pro'
   const maxShopkeepers = getMaxShopkeepers(planTier)
+  const maxShops = getMaxShops(planTier)
   const cutProductsEnabled = canUseCutProducts({
+    planTier,
+    status: subscription?.status,
+  })
+  const multipleShopsEnabled = canUseMultipleShops({
     planTier,
     status: subscription?.status,
   })
@@ -130,7 +142,9 @@ export function useSubscription() {
     nextBillingDate,
     planTier,
     maxShopkeepers,
+    maxShops,
     canUseCutProducts: cutProductsEnabled,
+    canUseMultipleShops: multipleShopsEnabled,
     canUpgrade,
     upgradeProration,
     refetch,

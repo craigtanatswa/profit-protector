@@ -140,6 +140,9 @@ import {
   enqueuePendingShopkeeperSaleId,
 } from '../../../src/lib/shopkeeperAuth'
 import { logStaffSaleNotify } from '../../../src/lib/staffSaleNotifyDebug'
+import { ShopPickerBar } from '../../../src/components/shops/ShopPickerBar'
+import { useActiveShop } from '../../../src/hooks/useActiveShop'
+import { setLastUsedShopId } from '../../../src/lib/shops'
 
 const COLORS = {
   primary: '#0047AB',
@@ -176,7 +179,15 @@ export default function NewSaleScreen() {
   const { formatMoney } = useMoneyFormat()
   const business = useAuthStore((s) => s.business)
   const activeRole = useAuthStore((s) => s.activeRole)
+  const shopkeeperSession = useAuthStore((s) => s.shopkeeperSession)
   const businessId = business?.id ?? ''
+  const {
+    shops,
+    hasMultipleShops,
+    shopsLoading,
+    shopId,
+    setSelectedShopId,
+  } = useActiveShop()
 
   const paymentMethodOptions =
     activeRole === 'shopkeeper'
@@ -197,6 +208,15 @@ export default function NewSaleScreen() {
     clearCart,
   } = useCartStore()
 
+  const prevShopRef = useRef<string | null | undefined>(undefined)
+  useEffect(() => {
+    const prev = prevShopRef.current
+    prevShopRef.current = shopId
+    if (prev !== undefined && prev !== shopId && items.length > 0) {
+      clearCart()
+    }
+  }, [shopId, items.length, clearCart])
+
   useEffect(() => {
     if (activeRole !== 'shopkeeper') return
     if (paymentMethod === 'credit') setPaymentMethod('cash_usd')
@@ -207,7 +227,10 @@ export default function NewSaleScreen() {
   )
   const totalCents = subtotalCents - discountCents
 
-  const { products, refetch: refetchProducts } = useProducts(businessId)
+  const { products, refetch: refetchProducts } = useProducts(businessId, {
+    shopId,
+    scopedToShop: shopsLoading || hasMultipleShops,
+  })
   const { refetch: refetchSales } = useSales(businessId)
   const { customers, createCustomer, refreshLocal: refreshCustomersLocal } =
     useCustomers(businessId)
@@ -379,6 +402,16 @@ export default function NewSaleScreen() {
     try {
       const authSnapshot = useAuthStore.getState()
       const activeRole = authSnapshot.activeRole
+      const saleShopId =
+        activeRole === 'shopkeeper'
+          ? authSnapshot.shopkeeperSession?.shopkeeper.shopId ?? null
+          : shopId
+
+      if (activeRole === 'owner' && hasMultipleShops && !saleShopId) {
+        Alert.alert('Choose a shop', 'Select which shop made this sale.')
+        setIsProcessing(false)
+        return
+      }
 
       if (activeRole === 'shopkeeper') {
         const suffix =
@@ -441,6 +474,7 @@ export default function NewSaleScreen() {
           s.paymentMethod = paymentMethod
           s.receiptNumber = receiptNumber
           if (shopkeeperCreatorId) s.createdByShopkeeperId = shopkeeperCreatorId
+          if (saleShopId) s.shopId = saleShopId
         })
 
         for (const item of items) {
@@ -566,6 +600,7 @@ export default function NewSaleScreen() {
                 receipt_number: saleRow.receiptNumber,
                 note: saleRow.note ?? null,
                 created_at: createdAtIso,
+                shop_id: saleRow.shopId ?? null,
               },
               sale_items: itemRows.map((si) => ({
                 id: si.id,
@@ -618,7 +653,10 @@ export default function NewSaleScreen() {
       }
 
       const { triggerSync } = useAuthStore.getState()
-      if (activeRole === 'owner') triggerSync(business.id).catch(() => {})
+      if (activeRole === 'owner') {
+        if (saleShopId) void setLastUsedShopId(business.id, saleShopId)
+        triggerSync(business.id).catch(() => {})
+      }
 
       // Fire-and-forget low stock notifications — must not block sale completion
       ;(async () => {
@@ -671,6 +709,8 @@ export default function NewSaleScreen() {
     creditDepositMethod,
     clearCart,
     router,
+    hasMultipleShops,
+    shopId,
   ])
 
   return (
@@ -680,6 +720,28 @@ export default function NewSaleScreen() {
         leftAction={{ icon: 'close', onPress: handleClose }}
         showBorder
       />
+
+      {activeRole === 'owner' && hasMultipleShops ? (
+        <ShopPickerBar
+          shops={shops}
+          selectedId={shopId}
+          onSelect={setSelectedShopId}
+        />
+      ) : activeRole === 'shopkeeper' && shopkeeperSession?.shopkeeper.shopLabel ? (
+        <ShopPickerBar
+          shops={shops.length > 0 ? shops : [{
+            id: shopkeeperSession.shopkeeper.shopId ?? 'assigned',
+            businessId,
+            name: shopkeeperSession.shopkeeper.shopLabel.split(' · ')[0] ?? 'Shop',
+            address: shopkeeperSession.shopkeeper.shopLabel.split(' · ').slice(1).join(' · '),
+            shopNumber: 0,
+            createdAt: 0,
+            updatedAt: 0,
+          }]}
+          selectedId={shopkeeperSession.shopkeeper.shopId ?? 'assigned'}
+          readOnly
+        />
+      ) : null}
 
       <View style={styles.productArea}>
         {/* Search Bar */}
@@ -712,7 +774,13 @@ export default function NewSaleScreen() {
             <EmptyState
               icon="search-outline"
               title="No products found"
-              subtitle="Try a different search term"
+              subtitle={
+                searchText.trim()
+                  ? 'Try a different search term'
+                  : hasMultipleShops
+                    ? 'This shop has no products yet. Add them under Stock & Products.'
+                    : 'Add products under Stock & Products to start selling'
+              }
             />
           }
           renderItem={({ item: product }) => {

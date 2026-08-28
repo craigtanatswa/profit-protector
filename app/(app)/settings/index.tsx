@@ -438,15 +438,23 @@ function SettingsScreen() {
             </View>
             <View style={isProPlus ? sub.divProPlus : sub.divGreen} />
             <View style={sub.rowKV}>
-              <Text style={isProPlus ? sub.kProPlus : sub.k}>Staff accounts</Text>
+              <Text style={isProPlus ? sub.kProPlus : sub.k}>Shops</Text>
               <Text style={isProPlus ? sub.vProPlus : sub.v}>
-                Up to {maxShopkeepers} staff member{maxShopkeepers === 1 ? '' : 's'}
+                {isProPlus ? 'Up to 5, own stock each' : '1 shop'}
               </Text>
             </View>
             <View style={sub.rowKV}>
-              <Text style={isProPlus ? sub.kProPlus : sub.k}>Cut-to-order stock</Text>
+              <Text style={isProPlus ? sub.kProPlus : sub.k}>Stock types</Text>
               <Text style={isProPlus ? sub.vProPlus : sub.v}>
-                {isProPlus ? 'Meat, cloth, and similar' : 'Pro+ only'}
+                {isProPlus ? 'Packed + cut-to-order' : 'Packed items only'}
+              </Text>
+            </View>
+            <View style={sub.rowKV}>
+              <Text style={isProPlus ? sub.kProPlus : sub.k}>Staff accounts</Text>
+              <Text style={isProPlus ? sub.vProPlus : sub.v}>
+                {isProPlus
+                  ? `Up to ${maxShopkeepers}, assigned per shop`
+                  : 'You + 1 helper'}
               </Text>
             </View>
             <View style={sub.rowKV}>
@@ -476,7 +484,7 @@ function SettingsScreen() {
                 activeOpacity={0.8}
               >
                 <Ionicons name="arrow-up-circle-outline" size={16} color="#7C3AED" />
-                <Text style={sub.upgradeBtnText}>Upgrade to Pro+</Text>
+                <Text style={sub.upgradeBtnText}>Unlock shops, staff & cut-to-order</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -497,9 +505,12 @@ function SettingsScreen() {
               })()}
             </Text>
             <Text style={sub.trialLine}>{daysRemainingInTrial} days remaining</Text>
+            <Text style={sub.trialLine}>
+              Trial includes Pro+ — extra shops, a team, and cut-to-order stock. Choose Pro or Pro+ before it ends.
+            </Text>
             <View style={{ marginTop: 12 }}>
               <Button
-                label={`Subscribe now — ${formatPlanPrice('pro')}/mo`}
+                label="Choose a plan"
                 variant="primary"
                 size="sm"
                 fullWidth
@@ -510,7 +521,9 @@ function SettingsScreen() {
         ) : subscription != null ? (
           <View style={sub.expiredCard}>
             <Text style={sub.expiredTitle}>Trial Expired</Text>
-            <Text style={sub.expiredSub}>Subscribe to keep access to your data</Text>
+            <Text style={sub.expiredSub}>
+              Keep your sales and stock. Pro is one shop of packed goods with one helper. Pro+ adds extra shops, a team, and cut-to-order (meat, cloth).
+            </Text>
             <View style={{ marginTop: 14 }}>
               <Button
                 label="Subscribe Now"
@@ -582,6 +595,14 @@ function SettingsScreen() {
             value={heroLogoUri ? 'Added' : undefined}
             onPress={() => setLogoModalVisible(true)}
           />
+          <SettingsRow
+            icon="storefront-outline"
+            iconColor="#0047AB"
+            iconBackground="#E6EEFF"
+            label="Shops"
+            description="One shop on Pro; extra locations on Pro+"
+            onPress={() => router.push('/(app)/settings/establishments')}
+          />
         </SettingsSection>
 
         {/* ── Section 2: Staff & Security ── */}
@@ -591,7 +612,7 @@ function SettingsScreen() {
             iconColor="#0047AB"
             iconBackground="#E6EEFF"
             label="Manage Staff"
-            description="Add or remove staff accounts"
+            description="You + 1 helper on Pro; up to 5 on Pro+"
             value="Manage"
             onPress={() => router.push('/(app)/settings/manage-staff')}
           />

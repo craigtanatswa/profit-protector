@@ -11,6 +11,7 @@ export default class Shopkeeper extends Model {
   /** Uppercase receipt suffix; unique per business */
   @field('receipt_suffix') receiptSuffix!: string | null
   @field('phone') phone!: string | null
+  @field('shop_id') shopId!: string | null
   @field('is_active') isActive!: boolean
   @readonly @date('created_at') createdAt!: Date
   @date('updated_at') updatedAt!: Date

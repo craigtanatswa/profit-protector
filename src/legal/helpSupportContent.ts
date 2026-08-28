@@ -18,7 +18,7 @@ export const HELP_SUPPORT_FAQS: HelpFaqItem[] = [
     id: 'cut-products',
     question: 'How do I sell meat or cloth cut from one piece?',
     answer:
-      'On Pro+ (and during the trial), choose Cut from a piece when adding a product. Set a rate per kg or metre and the leftover amount on the piece. At sale time, type the cut size — the price is calculated automatically and remaining stock updates. Packed items stay on the Pro plan.',
+      'Pro is for packed goods (bottles, bags, each). On Pro+ (and during the trial), choose Cut from a piece when adding a product to sell meat, cloth, or similar by the kg or metre. Set a rate and the leftover amount on the piece. At sale time, type the cut size — the price is calculated automatically and remaining stock updates.',
   },
   {
     id: 'make-sale',
@@ -45,10 +45,16 @@ export const HELP_SUPPORT_FAQS: HelpFaqItem[] = [
       'No. Shopkeepers must request your approval before they can receive or adjust stock. You approve or deny the request in the app; if approved, they get temporary access for that action type. All stock changes are recorded in Activity Log.',
   },
   {
+    id: 'multiple-shops',
+    question: 'Can I record sales from more than one shop?',
+    answer:
+      'Pro covers one shop. On Pro+ (and during the trial), open Settings → Shops to add another establishment (up to 5). Your current location is saved as Shop 1 with a short address; each extra shop is Shop 2, Shop 3, and so on. Shop 1’s products are copied into the new shop once, then each shop keeps its own catalog — adding or editing a product in one shop does not change the others. When you have more than one shop, pick the shop on New Sale, Stock & Products, and Home (it remembers the last one you used) and assign each shopkeeper to a shop when you create their account.',
+  },
+  {
     id: 'manage-staff',
     question: 'How do I add or manage staff?',
     answer:
-      'In Settings, open Manage Staff to invite shopkeepers, set their login details, and remove access when someone leaves. Each staff member signs in with their own username and only sees what their role allows.',
+      'In Settings, open Manage Staff to invite shopkeepers, set their login details, and remove access when someone leaves. Each staff member signs in with their own username and only sees what their role allows. Pro includes you plus one staff account; Pro+ (and the trial) allow up to 5, assigned to a shop when you have more than one location.',
   },
   {
     id: 'customers-credit',
@@ -84,6 +90,6 @@ export const HELP_SUPPORT_FAQS: HelpFaqItem[] = [
     id: 'subscription',
     question: 'How does the trial and subscription work?',
     answer:
-      'New businesses start with a trial period with full access. Before the trial ends, upgrade from Settings to keep using Profit Protector without interruption. Payment history is available under Settings if you need receipts.',
+      'New businesses start with a trial that includes Pro+ features: extra shops, up to 5 staff, and cut-to-order stock such as meat and cloth. Before the trial ends, open Settings and choose a plan. Pro is one shop of packed goods with you plus one helper. Pro+ keeps the extra shops, staff, and cut-to-order stock. Payment history is available under Settings if you need receipts.',
   },
 ]
