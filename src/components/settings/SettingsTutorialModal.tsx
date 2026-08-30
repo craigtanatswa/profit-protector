@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   Animated,
   Modal,
@@ -89,6 +89,13 @@ export function SettingsTutorialModal({
   const slideAnim = useRef(new Animated.Value(0)).current
   const isLast = step === STEPS.length - 1
   const bottomInset = Math.max(insets.bottom, 12)
+
+  useEffect(() => {
+    if (!visible) return
+    setStep(0)
+    fadeAnim.setValue(1)
+    slideAnim.setValue(0)
+  }, [visible, fadeAnim, slideAnim])
 
   const animateToStep = (next: number) => {
     Animated.parallel([

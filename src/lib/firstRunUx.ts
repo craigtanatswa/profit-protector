@@ -15,8 +15,28 @@ export function firstRunUxKeysForBusiness(businessId: string): string[] {
   ]
 }
 
+/** One-time in-app tutorial flags (excludes trial welcome). */
+export function tutorialShownKeysForBusiness(businessId: string): string[] {
+  return [
+    `product_tutorial_shown_${businessId}`,
+    `sales_tutorial_shown_${businessId}`,
+    `reports_tutorial_shown_${businessId}`,
+    `customers_tutorial_shown_${businessId}`,
+    `settings_tutorial_shown_${businessId}`,
+  ]
+}
+
 /** Device-wide keys tied to first-time owner dashboard prompts. */
 export const FIRST_RUN_UX_GLOBAL_KEYS = ['shown_email_prompt'] as const
+
+/** Clears tutorial-seen flags so screen guides can play again. */
+export async function replayTutorials(businessId: string): Promise<void> {
+  await Promise.all(
+    tutorialShownKeysForBusiness(businessId).map((key) =>
+      SecureStore.deleteItemAsync(key).catch(() => {}),
+    ),
+  )
+}
 
 export async function clearFirstRunUxFlags(businessId: string): Promise<void> {
   await Promise.all([

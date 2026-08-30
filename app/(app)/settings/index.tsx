@@ -39,6 +39,9 @@ import { DeferredSettingsModals } from '../../../src/components/settings/Deferre
 import { SettingsTutorialModal } from '../../../src/components/settings/SettingsTutorialModal'
 import { SettingsRow } from '../../../src/components/settings/SettingsRow'
 import { SettingsSection } from '../../../src/components/settings/SettingsSection'
+import { useQueuedTutorialOnFocus } from '../../../src/hooks/useQueuedTutorialOnFocus'
+import { replayTutorials } from '../../../src/lib/firstRunUx'
+import { consumeQueuedTutorial, queueAllTutorials } from '../../../src/lib/tutorialReplay'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { supabase } from '../../../src/lib/supabase'
 import { logActivity } from '../../../src/lib/activityLogger'
@@ -209,6 +212,9 @@ function SettingsScreen() {
     return () => task.cancel()
   }, [])
 
+  const openTutorial = useCallback(() => setShowTutorial(true), [])
+  useQueuedTutorialOnFocus('settings', activeRole !== 'shopkeeper', openTutorial)
+
   // Show the settings tutorial once on the owner's first visit.
   useEffect(() => {
     if (activeRole === 'shopkeeper' || !business?.id) return
@@ -224,6 +230,29 @@ function SettingsScreen() {
       cancelled = true
     }
   }, [activeRole, business?.id])
+
+  const handleReplayTutorials = useCallback(() => {
+    if (!business?.id) return
+    Alert.alert(
+      'Replay Tutorials?',
+      'The quick-start guides will show again the next time you visit each screen.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Replay',
+          onPress: () => {
+            void (async () => {
+              await replayTutorials(business.id)
+              queueAllTutorials()
+              if (consumeQueuedTutorial('settings')) {
+                setShowTutorial(true)
+              }
+            })()
+          },
+        },
+      ],
+    )
+  }, [business?.id])
 
   const toggleLowStock = useCallback(async (val: boolean) => {
     setLowStockAlertsEnabled(val)
@@ -843,6 +872,14 @@ function SettingsScreen() {
             label="Help & Support"
             description="FAQs and contact us"
             onPress={() => router.push('/(app)/settings/help-support')}
+          />
+          <SettingsRow
+            icon="play-outline"
+            iconColor="#0047AB"
+            iconBackground="#E6EEFF"
+            label="Replay Tutorials"
+            description="Show the in-app guides again"
+            onPress={handleReplayTutorials}
           />
           <SettingsRow
             icon="shield-checkmark-outline"

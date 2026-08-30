@@ -35,6 +35,7 @@ import { pullShopkeeperCloudSnapshotFast } from '../../../src/lib/shopkeeperAuth
 import { formatShopLabel } from '../../../src/lib/shops'
 import { useShopkeeperStockAccessGate } from '../../../src/hooks/useShopkeeperStockAccessGate'
 import { StockAccessPendingModal } from '../../../src/components/modals/StockAccessPendingModal'
+import { useQueuedTutorialOnFocus } from '../../../src/hooks/useQueuedTutorialOnFocus'
 import { useAuthStore } from '../../../src/stores/authStore'
 import type { Product } from '../../../src/types'
 import { lineTotalCents } from '../../../src/lib/quantity'
@@ -118,6 +119,8 @@ export default function InventoryScreen() {
   const [showSortModal, setShowSortModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
+  const openTutorial = useCallback(() => setShowTutorial(true), [])
+  useQueuedTutorialOnFocus('product', !isShopkeeper, openTutorial)
 
   useEffect(() => {
     setSelectedCategory('All')

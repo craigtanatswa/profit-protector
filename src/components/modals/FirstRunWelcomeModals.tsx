@@ -81,6 +81,80 @@ export function TrialWelcomeModal({
   )
 }
 
+interface GuidancePromptModalProps {
+  visible: boolean
+  eyebrow: string
+  title: string
+  body: string
+  icon: React.ComponentProps<typeof Ionicons>['name']
+  primaryLabel: string
+  onConfirm: () => void
+  onDismiss: () => void
+}
+
+function GuidancePromptModal({
+  visible,
+  eyebrow,
+  title,
+  body,
+  icon,
+  primaryLabel,
+  onConfirm,
+  onDismiss,
+}: GuidancePromptModalProps) {
+  const insets = useSafeAreaInsets()
+  const bottomInset = Math.max(insets.bottom, 12)
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onDismiss}
+      statusBarTranslucent
+    >
+      <View style={[styles.overlay, { paddingBottom: bottomInset }]}>
+        <View style={styles.backdrop} />
+
+        <View style={styles.sheet}>
+          <View style={styles.header}>
+            <Text style={styles.headerEyebrow}>{eyebrow}</Text>
+            <Text style={styles.headerTitle}>{title}</Text>
+          </View>
+
+          <View style={styles.body}>
+            <View style={[styles.iconBadge, { backgroundColor: '#E6EEFF' }]}>
+              <Ionicons name={icon} size={36} color="#0047AB" />
+            </View>
+
+            <Text style={styles.title}>Would you like a short guide?</Text>
+            <Text style={styles.bodyText}>{body}</Text>
+          </View>
+
+          <View style={styles.footer}>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={onConfirm}
+              activeOpacity={0.85}
+            >
+              <Ionicons name={icon} size={18} color="#FFFFFF" />
+              <Text style={styles.primaryBtnText}>{primaryLabel}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={onDismiss}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.secondaryBtnText}>No thanks</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  )
+}
+
 interface GoToInventoryPromptModalProps {
   visible: boolean
   onGoToInventory: () => void
@@ -92,68 +166,42 @@ export function GoToInventoryPromptModal({
   onGoToInventory,
   onLater,
 }: GoToInventoryPromptModalProps) {
-  const insets = useSafeAreaInsets()
-  const bottomInset = Math.max(insets.bottom, 12)
-
   return (
-    <Modal
+    <GuidancePromptModal
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onLater}
-      statusBarTranslucent
-    >
-      <View style={[styles.overlay, { paddingBottom: bottomInset }]}>
-        <View style={styles.backdrop} />
+      eyebrow="Need a hand?"
+      title="Add your first product"
+      body="You don't have any products yet. We can walk you through adding your first one so you can start recording sales."
+      icon="cube-outline"
+      primaryLabel="Yes, show me how"
+      onConfirm={onGoToInventory}
+      onDismiss={onLater}
+    />
+  )
+}
 
-        <View style={styles.sheet}>
-          <View style={styles.header}>
-            <Text style={styles.headerEyebrow}>Your first step</Text>
-            <Text style={styles.headerTitle}>Set up your inventory</Text>
-          </View>
+interface GoToSalesPromptModalProps {
+  visible: boolean
+  onGoToSales: () => void
+  onLater: () => void
+}
 
-          <View style={styles.body}>
-            <View style={[styles.iconBadge, { backgroundColor: '#E6EEFF' }]}>
-              <Ionicons name="cube-outline" size={36} color="#0047AB" />
-            </View>
-
-            <Text style={styles.title}>Head to Stock & Products</Text>
-            <Text style={styles.bodyText}>
-              Open the Stock & Products tab to add your first product. Once your
-              inventory is set up, you can record sales and track profit right away.
-            </Text>
-
-            <View style={styles.stepHint}>
-              <View style={styles.stepHintIcon}>
-                <Ionicons name="arrow-down" size={18} color="#0047AB" />
-              </View>
-              <Text style={styles.stepHintText}>
-                Tap the Stock tab at the bottom of your screen
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={onGoToInventory}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="cube-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.primaryBtnText}>Go to Stock & Products</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={onLater}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.secondaryBtnText}>I'll do it later</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
+export function GoToSalesPromptModal({
+  visible,
+  onGoToSales,
+  onLater,
+}: GoToSalesPromptModalProps) {
+  return (
+    <GuidancePromptModal
+      visible={visible}
+      eyebrow="Need a hand?"
+      title="Record your first sale"
+      body="You haven't recorded a sale yet. We can walk you through making one so you can track what you collect and your profit."
+      icon="receipt-outline"
+      primaryLabel="Yes, show me how"
+      onConfirm={onGoToSales}
+      onDismiss={onLater}
+    />
   )
 }
 
@@ -245,31 +293,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#0047AB',
-  },
-  stepHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0F4FF',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 20,
-    width: '100%',
-  },
-  stepHintIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#E6EEFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  stepHintText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#0047AB',
-    lineHeight: 19,
-    fontWeight: '500',
   },
   footer: {
     paddingHorizontal: 20,

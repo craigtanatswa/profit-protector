@@ -39,6 +39,7 @@ import {
   type CustomerSortOption,
 } from '../../../src/components/customers/CustomerSortModal'
 import { CustomersTutorialModal } from '../../../src/components/customers/CustomersTutorialModal'
+import { useQueuedTutorialOnFocus } from '../../../src/hooks/useQueuedTutorialOnFocus'
 import { useCustomers } from '../../../src/hooks/useCustomers'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
 import { useAuthStore } from '../../../src/stores/authStore'
@@ -399,6 +400,8 @@ export default function CustomersScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [newCustomerId, setNewCustomerId] = useState<string | null>(null)
   const [showTutorial, setShowTutorial] = useState(false)
+  const openTutorial = useCallback(() => setShowTutorial(true), [])
+  useQueuedTutorialOnFocus('customers', !isShopkeeper, openTutorial)
 
   // Show the customers tutorial once when the owner has no customers yet.
   useEffect(() => {

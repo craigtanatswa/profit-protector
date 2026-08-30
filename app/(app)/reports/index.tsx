@@ -23,6 +23,7 @@ import { exportReportCSV } from '../../../src/lib/reportCSV'
 import { formatCurrency, formatPaymentMethod } from '../../../src/lib/formatters'
 import { ScreenHeader } from '../../../src/components/layout'
 import { ReportsTutorialModal } from '../../../src/components/reports/ReportsTutorialModal'
+import { useQueuedTutorialOnFocus } from '../../../src/hooks/useQueuedTutorialOnFocus'
 import { Button, Card, MetricCard } from '../../../src/components/ui'
 import type { DailyDataPoint, PaymentBreakdownItem, TopProduct } from '../../../src/hooks/useReports'
 
@@ -739,6 +740,8 @@ export default function ReportsScreen() {
   const [isExportingPDF, setIsExportingPDF] = useState(false)
   const [isExportingCSV, setIsExportingCSV] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
+  const openTutorial = useCallback(() => setShowTutorial(true), [])
+  useQueuedTutorialOnFocus('reports', Boolean(businessId), openTutorial)
 
   // ── Computed date range ──
   const { startMs, endMs } = useMemo(

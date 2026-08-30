@@ -22,6 +22,7 @@ import { SaleCard } from '../../../src/components/sales/SaleCard'
 import { SalesTutorialModal } from '../../../src/components/sales/SalesTutorialModal'
 import { FilterPanel, DEFAULT_FILTERS } from '../../../src/components/sales/FilterPanel'
 import type { FilterState, ShopkeeperOption, ShopOption } from '../../../src/components/sales/FilterPanel'
+import { useQueuedTutorialOnFocus } from '../../../src/hooks/useQueuedTutorialOnFocus'
 import { useAuthStore } from '../../../src/stores/authStore'
 import { useSalesWithItems } from '../../../src/hooks/useSales'
 import { useQuietOfflineRefreshOnFocus } from '../../../src/hooks/useQuietOfflineRefreshOnFocus'
@@ -149,6 +150,8 @@ export default function SalesScreen() {
   const [searchText, setSearchText] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
+  const openTutorial = useCallback(() => setShowTutorial(true), [])
+  useQueuedTutorialOnFocus('sales', !isShopkeeper, openTutorial)
 
   const { dateFilter, selectedMethods, sortOption, creatorFilter, shopFilter } = filters
 

@@ -24,8 +24,10 @@ import { useNotificationBanner } from '../../src/hooks/useNotificationBanner'
 import { NotificationBanner } from '../../src/components/ui/NotificationBanner'
 import {
   GoToInventoryPromptModal,
+  GoToSalesPromptModal,
   TrialWelcomeModal,
 } from '../../src/components/modals/FirstRunWelcomeModals'
+import { useLoginGuidancePrompts } from '../../src/hooks/useLoginGuidancePrompts'
 import { clearShopkeeperSession as clearStoredShopkeeperSession } from '../../src/lib/shopkeeperAuth'
 import { logActivity } from '../../src/lib/activityLogger'
 import { ensureBusinessProfileForVerifiedSession } from '../../src/lib/createAccount'
@@ -165,10 +167,10 @@ export default function AppLayout() {
   const activeRole = useAuthStore((s) => s.activeRole)
   const shopkeeperSession = useAuthStore((s) => s.shopkeeperSession)
   const clearShopkeeperSession = useAuthStore((s) => s.clearShopkeeperSession)
+  const syncStatus = useAuthStore((s) => s.syncStatus)
   const isShopkeeper = activeRole === 'shopkeeper'
   const ensuringBusinessProfileRef = useRef(false)
   const [showTrialWelcome, setShowTrialWelcome] = useState(false)
-  const [showInventoryPrompt, setShowInventoryPrompt] = useState(false)
   useApplyFirstRunUxReset(business?.id, activeRole === 'owner' && !isShopkeeper)
   const ownerBusinessId = activeRole === 'owner' ? business?.id ?? '' : ''
   const { pendingRequests, approveDevice, denyDevice } = usePendingApprovals(ownerBusinessId)
@@ -212,7 +214,7 @@ export default function AppLayout() {
     router.replace('/(app)/paywall')
   }, [activeRole, canUseApp, isLoadingAuth, paywallFocused, subscriptionLoading])
 
-  // Show a one-time trial welcome modal, then prompt the owner to open Stock & Products.
+  // Show a one-time trial welcome modal. Product/sale guidance follows after it closes.
   useEffect(() => {
     if (isLoadingAuth || subscriptionLoading) return
     if (activeRole !== 'owner') return
@@ -222,19 +224,12 @@ export default function AppLayout() {
     let cancelled = false
     void (async () => {
       const trialKey = `trial_welcome_shown_${business.id}`
-      const inventoryKey = `inventory_prompt_shown_${business.id}`
       const trialShown = await SecureStore.getItemAsync(trialKey)
-      const inventoryShown = await SecureStore.getItemAsync(inventoryKey)
 
       if (cancelled) return
 
       if (trialShown !== '1' && trialShown !== 'true') {
         setShowTrialWelcome(true)
-        return
-      }
-
-      if (inventoryShown !== 'true') {
-        setShowInventoryPrompt(true)
       }
     })()
 
@@ -254,24 +249,27 @@ export default function AppLayout() {
     if (business?.id) {
       void SecureStore.setItemAsync(`trial_welcome_shown_${business.id}`, '1')
     }
-    setShowInventoryPrompt(true)
   }, [business?.id])
 
-  const markInventoryPromptSeen = useCallback(() => {
-    setShowInventoryPrompt(false)
-    if (business?.id) {
-      void SecureStore.setItemAsync(`inventory_prompt_shown_${business.id}`, 'true')
-    }
-  }, [business?.id])
-
-  const handleGoToInventory = useCallback(() => {
-    markInventoryPromptSeen()
-    router.replace('/(app)/inventory')
-  }, [markInventoryPromptSeen])
-
-  const handleInventoryLater = useCallback(() => {
-    markInventoryPromptSeen()
-  }, [markInventoryPromptSeen])
+  const {
+    showProductGuidance,
+    showSalesGuidance,
+    acceptProductGuidance,
+    dismissProductGuidance,
+    acceptSalesGuidance,
+    dismissSalesGuidance,
+  } = useLoginGuidancePrompts({
+    enabled:
+      !isShopkeeper &&
+      activeRole === 'owner' &&
+      canUseApp &&
+      !paywallFocused &&
+      !isLoadingAuth &&
+      !subscriptionLoading &&
+      syncStatus !== 'syncing',
+    businessId: business?.id,
+    hold: showTrialWelcome,
+  })
 
   /** Finish a verified owner profile in-place. Never send them back to signup. */
   useEffect(() => {
@@ -461,9 +459,14 @@ export default function AppLayout() {
               onGetStarted={handleTrialGetStarted}
             />
             <GoToInventoryPromptModal
-              visible={showInventoryPrompt}
-              onGoToInventory={handleGoToInventory}
-              onLater={handleInventoryLater}
+              visible={showProductGuidance}
+              onGoToInventory={acceptProductGuidance}
+              onLater={dismissProductGuidance}
+            />
+            <GoToSalesPromptModal
+              visible={showSalesGuidance}
+              onGoToSales={acceptSalesGuidance}
+              onLater={dismissSalesGuidance}
             />
           </>
         ) : null}
