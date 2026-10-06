@@ -93,6 +93,7 @@ serve(async (req) => {
       typeof body.deviceId === 'string' ? body.deviceId : undefined
     const deviceName =
       typeof body.deviceName === 'string' ? body.deviceName : undefined
+    const platform: 'web' | 'mobile' = body.platform === 'web' ? 'web' : 'mobile'
     const sessionToken =
       typeof body.sessionToken === 'string' ? body.sessionToken : undefined
 
@@ -193,6 +194,7 @@ serve(async (req) => {
         shopkeeper.id,
         business.id,
         deviceId,
+        platform,
       )
 
       return json({
@@ -306,6 +308,54 @@ serve(async (req) => {
       if (prodErr) return error(prodErr.message)
 
       return json({ status: 'ok', products: rows ?? [] })
+    }
+
+    if (action === 'pull_customers') {
+      const payload = await verifyToken(sessionToken)
+      if (!payload) return error('Session expired. Please log in again.')
+
+      const shopkeeperId = String(payload.shopkeeperId)
+      const bizId = String(payload.businessId)
+      const deviceIdFromToken = String(payload.deviceId)
+      const { data: shopkeeper } = await supabase
+        .from('shopkeepers')
+        .select('id')
+        .eq('id', shopkeeperId)
+        .eq('business_id', bizId)
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (!shopkeeper) return error('Account deactivated.')
+
+      const { data: device } = await supabase
+        .from('shopkeeper_devices')
+        .select('is_approved')
+        .eq('shopkeeper_id', shopkeeperId)
+        .eq('device_id', deviceIdFromToken)
+        .maybeSingle()
+      if (!device?.is_approved) return error('Device no longer approved.')
+      if ((await assertActiveShopkeeperSession(supabase, payload)) === 'superseded') {
+        return sessionSuperseded()
+      }
+
+      const { data: customers, error: customersErr } = await supabase
+        .from('customers')
+        .select('id, name, phone, created_at')
+        .eq('business_id', bizId)
+        .order('name')
+      if (customersErr) return error(customersErr.message)
+
+      const ids = (customers ?? []).map((customer) => customer.id)
+      const { data: creditSales, error: creditsErr } =
+        ids.length > 0
+          ? await supabase
+              .from('credit_sales')
+              .select('customer_id, amount_cents, amount_paid_cents')
+              .in('customer_id', ids)
+          : { data: [], error: null }
+      if (creditsErr) return error(creditsErr.message)
+
+      return json({ status: 'ok', customers: customers ?? [], credit_sales: creditSales ?? [] })
     }
 
     if (action === 'pull_sales_month') {
@@ -1236,6 +1286,7 @@ serve(async (req) => {
         shopkeeper.id,
         business.id,
         deviceId,
+        platform,
       )
 
       return json({
@@ -1319,12 +1370,13 @@ async function stockAccessState(
   return { status: 'none' }
 }
 
-/** Upserts the single active session for this shopkeeper and returns a signed JWT. */
+/** Upserts one active session per platform for this shopkeeper and returns a signed JWT. */
 async function issueShopkeeperSession(
   supabase: SupabaseAdmin,
   shopkeeperId: string,
   businessId: string,
   deviceId: string,
+  platform: 'web' | 'mobile',
 ): Promise<string> {
   const sessionId = crypto.randomUUID()
   const now = new Date().toISOString()
@@ -1333,10 +1385,11 @@ async function issueShopkeeperSession(
     {
       shopkeeper_id: shopkeeperId,
       device_id: deviceId,
+      platform,
       session_id: sessionId,
       last_seen_at: now,
     },
-    { onConflict: 'shopkeeper_id' },
+    { onConflict: 'shopkeeper_id,platform' },
   )
 
   if (error) {
@@ -1344,7 +1397,7 @@ async function issueShopkeeperSession(
     throw new Error('Failed to register active session')
   }
 
-  return generateToken({ shopkeeperId, businessId, deviceId, sessionId })
+  return generateToken({ shopkeeperId, businessId, deviceId, platform, sessionId })
 }
 
 /** Returns 'superseded' when this JWT is no longer the active session. */
@@ -1357,11 +1410,13 @@ async function assertActiveShopkeeperSession(
 
   const shopkeeperId = payload.shopkeeperId
   if (typeof shopkeeperId !== 'string' && typeof shopkeeperId !== 'number') return 'superseded'
+  const platform: 'web' | 'mobile' = payload.platform === 'web' ? 'web' : 'mobile'
 
   const { data, error } = await supabase
     .from('shopkeeper_active_sessions')
     .select('session_id')
     .eq('shopkeeper_id', shopkeeperId)
+    .eq('platform', platform)
     .maybeSingle()
 
   if (error) {
@@ -1375,6 +1430,7 @@ async function assertActiveShopkeeperSession(
     .from('shopkeeper_active_sessions')
     .update({ last_seen_at: new Date().toISOString() })
     .eq('shopkeeper_id', shopkeeperId)
+    .eq('platform', platform)
 
   return 'ok'
 }

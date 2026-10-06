@@ -36,6 +36,9 @@ yarn-error.*
 
 supabase/sql/
 supabase/migrations/
+!supabase/migrations/
+supabase/migrations/*
+!supabase/migrations/20260906170000_platform_scoped_active_sessions.sql
 
 
 # typescript

@@ -397,7 +397,8 @@ const planStyles = StyleSheet.create({
 export default function PaywallScreen() {
   const business = useAuthStore((s) => s.business)
   const user = useAuthStore((s) => s.user)
-  const { refetch, nextBillingDate } = useSubscription()
+  const { refetch, nextBillingDate, subscription, isTrialExpired } = useSubscription()
+  const trialStillActive = subscription?.status === 'trial' && !isTrialExpired
 
   const [selectedPlan, setSelectedPlan] = useState<PlanTier>('pro')
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethodKey | null>(null)
@@ -762,6 +763,20 @@ export default function PaywallScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
       <SafeAreaView edges={['top']} style={styles.header}>
+        {trialStillActive ? (
+          <TouchableOpacity
+            onPress={() => {
+              if (router.canGoBack()) router.back()
+              else router.replace('/(app)')
+            }}
+            style={styles.headerClose}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <Ionicons name="close" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+        ) : null}
         <Ionicons
           name="shield-checkmark"
           size={40}
@@ -787,16 +802,21 @@ export default function PaywallScreen() {
         {/* Trial expired card */}
         <View style={{ margin: 16 }}>
           <Card padding="md">
-            <View style={styles.expiredBanner}>
-              <Ionicons name="time" size={18} color={C.danger} />
-              <Text style={styles.expiredBannerText}>
-                Your free trial has ended
+            <View style={trialStillActive ? styles.trialBanner : styles.expiredBanner}>
+              <Ionicons
+                name="time"
+                size={18}
+                color={trialStillActive ? C.primary : C.danger}
+              />
+              <Text style={trialStillActive ? styles.trialBannerText : styles.expiredBannerText}>
+                {trialStillActive ? 'Choose a plan before your trial ends' : 'Your free trial has ended'}
               </Text>
             </View>
 
             <Text style={styles.expiredBody}>
-              Keep your sales, stock, customers, and reports. Then pick the plan
-              that matches how you trade — from {formatPlanPrice('pro')} / month.
+              {trialStillActive
+                ? `Your trial is still running with Pro+ features. Subscribe now to keep them, from ${formatPlanPrice('pro')} / month.`
+                : `Keep your sales, stock, customers, and reports. Then pick the plan that matches how you trade — from ${formatPlanPrice('pro')} / month.`}
             </Text>
 
             {[
@@ -1083,6 +1103,15 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     alignItems: 'center',
   },
+  headerClose: {
+    position: 'absolute',
+    top: 8,
+    right: 12,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
@@ -1105,6 +1134,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     marginBottom: 16,
+  },
+  trialBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: C.primaryLight,
+    borderWidth: 1,
+    borderColor: C.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  trialBannerText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.primaryDark,
   },
   expiredBannerText: {
     fontSize: 14,

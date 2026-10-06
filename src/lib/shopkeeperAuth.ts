@@ -1117,6 +1117,7 @@ export async function shopkeeperLogin(params: {
     password: params.password,
     deviceId,
     deviceName,
+    platform: 'mobile',
   })
 
   if (data.status === 'error') {
@@ -1176,6 +1177,7 @@ export async function resumeShopkeeperAfterApproval(params: {
     businessId: params.businessId,
     username: params.username,
     deviceId: params.deviceId,
+    platform: 'mobile',
   })
 
   if (data.status === 'error') {

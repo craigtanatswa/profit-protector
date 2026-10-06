@@ -1,6 +1,6 @@
 // Deploy: supabase functions deploy active-session
 //
-// Registers and validates the single active owner session per user.
+// Registers and validates one active owner session per platform (web/mobile).
 // Shopkeeper sessions are managed inside shopkeeper-auth.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -17,7 +17,7 @@ async function upsertOwnerSession(
   userId: string,
   deviceId: string,
   deviceName: string | null,
-  revokeOtherDevices: boolean,
+  platform: 'web' | 'mobile',
 ): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
   const sessionId = crypto.randomUUID()
   const now = new Date().toISOString()
@@ -27,24 +27,16 @@ async function upsertOwnerSession(
       user_id: userId,
       device_id: deviceId,
       device_name: deviceName,
+      platform,
       session_id: sessionId,
       last_seen_at: now,
     },
-    { onConflict: 'user_id' },
+    { onConflict: 'user_id,platform' },
   )
 
   if (error) {
     console.error(JSON.stringify({ tag: 'active_session_upsert', userId, error: String(error) }))
     return { ok: false, error: 'Failed to register active session' }
-  }
-
-  if (revokeOtherDevices) {
-    const { error: signOutErr } = await admin.auth.admin.signOut(userId, 'others')
-    if (signOutErr) {
-      console.warn(
-        JSON.stringify({ tag: 'active_session_signout_others', userId, error: String(signOutErr) }),
-      )
-    }
   }
 
   return { ok: true, sessionId }
@@ -69,7 +61,13 @@ serve(async (req) => {
     return jsonResponse({ error: 'Missing Authorization' }, 401)
   }
 
-  let body: { action?: string; deviceId?: string; deviceName?: string; sessionId?: string }
+  let body: {
+    action?: string
+    deviceId?: string
+    deviceName?: string
+    sessionId?: string
+    platform?: string
+  }
   try {
     body = await req.json()
   } catch {
@@ -77,6 +75,7 @@ serve(async (req) => {
   }
 
   const action = body.action ?? ''
+  const platform: 'web' | 'mobile' = body.platform === 'web' ? 'web' : 'mobile'
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
@@ -95,7 +94,7 @@ serve(async (req) => {
     }
 
     const deviceName = typeof body.deviceName === 'string' ? body.deviceName : null
-    const result = await upsertOwnerSession(admin, userId, deviceId, deviceName, true)
+    const result = await upsertOwnerSession(admin, userId, deviceId, deviceName, platform)
     if (!result.ok) {
       return jsonResponse({ error: result.error }, 500)
     }
@@ -113,6 +112,7 @@ serve(async (req) => {
       .from('owner_active_sessions')
       .select('session_id, device_id')
       .eq('user_id', userId)
+      .eq('platform', platform)
       .maybeSingle()
 
     if (error) {
@@ -122,7 +122,7 @@ serve(async (req) => {
 
     if (!data) {
       const deviceName = typeof body.deviceName === 'string' ? body.deviceName : null
-      const result = await upsertOwnerSession(admin, userId, deviceId, deviceName, false)
+      const result = await upsertOwnerSession(admin, userId, deviceId, deviceName, platform)
       if (!result.ok) {
         return jsonResponse({ error: result.error }, 500)
       }
@@ -137,6 +137,7 @@ serve(async (req) => {
       .from('owner_active_sessions')
       .update({ last_seen_at: new Date().toISOString() })
       .eq('user_id', userId)
+      .eq('platform', platform)
 
     return jsonResponse({ ok: true, sessionId: data.session_id })
   }
@@ -151,6 +152,7 @@ serve(async (req) => {
       .from('owner_active_sessions')
       .select('session_id')
       .eq('user_id', userId)
+      .eq('platform', platform)
       .maybeSingle()
 
     if (error) {
@@ -166,6 +168,7 @@ serve(async (req) => {
       .from('owner_active_sessions')
       .update({ last_seen_at: new Date().toISOString() })
       .eq('user_id', userId)
+      .eq('platform', platform)
 
     return jsonResponse({ ok: true })
   }

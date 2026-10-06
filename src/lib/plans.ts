@@ -20,8 +20,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
     tier: 'pro',
     label: 'Pro',
     shortLabel: 'Pro',
-    // priceCents: 500, // live: $5.00
-    priceCents: 20, // TEST: $0.20 — restore 500 before Play Store release
+    priceCents: 500,
     maxShopkeepers: 1,
     canUseCutProducts: false,
     maxShops: 1,
@@ -31,8 +30,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
     tier: 'pro_plus',
     label: 'Pro+',
     shortLabel: 'Pro+',
-    // priceCents: 1000, // live: $10.00
-    priceCents: 30, // TEST: $0.30 — restore 1000 before Play Store release
+    priceCents: 1000,
     maxShopkeepers: 5,
     canUseCutProducts: true,
     maxShops: 5,

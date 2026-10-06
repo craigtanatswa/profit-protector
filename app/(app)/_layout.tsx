@@ -202,10 +202,17 @@ export default function AppLayout() {
 
   useEffect(() => {
     if (isLoadingAuth || subscriptionLoading) return
-    if (activeRole === 'owner' && canUseApp && paywallFocused) {
+    // Active and grace subscribers should not sit on the purchase screen.
+    // Trial users open it on purpose from "Choose a plan" and must stay there.
+    if (
+      activeRole === 'owner' &&
+      canUseApp &&
+      paywallFocused &&
+      subscription?.status !== 'trial'
+    ) {
       router.replace('/(app)')
     }
-  }, [activeRole, canUseApp, isLoadingAuth, paywallFocused, subscriptionLoading])
+  }, [activeRole, canUseApp, isLoadingAuth, paywallFocused, subscription?.status, subscriptionLoading])
 
   useEffect(() => {
     if (isLoadingAuth || subscriptionLoading) return

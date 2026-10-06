@@ -65,6 +65,7 @@ export async function registerOwnerActiveSession(): Promise<string | null> {
     action: 'register',
     deviceId,
     deviceName,
+    platform: 'mobile',
   })
 
   if (data.ok !== true || typeof data.sessionId !== 'string') {
@@ -84,7 +85,7 @@ async function syncOwnerActiveSession(): Promise<'valid' | 'superseded' | 'unava
   try {
     const deviceId = await getDeviceId()
     const deviceName = await getDeviceName()
-    const data = await callActiveSession({ action: 'sync', deviceId, deviceName })
+    const data = await callActiveSession({ action: 'sync', deviceId, deviceName, platform: 'mobile' })
 
     if (data.ok === true && typeof data.sessionId === 'string') {
       await setOwnerActiveSessionId(data.sessionId)
@@ -106,7 +107,7 @@ export async function validateOwnerActiveSession(): Promise<'valid' | 'supersede
   if (!sessionId) return syncOwnerActiveSession()
 
   try {
-    const data = await callActiveSession({ action: 'validate', sessionId })
+    const data = await callActiveSession({ action: 'validate', sessionId, platform: 'mobile' })
     if (data.ok === true) return 'valid'
     if (data.reason === 'superseded' || data.reason === 'missing_session') return 'superseded'
     return 'unavailable'
